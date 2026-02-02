@@ -1,1 +1,0 @@
-import{r as t}from"./index-CcwdwIgH.js";function s(s){return t.get("/stock/stocks",{params:s})}function o(s){return t.get(`/stock/stocks/${s}`)}function r(s){return t.get("/stock/stock-logs",{params:s})}function c(s,o){return t.post(`/stock/stocks/${s}/adjust`,o)}function n(s){return t.get("/stock/stocks/alerts",{params:s})}export{n as a,o as b,r as c,c as d,s as g};

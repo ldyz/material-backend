@@ -1,0 +1,61 @@
+# Build outputs
+/server
+/main
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go
+*.mod.sum
+
+# Logs
+*.log
+server.log
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+/static/assets/*
+!/static/assets/.gitkeep
+!/static/uploads
+
+# Mobile
+*.apk
+*.aab
+
+# Environment
+.env.local
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.pyc
+*.pyo

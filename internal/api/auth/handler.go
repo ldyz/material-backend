@@ -1,0 +1,485 @@
+package auth
+
+import (
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	jwtpkg "github.com/yourorg/material-backend/backend/pkg/jwt"
+	"github.com/yourorg/material-backend/backend/internal/api/response"
+	"gorm.io/gorm"
+)
+
+// simple DTOs
+type loginReq struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+type createUserReq struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	Email    string `json:"email"`
+}
+
+// RegisterRoutes registers auth routes
+func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
+	r := rg.Group("")
+	// public
+	r.POST("/auth/login", func(c *gin.Context) {
+		var req loginReq
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		// find user
+		var user User
+		if err := db.Preload("Roles").Where("username = ?", req.Username).First(&user).Error; err != nil {
+			response.Unauthorized(c, "用户名或密码错误")
+			return
+		}
+		if !user.CheckPassword(req.Password) {
+			response.Unauthorized(c, "用户名或密码错误")
+			return
+		}
+		if !user.IsActive {
+			response.Unauthorized(c, "账户已被禁用")
+			return
+		}
+		// update last login (只更新 LastLogin 字段，避免触发 Roles 关联保存)
+		now := time.Now().UTC()
+		db.Model(&User{}).Where("id = ?", user.ID).Update("last_login", now)
+			// create token
+		token, err := jwtpkg.GenerateToken(user.ID, user.Username)
+		if err != nil {
+			response.InternalError(c, "token 创建失败")
+			return
+		}
+
+		response.SuccessWithMeta(c, user.ToDTO(), map[string]interface{}{
+			"token": token,
+		})
+	})
+
+	// register (public)
+	r.POST("/auth/register", func(c *gin.Context) {
+		var req struct {
+			Username string `json:"username" binding:"required"`
+			Password string `json:"password" binding:"required"`
+			Email    string `json:"email"`
+			FullName string `json:"full_name"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+
+		// Check if username already exists
+		var existingUser User
+		if err := db.Where("username = ?", req.Username).First(&existingUser).Error; err == nil {
+			response.BadRequest(c, "用户名已存在")
+			return
+		}
+
+		// Create new user
+		user := User{
+			Username: req.Username,
+			Email:    req.Email,
+			FullName: req.FullName,
+			IsActive: true,
+			Role:     "user",
+		}
+
+		if err := user.SetPassword(req.Password); err != nil {
+			response.InternalError(c, "设置密码失败")
+			return
+		}
+
+		if err := db.Create(&user).Error; err != nil {
+			response.InternalError(c, err.Error())
+			return
+		}
+
+		response.Created(c, user.ToDTO(), "注册成功")
+	})
+
+	// debug-token (public)
+	r.GET("/auth/debug-token", func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			response.SuccessWithMeta(c, nil, map[string]interface{}{
+				"token":   nil,
+				"message": "No token provided",
+			})
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		claims, err := jwtpkg.ParseToken(tokenString)
+		if err != nil {
+			response.SuccessWithMeta(c, nil, map[string]interface{}{
+				"token": tokenString,
+				"valid": false,
+				"error": err.Error(),
+			})
+			return
+		}
+
+		response.SuccessWithMeta(c, map[string]interface{}{
+			"valid":    true,
+			"user_id":  claims["user_id"],
+			"username": claims["username"],
+			"exp":      claims["exp"],
+		}, map[string]interface{}{
+			"token": tokenString,
+		})
+	})
+
+	// protected routes
+	auth := r.Group("/auth")
+	auth.Use(jwtpkg.TokenMiddleware())
+	{
+		// current user info
+		auth.GET("/me", func(c *gin.Context) {
+			user, err := GetCurrentUser(c, db)
+			if err != nil || user == nil {
+				response.NotFound(c, "用户不存在")
+				return
+			}
+			response.Success(c, user.ToDTO())
+		})
+
+		// logout (logs to stdout for now)
+		auth.POST("/logout", func(c *gin.Context) {
+			user, _ := GetCurrentUser(c, db)
+			if user != nil {
+				// placeholder for system log
+				c.Writer.WriteString("user logout: " + user.Username)
+			}
+			response.SuccessWithMessage(c, nil, "退出成功")
+		})
+
+		// change password (token-only required: do not require DB lookup to validate token format)
+		auth.POST("/change-password", jwtpkg.TokenOnlyMiddleware(), func(c *gin.Context) {
+			var req struct{
+				OldPassword string `json:"old_password"`
+				NewPassword string `json:"new_password"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			user, err := GetCurrentUser(c, db)
+			if err != nil || user == nil {
+				response.NotFound(c, "用户不存在")
+				return
+			}
+			if !user.CheckPassword(req.OldPassword) {
+				response.BadRequest(c, "原密码错误")
+				return
+			}
+			if len(req.NewPassword) < 6 {
+				response.BadRequest(c, "新密码长度不能少于6位")
+				return
+			}
+			if err := user.SetPassword(req.NewPassword); err != nil {
+				response.InternalError(c, "设置密码失败")
+				return
+			}
+			if err := db.Save(user).Error; err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.SuccessWithMessage(c, nil, "密码修改成功")
+		})
+
+		// USERS CRUD
+		// list users
+		auth.GET("/users", PermissionMiddleware(db, "user_view"), func(c *gin.Context) {
+			page := 1
+			perPage := 20
+			// naive query params parsing (improve later)
+			if p := c.Query("page"); p != "" {
+				// ignore errors for brevity
+			}
+			var total int64
+			db.Model(&User{}).Count(&total)
+			var users []User
+			db.Preload("Roles").Find(&users)
+			out := make([]map[string]any, 0, len(users))
+			for _, u := range users { out = append(out, u.ToDTO()) }
+			response.SuccessWithPagination(c, out, int64(page), int64(perPage), total)
+		})
+
+		// create user
+		auth.POST("/users", PermissionMiddleware(db, "user_create"), func(c *gin.Context) {
+			var req struct{ Username, Password, Email, FullName, Role string; IsActive bool }
+			if err := c.ShouldBindJSON(&req); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+			u := User{Username: req.Username, Email: req.Email, FullName: req.FullName, Role: req.Role, IsActive: req.IsActive}
+			if err := u.SetPassword(req.Password); err != nil {
+				response.InternalError(c, "设置密码失败")
+				return
+			}
+			if err := db.Create(&u).Error; err != nil {
+				response.InternalError(c, err.Error())
+				return
+			}
+			response.Created(c, u.ToDTO(), "用户创建成功")
+		})
+
+		// get single user
+		auth.GET("/users/:id", PermissionMiddleware(db, "user_view"), func(c *gin.Context) {
+			var u User
+			if err := db.Preload("Roles").First(&u, c.Param("id")).Error; err != nil {
+				response.NotFound(c, "用户不存在")
+				return
+			}
+			response.Success(c, u.ToDTO())
+		})
+
+		// reset password
+		auth.POST("/users/:id/reset-password", PermissionMiddleware(db, "user_edit"), func(c *gin.Context) {
+			var body struct{ Password string `json:"password"` }
+			if err := c.ShouldBindJSON(&body); err != nil || body.Password == "" {
+				response.BadRequest(c, "新密码不能为空")
+				return
+			}
+			var u User
+			if err := db.First(&u, c.Param("id")).Error; err != nil { response.NotFound(c, "用户不存在"); return }
+			if err := u.SetPassword(body.Password); err != nil { response.InternalError(c, "设置密码失败"); return }
+			db.Save(&u)
+			response.SuccessWithMessage(c, nil, "密码重置成功")
+		})
+
+		// update user
+		auth.PUT("/users/:id", PermissionMiddleware(db, "user_edit"), func(c *gin.Context) {
+			var req map[string]any
+			if err := c.ShouldBindJSON(&req); err != nil { response.BadRequest(c, err.Error()); return }
+			var u User
+			if err := db.Preload("Roles").First(&u, c.Param("id")).Error; err != nil { response.NotFound(c, "用户不存在"); return }
+			if v, ok := req["username"].(string); ok && v != "" { u.Username = v }
+			if v, ok := req["email"].(string); ok { u.Email = v }
+			if v, ok := req["full_name"].(string); ok { u.FullName = v }
+			if v, ok := req["role"].(string); ok { u.Role = v }
+			if v, ok := req["is_active"].(bool); ok { u.IsActive = v }
+			if v, ok := req["password"].(string); ok && v != "" { u.SetPassword(v) }
+			db.Save(&u)
+			response.SuccessWithMessage(c, u.ToDTO(), "用户更新成功")
+		})
+
+		// delete user
+		auth.DELETE("/users/:id", PermissionMiddleware(db, "user_delete"), func(c *gin.Context) {
+			// prevent deleting self
+			cur, _ := GetCurrentUser(c, db)
+			if cur != nil && cur.ID == 0 {
+				// noop
+			}
+			var u User
+			if err := db.First(&u, c.Param("id")).Error; err != nil { response.NotFound(c, "用户不存在"); return }
+			if cur != nil && cur.ID == u.ID { response.BadRequest(c, "不能删除自己"); return }
+			db.Delete(&u)
+			response.SuccessWithMessage(c, nil, "用户删除成功")
+		})
+
+		// ROLES CRUD
+		auth.GET("/roles", PermissionMiddleware(db, "role_view"), func(c *gin.Context) {
+			var roles []Role
+			db.Find(&roles)
+			out := make([]map[string]any, 0, len(roles))
+			for _, r := range roles {
+				perms := []string{}
+				if r.Permissions != "" {
+					for _, it := range strings.Split(r.Permissions, ",") { if it = strings.TrimSpace(it); it != "" { perms = append(perms, it) } }
+				}
+				out = append(out, map[string]any{"id": r.ID, "name": r.Name, "description": r.Description, "permissions": perms, "created_at": r.CreatedAt.Format("2006-01-02 15:04:05")})
+			}
+			response.Success(c, out)
+		})
+
+		auth.POST("/roles", PermissionMiddleware(db, "role_create"), func(c *gin.Context) {
+			var body struct{ Name, Description string; Permissions []string }
+			if err := c.ShouldBindJSON(&body); err != nil || body.Name == "" { response.BadRequest(c, "角色名称不能为空"); return }
+			r := Role{Name: body.Name, Description: body.Description, Permissions: strings.Join(body.Permissions, ",")}
+			if err := db.Create(&r).Error; err != nil { response.InternalError(c, err.Error()); return }
+			roleData := map[string]any{"id": r.ID, "name": r.Name, "description": r.Description, "permissions": body.Permissions, "created_at": r.CreatedAt.Format("2006-01-02 15:04:05")}
+			response.Created(c, roleData, "角色创建成功")
+		})
+
+		auth.GET("/roles/:id", PermissionMiddleware(db, "role_view"), func(c *gin.Context) {
+			var r Role
+			if err := db.First(&r, c.Param("id")).Error; err != nil { response.NotFound(c, "角色不存在"); return }
+			perms := []string{}
+			if r.Permissions != "" { for _, it := range strings.Split(r.Permissions, ",") { if it = strings.TrimSpace(it); it != "" { perms = append(perms, it) } } }
+			data := map[string]any{"id": r.ID, "name": r.Name, "description": r.Description, "permissions": perms, "created_at": r.CreatedAt.Format("2006-01-02 15:04:05")}
+			response.Success(c, data)
+		})
+
+		auth.PUT("/roles/:id", PermissionMiddleware(db, "role_edit"), func(c *gin.Context) {
+			var body struct {
+				Name          string   `json:"name"`
+				Description   string   `json:"description"`
+				PermissionIDs []string `json:"permission_ids"`
+			}
+			if err := c.ShouldBindJSON(&body); err != nil { response.BadRequest(c, err.Error()); return }
+			var r Role
+			if err := db.First(&r, c.Param("id")).Error; err != nil { response.NotFound(c, "角色不存在"); return }
+			if body.Name != "" && body.Name != r.Name {
+				// check unique
+				var exists Role
+				if db.Where("name = ?", body.Name).First(&exists); exists.ID != 0 { response.BadRequest(c, "角色名已存在"); return }
+				r.Name = body.Name
+			}
+			if body.Description != "" { r.Description = body.Description }
+			if body.PermissionIDs != nil { r.Permissions = strings.Join(body.PermissionIDs, ",") }
+			db.Save(&r)
+			roleData := map[string]any{"id": r.ID, "name": r.Name, "description": r.Description, "permissions": strings.Split(r.Permissions, ",")}
+			response.SuccessWithMessage(c, roleData, "角色更新成功")
+		})
+
+		// Assign permissions to a role
+		auth.POST("/roles/:id/permissions", PermissionMiddleware(db, "role_assign_permissions"), func(c *gin.Context) {
+			var body struct {
+				Permissions []string `json:"permissions"`
+			}
+			if err := c.ShouldBindJSON(&body); err != nil { response.BadRequest(c, err.Error()); return }
+
+			var r Role
+			if err := db.First(&r, c.Param("id")).Error; err != nil { response.NotFound(c, "角色不存在"); return }
+
+			// Update role permissions
+			r.Permissions = strings.Join(body.Permissions, ",")
+			if err := db.Save(&r).Error; err != nil { response.InternalError(c, "权限配置失败"); return }
+
+			roleData := map[string]any{
+				"id": r.ID,
+				"name": r.Name,
+				"description": r.Description,
+				"permissions": body.Permissions,
+			}
+			response.SuccessWithMessage(c, roleData, "权限配置成功")
+		})
+
+		auth.DELETE("/roles/:id", PermissionMiddleware(db, "role_delete"), func(c *gin.Context) {
+			var r Role
+			if err := db.First(&r, c.Param("id")).Error; err != nil { response.NotFound(c, "角色不存在"); return }
+			// check users assigned to role
+			var count int64
+			db.Table("user_roles").Where("role_id = ?", r.ID).Count(&count)
+			if count > 0 { response.BadRequest(c, "该角色仍被用户使用，无法删除"); return }
+			db.Delete(&r)
+			response.SuccessWithMessage(c, nil, "角色删除成功")
+		})
+
+		// permissions list
+		auth.GET("/permissions", PermissionMiddleware(db, "role_view"), func(c *gin.Context) {
+			// Define flat permission list first
+			permissionList := []struct {
+				Key  string
+				Name string
+			}{
+				{"user_view", "查看用户"},
+				{"user_create", "创建用户"},
+				{"user_edit", "编辑用户"},
+				{"user_delete", "删除用户"},
+				{"role_view", "查看角色"},
+				{"role_create", "创建角色"},
+				{"role_edit", "编辑角色"},
+				{"role_delete", "删除角色"},
+				{"project_view", "查看项目"},
+				{"project_create", "创建项目"},
+				{"project_edit", "编辑项目"},
+				{"project_delete", "删除项目"},
+				{"material_view", "查看物资"},
+				{"material_create", "创建物资"},
+				{"material_edit", "编辑物资"},
+				{"material_delete", "删除物资"},
+				{"stock_view", "查看库存"},
+				{"stock_create", "创建库存"},
+				{"stock_edit", "编辑库存"},
+				{"stock_delete", "删除库存"},
+				{"stock_in", "库存入库"},
+				{"stock_out", "库存出库"},
+				{"stocklog_view", "查看库存日志"},
+				{"stocklog_delete", "删除库存日志"},
+				{"stock_export", "导出库存"},
+				{"inbound_view", "查看入库单"},
+				{"inbound_create", "创建入库单"},
+				{"inbound_edit", "编辑入库单"},
+				{"inbound_delete", "删除入库单"},
+				{"inbound_approve", "审核入库单"},
+				{"requisition_view", "查看出库单"},
+				{"requisition_create", "创建出库单"},
+				{"requisition_edit", "编辑出库单"},
+				{"requisition_delete", "删除出库单"},
+				{"requisition_approve", "审核出库单"},
+				{"progress_view", "查看进度"},
+				{"progress_create", "创建进度"},
+				{"progress_edit", "编辑进度"},
+				{"progress_delete", "删除进度"},
+				{"system_log", "查看系统日志"},
+			}
+
+			// Group permissions by module
+			groups := make(map[string]map[string]string)
+			for _, p := range permissionList {
+				// Extract module name from permission key
+				var module string
+				if len(p.Key) > 0 {
+					// Find the first underscore to separate module from action
+					idx := strings.Index(p.Key, "_")
+					if idx > 0 {
+						module = p.Key[:idx]
+					} else {
+						module = "other"
+					}
+				} else {
+					module = "other"
+				}
+
+				// Map module keys to Chinese names
+				var moduleName string
+				switch module {
+				case "user":
+					moduleName = "用户管理"
+				case "role":
+					moduleName = "角色管理"
+				case "project":
+					moduleName = "项目管理"
+				case "material":
+					moduleName = "物资管理"
+				case "stock", "stocklog":
+					moduleName = "库存管理"
+				case "inbound":
+					moduleName = "入库管理"
+				case "requisition":
+					moduleName = "出库管理"
+				case "progress":
+					moduleName = "进度管理"
+				case "system":
+					moduleName = "系统管理"
+				default:
+					moduleName = "其他"
+				}
+
+				if groups[moduleName] == nil {
+					groups[moduleName] = make(map[string]string)
+				}
+				groups[moduleName][p.Key] = p.Name
+			}
+
+			// Convert to response format
+			data := make([]map[string]any, 0, len(groups))
+			for moduleName, perms := range groups {
+				data = append(data, map[string]any{
+					"key":   moduleName,
+					"label": perms,
+				})
+			}
+
+			response.Success(c, data)
+		})
+	}
+}

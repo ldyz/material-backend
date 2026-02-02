@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "graphlib": "^2.1.8",
+    "vue-ganttastic": "^0.9.34"
+  }
+}

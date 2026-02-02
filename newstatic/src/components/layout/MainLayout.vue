@@ -1,0 +1,393 @@
+<template>
+  <el-container class="layout-container">
+    <!-- 侧边栏 -->
+    <el-aside :width="sidebarWidth" class="layout-aside">
+      <div class="logo-container">
+        <el-icon class="logo-icon"><Box /></el-icon>
+        <span v-if="!appStore.sidebarCollapsed" class="logo-text">{{ appStore.systemName }}</span>
+      </div>
+      <el-menu
+        :default-active="activeMenu"
+        :collapse="appStore.sidebarCollapsed"
+        :unique-opened="true"
+        router
+        class="layout-menu"
+      >
+        <template v-for="menu in visibleMenus" :key="menu.path">
+          <el-menu-item :index="menu.path" v-if="!menu.children">
+            <el-icon>
+              <component :is="menu.icon" />
+            </el-icon>
+            <template #title>{{ menu.title }}</template>
+          </el-menu-item>
+          <el-sub-menu :index="menu.path" v-else>
+            <template #title>
+              <el-icon>
+                <component :is="menu.icon" />
+              </el-icon>
+              <span>{{ menu.title }}</span>
+            </template>
+            <el-menu-item
+              v-for="child in menu.children"
+              :key="child.path"
+              :index="child.path"
+            >
+              <el-icon>
+                <component :is="child.icon" />
+              </el-icon>
+              <template #title>{{ child.title }}</template>
+            </el-menu-item>
+          </el-sub-menu>
+        </template>
+      </el-menu>
+    </el-aside>
+
+    <el-container class="layout-main">
+      <!-- 顶部导航栏 -->
+      <el-header class="layout-header">
+        <div class="header-left">
+          <el-button
+            :icon="appStore.sidebarCollapsed ? 'Expand' : 'Fold'"
+            circle
+            @click="appStore.toggleSidebar"
+          />
+          <el-breadcrumb separator="/">
+            <el-breadcrumb-item :to="{ path: '/dashboard' }">首页</el-breadcrumb-item>
+            <el-breadcrumb-item v-if="currentRoute.meta.title">
+              {{ currentRoute.meta.title }}
+            </el-breadcrumb-item>
+          </el-breadcrumb>
+        </div>
+        <div class="header-right">
+          <el-dropdown @command="handleCommand">
+            <div class="user-info">
+              <el-avatar :size="32" :icon="UserFilled" />
+              <span class="username">{{ authStore.displayName }}</span>
+            </div>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="resetPassword">
+                  <el-icon><Key /></el-icon>
+                  修改密码
+                </el-dropdown-item>
+                <el-dropdown-item command="logout" divided>
+                  <el-icon><SwitchButton /></el-icon>
+                  退出登录
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </el-header>
+
+      <!-- 主内容区 -->
+      <el-main class="layout-content">
+        <router-view v-slot="{ Component }">
+          <transition name="fade" mode="out-in">
+            <component :is="Component" />
+          </transition>
+        </router-view>
+      </el-main>
+    </el-container>
+  </el-container>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { useAppStore } from '@/stores/app'
+import { createVisibleMenus } from '@/utils/permissions'
+import {
+  Box,
+  UserFilled,
+  Key,
+  SwitchButton,
+  Expand,
+  Fold,
+  Odometer,
+  Management,
+  Document,
+  DocumentCopy,
+  List,
+  ShoppingCart,
+  Goods,
+  TrendCharts,
+  Setting,
+  DataAnalysis,
+  Grid,
+  Connection
+} from '@element-plus/icons-vue'
+import { ElMessageBox } from 'element-plus'
+
+const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
+const appStore = useAppStore()
+
+// 当前激活的菜单
+const activeMenu = computed(() => route.path)
+
+// 当前路由
+const currentRoute = computed(() => route)
+
+// 侧边栏宽度
+const sidebarWidth = computed(() => {
+  return appStore.sidebarCollapsed ? '64px' : '200px'
+})
+
+// 菜单配置（按业务流程和使用频率排序）
+const menuConfig = [
+  {
+    path: '/dashboard',
+    title: '仪表板',
+    icon: TrendCharts,
+    permissions: [] // 所有人可见
+  },
+  {
+    path: '/projects',
+    title: '项目管理',
+    icon: Odometer,
+    permissions: ['project_view'] // 项目查看权限
+  },
+  {
+    path: '/progress',
+    title: '进度管理',
+    icon: DataAnalysis,
+    permissions: ['progress_view'] // 进度查看权限
+  },
+  {
+    path: '/construction-log',
+    title: '施工日志',
+    icon: Document,
+    permissions: ['constructionlog_view', 'constructionlog_create', 'constructionlog_edit', 'constructionlog_delete'] // 施工日志权限
+  },
+  {
+    path: '/materials-group',
+    title: '物资管理',
+    icon: Goods,
+    permissions: ['material_view', 'material_plan_view'], // 物资或计划查看权限
+    children: [
+      {
+        path: '/material-plans',
+        title: '物资计划',
+        icon: List,
+        permissions: ['material_plan_view'] // 物资计划查看权限
+      },
+      {
+        path: '/materials',
+        title: '物资浏览',
+        icon: Goods,
+        permissions: ['material_view'] // 物资查看权限
+      },
+      {
+        path: '/material-categories',
+        title: '物资分类',
+        icon: Grid,
+        permissions: ['material_view'] // 使用物资查看权限
+      }
+    ]
+  },
+  {
+    path: '/stock-group',
+    title: '库存管理',
+    icon: Management,
+    permissions: ['stock_view', 'inbound_view', 'requisition_view'], // 库存、入库或出库权限
+    children: [
+      {
+        path: '/stock',
+        title: '库存浏览',
+        icon: Management,
+        permissions: ['stock_view'] // 库存查看权限
+      },
+      {
+        path: '/inbound',
+        title: '入库管理',
+        icon: ShoppingCart,
+        permissions: ['inbound_view'] // 入库单查看权限
+      },
+      {
+        path: '/requisitions',
+        title: '出库管理',
+        icon: DocumentCopy,
+        permissions: ['requisition_view'] // 出库单查看权限
+      }
+    ]
+  },
+  {
+    path: '/workflows',
+    title: '工作流管理',
+    icon: Connection,
+    permissions: ['system_config'] // 使用系统配置权限
+  },
+  {
+    path: '/system',
+    title: '系统管理',
+    icon: Setting,
+    permissions: [
+      'system_log',        // 系统日志
+      'system_backup',     // 系统备份
+      'system_config',     // 系统配置
+      'system_report'      // 系统报告
+    ]
+  }
+]
+
+// 可见菜单 - 使用 ref 而非 computed，避免响应式循环
+// 在组件挂载时一次性计算，不响应权限变化
+const visibleMenus = ref([])
+
+// 初始化菜单
+const initMenus = () => {
+  visibleMenus.value = createVisibleMenus(menuConfig, authStore)
+}
+
+// 组件挂载时初始化菜单
+onMounted(() => {
+  initMenus()
+  handleResize()
+  window.addEventListener('resize', handleResize)
+})
+
+// 组件卸载时清理
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+})
+
+// 处理用户下拉菜单命令
+const handleCommand = async (command) => {
+  if (command === 'logout') {
+    try {
+      await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      })
+      await authStore.logout()
+      router.push('/login')
+    } catch (error) {
+      // 用户取消
+    }
+  } else if (command === 'resetPassword') {
+    router.push('/reset-password')
+  }
+}
+
+// 响应式处理
+const handleResize = () => {
+  const width = window.innerWidth
+  if (width < 768) {
+    appStore.setDevice('mobile')
+  } else {
+    appStore.setDevice('desktop')
+  }
+}
+</script>
+
+<style scoped>
+.layout-container {
+  height: 100vh;
+}
+
+.layout-aside {
+  background: #fff;
+  border-right: 1px solid #e6e6e6;
+  transition: width 0.3s;
+  overflow: hidden;
+}
+
+.logo-container {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid #e6e6e6;
+  padding: 0 20px;
+}
+
+.logo-icon {
+  font-size: 24px;
+  color: #409eff;
+  margin-right: 10px;
+}
+
+.logo-text {
+  font-size: 18px;
+  font-weight: bold;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layout-menu {
+  border-right: none;
+  height: calc(100vh - 60px);
+  overflow-y: auto;
+}
+
+.layout-main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.layout-header {
+  background: #fff;
+  border-bottom: 1px solid #e6e6e6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 60px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: 4px;
+  transition: background 0.3s;
+}
+
+.user-info:hover {
+  background: #f5f7fa;
+}
+
+.username {
+  font-size: 14px;
+  color: #333;
+}
+
+.layout-content {
+  background: #f5f7fa;
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* 过渡动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

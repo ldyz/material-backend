@@ -1,0 +1,476 @@
+package material_plan
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
+)
+
+// Service handles business logic for material plans
+type Service struct {
+	db *gorm.DB
+}
+
+// NewService creates a new material plan service
+func NewService(db *gorm.DB) *Service {
+	return &Service{db: db}
+}
+
+// GeneratePlanNo generates a unique plan number
+func (s *Service) GeneratePlanNo() (string, error) {
+	now := time.Now()
+	prefix := fmt.Sprintf("MP%s%02d%02d",
+		strings.ToUpper(now.Format("2006")[2:]), now.Month(), now.Day())
+
+	// 查找今天最大的纯数字序号计划（格式：MP2602010001）
+	// 使用 PostgreSQL 正则表达式匹配纯数字后缀
+	var lastPlan MaterialPlan
+	err := s.db.Where("plan_no ~ ?", fmt.Sprintf("^%s[0-9]{4}$", prefix)).
+		Order("plan_no DESC").
+		First(&lastPlan).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Sprintf("%s%04d", prefix, 1), nil
+		}
+		return "", err
+	}
+
+	// Extract sequence number from last plan number
+	seqStr := strings.TrimPrefix(lastPlan.PlanNo, prefix)
+	seq := 1
+	if seqStr != "" {
+		_, err := fmt.Sscanf(seqStr, "%d", &seq)
+		if err == nil {
+			seq++
+		}
+	}
+
+	return fmt.Sprintf("%s%04d", prefix, seq), nil
+}
+
+// CreatePlan creates a new material plan
+func (s *Service) CreatePlan(req *CreateMaterialPlanRequest, creatorID uint, creatorName string) (*MaterialPlan, error) {
+	// Generate plan number
+	planNo, err := s.GeneratePlanNo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate plan number: %w", err)
+	}
+
+	// Validate project exists
+	var project struct {
+		ID uint
+	}
+	if err := s.db.Table("projects").Where("id = ?", req.ProjectID).First(&project).Error; err != nil {
+		return nil, errors.New("project not found")
+	}
+
+	// Parse dates
+	var plannedStartDate, plannedEndDate *time.Time
+	if req.PlannedStartDate != "" {
+		t, err := time.Parse("2006-01-02", req.PlannedStartDate)
+		if err != nil {
+			return nil, errors.New("invalid planned_start_date format, use YYYY-MM-DD")
+		}
+		plannedStartDate = &t
+	}
+	if req.PlannedEndDate != "" {
+		t, err := time.Parse("2006-01-02", req.PlannedEndDate)
+		if err != nil {
+			return nil, errors.New("invalid planned_end_date format, use YYYY-MM-DD")
+		}
+		plannedEndDate = &t
+	}
+
+	// Validate date range
+	if plannedStartDate != nil && plannedEndDate != nil && plannedEndDate.Before(*plannedStartDate) {
+		return nil, errors.New("planned_end_date must be after planned_start_date")
+	}
+
+	// Create plan
+	plan := &MaterialPlan{
+		PlanNo:           planNo,
+		PlanName:         req.PlanName,
+		ProjectID:        req.ProjectID,
+		PlanType:         req.PlanType,
+		Status:           PlanStatusDraft,
+		Priority:         req.Priority,
+		PlannedStartDate: plannedStartDate,
+		PlannedEndDate:   plannedEndDate,
+		TotalBudget:      int(req.TotalBudget * 100),
+		Description:      req.Description,
+		Remark:           req.Remark,
+		CreatorID:        creatorID,
+		CreatorName:      creatorName,
+	}
+
+	// Set default values
+	if plan.PlanType == "" {
+		plan.PlanType = PlanTypeProcurement
+	}
+	if plan.Priority == "" {
+		plan.Priority = PriorityNormal
+	}
+
+	// Start transaction
+	tx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Create plan
+	if err := tx.Create(plan).Error; err != nil {
+		tx.Rollback()
+		return nil, fmt.Errorf("failed to create plan: %w", err)
+	}
+
+	// Create items
+	if len(req.Items) > 0 {
+		for i, itemReq := range req.Items {
+			item, err := s.CreatePlanItem(tx, plan.ID, &itemReq)
+			if err != nil {
+				tx.Rollback()
+				return nil, fmt.Errorf("failed to create item %d: %w", i+1, err)
+			}
+			plan.Items = append(plan.Items, *item)
+		}
+
+		// Recalculate total budget from items if not provided
+		if req.TotalBudget == 0 {
+			plan.CalculateTotalBudget()
+			tx.Save(plan)
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return plan, nil
+}
+
+// CreatePlanItem creates a plan item
+func (s *Service) CreatePlanItem(tx *gorm.DB, planID uint, req *CreateMaterialPlanItemRequest) (*MaterialPlanItem, error) {
+	// Validate material exists in material_master
+	var material struct {
+		ID uint
+	}
+	if err := tx.Table("material_master").Where("id = ?", req.MaterialID).First(&material).Error; err != nil {
+		return nil, errors.New("material not found in material_master")
+	}
+
+	// Parse required date
+	var requiredDate *time.Time
+	if req.RequiredDate != "" {
+		t, err := time.Parse("2006-01-02", req.RequiredDate)
+		if err != nil {
+			return nil, errors.New("invalid required_date format, use YYYY-MM-DD")
+		}
+		requiredDate = &t
+	}
+
+	item := &MaterialPlanItem{
+		PlanID:          planID,
+		MaterialID:      req.MaterialID,
+		PlannedQuantity: req.PlannedQuantity,
+		UnitPrice:       req.UnitPrice,
+		RequiredDate:    requiredDate,
+		Priority:        req.Priority,
+		Remark:          req.Remark,
+		Status:          ItemStatusPending,
+	}
+
+	// Set default values
+	if item.Priority == "" {
+		item.Priority = PriorityNormal
+	}
+
+	if err := tx.Create(item).Error; err != nil {
+		return nil, err
+	}
+
+	return item, nil
+}
+
+// UpdatePlan updates an existing material plan
+func (s *Service) UpdatePlan(id uint, req *UpdateMaterialPlanRequest) (*MaterialPlan, error) {
+	var plan MaterialPlan
+	if err := s.db.Preload("Items").First(&plan, id).Error; err != nil {
+		return nil, errors.New("plan not found")
+	}
+
+	// Check if plan can be edited
+	if plan.Status != PlanStatusDraft {
+		return nil, errors.New("only draft plans can be edited")
+	}
+
+	// Parse dates
+	var plannedStartDate, plannedEndDate *time.Time
+	if req.PlannedStartDate != "" {
+		t, err := time.Parse("2006-01-02", req.PlannedStartDate)
+		if err != nil {
+			return nil, errors.New("invalid planned_start_date format, use YYYY-MM-DD")
+		}
+		plannedStartDate = &t
+	}
+	if req.PlannedEndDate != "" {
+		t, err := time.Parse("2006-01-02", req.PlannedEndDate)
+		if err != nil {
+			return nil, errors.New("invalid planned_end_date format, use YYYY-MM-DD")
+		}
+		plannedEndDate = &t
+	}
+
+	// Update fields
+	updates := map[string]any{}
+	if req.PlanName != "" {
+		updates["plan_name"] = req.PlanName
+	}
+	if req.PlanType != "" {
+		updates["plan_type"] = req.PlanType
+	}
+	if req.Priority != "" {
+		updates["priority"] = req.Priority
+	}
+	if plannedStartDate != nil {
+		updates["planned_start_date"] = plannedStartDate
+	}
+	if plannedEndDate != nil {
+		updates["planned_end_date"] = plannedEndDate
+	}
+	if req.TotalBudget > 0 {
+		updates["total_budget"] = int(req.TotalBudget * 100)
+	}
+	if req.Description != "" {
+		updates["description"] = req.Description
+	}
+	if req.Remark != "" {
+		updates["remark"] = req.Remark
+	}
+
+	// Start transaction
+	tx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Update plan
+	if len(updates) > 0 {
+		if err := tx.Model(&plan).Updates(updates).Error; err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("failed to update plan: %w", err)
+		}
+	}
+
+	// Update items if provided
+	if req.Items != nil {
+		// Delete existing items
+		if err := tx.Where("plan_id = ?", plan.ID).Delete(&MaterialPlanItem{}).Error; err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("failed to delete old items: %w", err)
+		}
+
+		// Create new items
+		plan.Items = nil
+		for _, itemReq := range req.Items {
+			item, err := s.CreatePlanItem(tx, plan.ID, &itemReq)
+			if err != nil {
+				tx.Rollback()
+				return nil, fmt.Errorf("failed to create item: %w", err)
+			}
+			plan.Items = append(plan.Items, *item)
+		}
+
+		// Recalculate total budget
+		plan.CalculateTotalBudget()
+		tx.Save(plan)
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return &plan, nil
+}
+
+// GetPlan retrieves a plan by ID
+func (s *Service) GetPlan(id uint) (*MaterialPlan, error) {
+	var plan MaterialPlan
+	if err := s.db.Preload("Items").First(&plan, id).Error; err != nil {
+		return nil, errors.New("plan not found")
+	}
+	return &plan, nil
+}
+
+// ListPlans retrieves plans with filters
+func (s *Service) ListPlans(projectID uint, status, priority string, page, pageSize int) ([]MaterialPlan, int64, error) {
+	var plans []MaterialPlan
+	var total int64
+
+	query := s.db.Model(&MaterialPlan{})
+
+	// Apply filters
+	if projectID > 0 {
+		query = query.Where("project_id = ?", projectID)
+	}
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if priority != "" {
+		query = query.Where("priority = ?", priority)
+	}
+
+	// Count total
+	query.Count(&total)
+
+	// Paginate
+	offset := (page - 1) * pageSize
+	if err := query.Offset(offset).Limit(pageSize).
+		Order("created_at DESC").
+		Find(&plans).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return plans, total, nil
+}
+
+// DeletePlan deletes a plan
+func (s *Service) DeletePlan(id uint) error {
+	// Check if plan exists
+	var plan MaterialPlan
+	if err := s.db.First(&plan, id).Error; err != nil {
+		return errors.New("plan not found")
+	}
+
+	// Check if plan can be deleted
+	if plan.Status != PlanStatusDraft && plan.Status != PlanStatusCancelled {
+		return errors.New("only draft or cancelled plans can be deleted")
+	}
+
+	// Delete plan (items will be cascade deleted)
+	if err := s.db.Delete(&plan).Error; err != nil {
+		return fmt.Errorf("failed to delete plan: %w", err)
+	}
+
+	return nil
+}
+
+// UpdatePlanStatus updates the status of a plan
+func (s *Service) UpdatePlanStatus(id uint, status string, approverID *uint, approverName string) error {
+	var plan MaterialPlan
+	if err := s.db.First(&plan, id).Error; err != nil {
+		return errors.New("plan not found")
+	}
+
+	// Validate status transition
+	if !isValidStatusTransition(plan.Status, status) {
+		return errors.New("invalid status transition")
+	}
+
+	updates := map[string]any{
+		"status": status,
+	}
+
+	if approverID != nil {
+		updates["approver_id"] = *approverID
+		updates["approver_name"] = approverName
+		now := time.Now()
+		updates["approved_at"] = &now
+	}
+
+	if err := s.db.Model(&plan).Updates(updates).Error; err != nil {
+		return fmt.Errorf("failed to update plan status: %w", err)
+	}
+
+	return nil
+}
+
+// isValidStatusTransition checks if a status transition is valid
+func isValidStatusTransition(from, to string) bool {
+	validTransitions := map[string][]string{
+		PlanStatusDraft:    {PlanStatusPending, PlanStatusCancelled},
+		PlanStatusPending:  {PlanStatusApproved, PlanStatusRejected, PlanStatusCancelled},
+		PlanStatusApproved: {PlanStatusActive, PlanStatusCancelled},
+		PlanStatusActive:   {PlanStatusCompleted, PlanStatusCancelled},
+	}
+
+	allowed, exists := validTransitions[from]
+	if !exists {
+		return false
+	}
+
+	for _, status := range allowed {
+		if status == to {
+			return true
+		}
+	}
+
+	return false
+}
+
+// GetPlanItemsProgress retrieves progress of items in a plan
+func (s *Service) GetPlanItemsProgress(planID uint) ([]map[string]any, error) {
+	// Get plan items
+	var items []MaterialPlanItem
+	if err := s.db.Where("plan_id = ?", planID).Find(&items).Error; err != nil {
+		return nil, err
+	}
+
+	results := make([]map[string]any, 0, len(items))
+
+	for _, item := range items {
+		// Get material details
+		var material struct {
+			Code          string
+			Name          string
+			Specification string
+			Unit          string
+		}
+		s.db.Table("material_master").Where("id = ?", item.MaterialID).
+			Select("code, name, specification, unit").First(&material)
+
+		// Get issued quantity from stock_logs
+		var issuedQty float64
+		s.db.Table("stock_logs").
+			Joins("JOIN stocks ON stocks.id = stock_logs.stock_id").
+			Where("stocks.project_id IN (SELECT project_id FROM material_plans WHERE id = ?)", planID).
+			Where("stock_logs.material_id = ?", item.MaterialID).
+			Where("stock_logs.type = ?", "out").
+			Where("stock_logs.source_type = ?", "requisition").
+			Select("COALESCE(SUM(stock_logs.quantity), 0)").
+			Scan(&issuedQty)
+
+		result := map[string]any{
+			"id":               item.ID,
+			"plan_id":          item.PlanID,
+			"material_id":      item.MaterialID,
+			"material_code":    material.Code,
+			"material_name":    material.Name,
+			"specification":    material.Specification,
+			"unit":             material.Unit,
+			"planned_quantity": item.PlannedQuantity,
+			"issued_quantity":  issuedQty,
+			"remaining_quantity": item.PlannedQuantity - issuedQty,
+			"unit_price":       item.UnitPrice,
+			"status":           item.Status,
+			"progress":         0.0,
+		}
+
+		if item.PlannedQuantity > 0 {
+			result["progress"] = (issuedQty / item.PlannedQuantity) * 100
+		}
+
+		results = append(results, result)
+	}
+
+	return results, nil
+}

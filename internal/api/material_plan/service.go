@@ -157,12 +157,56 @@ func (s *Service) CreatePlan(req *CreateMaterialPlanRequest, creatorID uint, cre
 
 // CreatePlanItem creates a plan item
 func (s *Service) CreatePlanItem(tx *gorm.DB, planID uint, req *CreateMaterialPlanItemRequest) (*MaterialPlanItem, error) {
-	// Validate material exists in material_master
-	var material struct {
-		ID uint
-	}
-	if err := tx.Table("material_master").Where("id = ?", req.MaterialID).First(&material).Error; err != nil {
-		return nil, errors.New("material not found in material_master")
+	var materialID uint
+
+	// Strategy 1: If material_id is provided, use it directly
+	if req.MaterialID > 0 {
+		// Validate material exists in material_master
+		var material struct {
+			ID uint
+		}
+		if err := tx.Table("material_master").Where("id = ?", req.MaterialID).First(&material).Error; err != nil {
+			return nil, errors.New("material not found in material_master")
+		}
+		materialID = req.MaterialID
+	} else if req.MaterialName != "" {
+		// Strategy 2: Try to find material by name and specification
+		var material struct {
+			ID uint
+		}
+		query := tx.Table("material_master").Where("name = ?", req.MaterialName)
+
+		// If specification is provided, also match by specification
+		if req.Specification != "" {
+			query = query.Where("specification = ?", req.Specification)
+		}
+
+		if err := query.First(&material).Error; err == nil {
+			// Found existing material
+			materialID = material.ID
+		} else {
+			// Strategy 3: Auto-create material_master record
+			newMaterial := map[string]interface{}{
+				"code":          req.MaterialCode,
+				"name":          req.MaterialName,
+				"specification": req.Specification,
+				"category":      req.Category,
+				"unit":          req.Unit,
+				"price":         req.UnitPrice,
+			}
+
+			if err := tx.Table("material_master").Create(&newMaterial).Error; err != nil {
+				return nil, fmt.Errorf("failed to auto-create material_master: %w", err)
+			}
+
+			// Get the ID of newly created material
+			if err := tx.Table("material_master").Where("name = ? AND specification = ?", req.MaterialName, req.Specification).First(&material).Error; err != nil {
+				return nil, fmt.Errorf("failed to retrieve newly created material: %w", err)
+			}
+			materialID = material.ID
+		}
+	} else {
+		return nil, errors.New("either material_id or material_name is required")
 	}
 
 	// Parse required date
@@ -177,7 +221,7 @@ func (s *Service) CreatePlanItem(tx *gorm.DB, planID uint, req *CreateMaterialPl
 
 	item := &MaterialPlanItem{
 		PlanID:          planID,
-		MaterialID:      req.MaterialID,
+		MaterialID:      materialID,
 		PlannedQuantity: req.PlannedQuantity,
 		UnitPrice:       req.UnitPrice,
 		RequiredDate:    requiredDate,

@@ -98,7 +98,12 @@ type CreateMaterialPlanRequest struct {
 
 // CreateMaterialPlanItemRequest DTO for creating plan items
 type CreateMaterialPlanItemRequest struct {
-	MaterialID      uint    `json:"material_id" binding:"required"`
+	MaterialID      uint    `json:"material_id"`
+	MaterialName    string  `json:"material_name"`
+	MaterialCode    string  `json:"material_code"`
+	Specification   string  `json:"specification"`
+	Category        string  `json:"category"`
+	Unit            string  `json:"unit"`
 	PlannedQuantity float64 `json:"planned_quantity" binding:"required,gt=0"`
 	UnitPrice       float64 `json:"unit_price"`
 	RequiredDate    string  `json:"required_date"`

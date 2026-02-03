@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/xuri/excelize/v2"
@@ -31,15 +30,13 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	r.GET("/materials/export", auth.PermissionMiddleware(db, "material_view"), exportMaterials(service))
 	r.POST("/material/materials/import", auth.PermissionMiddleware(db, "material_create"), importMaterials(service))
 	r.GET("/materials/:id/logs", auth.PermissionMiddleware(db, "material_view"), getMaterialLogs(service))
-	r.GET("/materials/unstored", auth.PermissionMiddleware(db, "material_view"), listUnstoredMaterials(service))
-	r.GET("/materials/unstored/export", auth.PermissionMiddleware(db, "material_view"), exportUnstoredMaterials(service))
 
 	// Batch operations
 	r.POST("/materials/batch", auth.PermissionMiddleware(db, "material_import"), batchMaterials(service))
 	r.POST("/materials/batch-create", auth.PermissionMiddleware(db, "material_import"), batchCreateMaterials(service))
 }
 
-// listMaterials lists materials with filters and pagination
+// listMaterials lists plan material items with filters and pagination
 func listMaterials(service *Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -48,80 +45,26 @@ func listMaterials(service *Service) gin.HandlerFunc {
 			pageSize = 100
 		}
 
-		projectID, _ := strconv.ParseUint(c.Query("project_id"), 10, 64)
-		includeChildren := c.Query("include_children") == "true"
-
 		params := ListQueryParams{
 			Page:          page,
 			PageSize:      pageSize,
 			Search:        c.Query("search"),
 			Name:          c.Query("name"),
-			Material:      c.Query("material"),
-			Spec:          c.Query("spec"),
 			Specification: c.Query("specification"),
 			Category:      c.Query("category"),
-			Filter:        c.Query("filter"),
-			IncludeChildren: includeChildren,
 		}
 
-		// Handle project filtering
-		projectIDsStr := c.Query("project_ids")
-		if projectIDsStr != "" {
-			for _, idStr := range strings.Split(projectIDsStr, ",") {
-				if id, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 64); err == nil {
-					params.ProjectIDs = append(params.ProjectIDs, uint(id))
-				}
+		// Parse project_id filter
+		if projectIDStr := c.Query("project_id"); projectIDStr != "" {
+			if pid, err := strconv.ParseUint(projectIDStr, 10, 64); err == nil {
+				params.ProjectID = uint(pid)
 			}
-		} else if projectID > 0 && includeChildren {
-			params.ProjectIDs = append(params.ProjectIDs, uint(projectID))
-			childIDs := service.GetChildProjectIDs(uint(projectID))
-			params.ProjectIDs = append(params.ProjectIDs, childIDs...)
-		} else if projectID > 0 {
-			params.ProjectID = uint(projectID)
 		}
 
-		// Apply project access control
-		accessibleProjectIDs, err := auth.GetAccessibleProjectIDs(c, service.db)
-		if err != nil {
-			response.InternalError(c, "获取用户项目权限失败")
-			return
-		}
-
-		if accessibleProjectIDs != nil {
-			if len(accessibleProjectIDs) == 0 {
-				response.SuccessWithPagination(c, []map[string]any{}, int64(page), int64(pageSize), 0)
-				return
-			}
-
-			if len(params.ProjectIDs) > 0 {
-				// Verify all requested project IDs are accessible
-				for _, pid := range params.ProjectIDs {
-					hasAccess := false
-					for _, accessibleID := range accessibleProjectIDs {
-						if pid == accessibleID {
-							hasAccess = true
-							break
-						}
-					}
-					if !hasAccess {
-						response.Forbidden(c, "无权访问该项目")
-						return
-					}
-				}
-			} else if params.ProjectID > 0 {
-				hasAccess := false
-				for _, pid := range accessibleProjectIDs {
-					if params.ProjectID == pid {
-						hasAccess = true
-						break
-					}
-				}
-				if !hasAccess {
-					response.Forbidden(c, "无权访问该项目")
-					return
-				}
-			} else {
-				params.ProjectIDs = accessibleProjectIDs
+		// Parse plan_id filter
+		if planIDStr := c.Query("plan_id"); planIDStr != "" {
+			if pid, err := strconv.ParseUint(planIDStr, 10, 64); err == nil {
+				params.PlanID = uint(pid)
 			}
 		}
 
@@ -131,57 +74,7 @@ func listMaterials(service *Service) gin.HandlerFunc {
 			return
 		}
 
-		// Enrich with plan info
-		planMap := service.EnrichWithPlanInfo(results)
-
-		out := make([]map[string]any, 0, len(results))
-		for _, m := range results {
-			var projectID uint
-			if m.ProjectID != nil {
-				projectID = *m.ProjectID
-			}
-			spec := m.Specification
-			if spec == "" && m.Spec != "" {
-				spec = m.Spec
-			}
-
-			planInfo := planMap[m.ID]
-			plannedQty := 0
-			arrivedQty := 0
-			if planInfo.MaterialID > 0 {
-				plannedQty = planInfo.PlannedQuantity
-				arrivedQty = planInfo.ArrivedQuantity
-			}
-
-			remainingQty := plannedQty - arrivedQty
-			arrivalPercentage := 0.0
-			if plannedQty > 0 {
-				arrivalPercentage = float64(arrivedQty) / float64(plannedQty) * 100
-			}
-
-			out = append(out, map[string]any{
-				"id":                 m.ID,
-				"code":               m.Code,
-				"name":               m.Name,
-				"specification":      spec,
-				"unit":               m.Unit,
-				"price":              m.Price,
-				"description":        m.Description,
-				"category":           m.Category,
-				"quantity":           m.StockQuantity,
-				"planned_quantity":   plannedQty,
-				"arrived_quantity":   arrivedQty,
-				"remaining_quantity": remainingQty,
-				"arrival_percentage": arrivalPercentage,
-				"is_fully_arrived":   arrivedQty >= plannedQty && plannedQty > 0,
-				"project_id":         projectID,
-				"project_name":       m.ProjectName,
-				"material":           m.Material,
-				"spec":               m.Spec,
-			})
-		}
-
-		response.SuccessWithPagination(c, out, int64(page), int64(pageSize), total)
+		response.SuccessWithPagination(c, results, int64(page), int64(pageSize), total)
 	}
 }
 
@@ -210,15 +103,13 @@ func createMaterial(service *Service) gin.HandlerFunc {
 			return
 		}
 
-		if req.ProjectID == "" {
-			response.BadRequest(c, "请选择所属项目")
-			return
-		}
-
-		projectIDUint, err := strconv.ParseUint(req.ProjectID, 10, 64)
-		if err != nil || projectIDUint == 0 {
-			response.BadRequest(c, "项目ID格式无效")
-			return
+		// ProjectID is not in material_master table, but kept for API compatibility
+		var projectIDUint uint
+		if req.ProjectID != "" {
+			pid, err := strconv.ParseUint(req.ProjectID, 10, 64)
+			if err == nil && pid > 0 {
+				projectIDUint = uint(pid)
+			}
 		}
 
 		createReq := &CreateMaterialRequest{
@@ -230,7 +121,7 @@ func createMaterial(service *Service) gin.HandlerFunc {
 			Description:   req.Description,
 			Category:      req.Category,
 			Quantity:      req.Quantity,
-			ProjectID:     uint(projectIDUint),
+			ProjectID:     projectIDUint,
 			Material:      req.Material,
 			Spec:          req.Spec,
 		}
@@ -509,188 +400,6 @@ func getMaterialLogs(service *Service) gin.HandlerFunc {
 			"logs":  logs,
 			"total": len(logs),
 		})
-	}
-}
-
-// listUnstoredMaterials lists materials that are not fully received
-func listUnstoredMaterials(service *Service) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-		if pageSize > 100 {
-			pageSize = 100
-		}
-
-		projectID, _ := strconv.ParseUint(c.Query("project_id"), 10, 64)
-
-		params := ListQueryParams{
-			Page:    page,
-			PageSize: pageSize,
-			Filter:  "unstored",
-		}
-
-		// Apply project access control
-		accessibleProjectIDs, err := auth.GetAccessibleProjectIDs(c, service.db)
-		if err != nil {
-			response.InternalError(c, "获取用户项目权限失败")
-			return
-		}
-
-		if accessibleProjectIDs != nil {
-			if len(accessibleProjectIDs) == 0 {
-				response.SuccessWithPagination(c, []map[string]any{}, int64(page), int64(pageSize), 0)
-				return
-			}
-
-			if projectID == 0 {
-				params.ProjectIDs = accessibleProjectIDs
-			} else {
-				hasAccess := false
-				for _, pid := range accessibleProjectIDs {
-					if uint(projectID) == pid {
-						hasAccess = true
-						break
-					}
-				}
-				if !hasAccess {
-					response.Forbidden(c, "无权访问该项目")
-					return
-				}
-				params.ProjectID = uint(projectID)
-			}
-		} else if projectID > 0 {
-			params.ProjectID = uint(projectID)
-		}
-
-		results, total, err := service.ListMaterials(params)
-		if err != nil {
-			response.InternalError(c, "获取未入库物资列表失败")
-			return
-		}
-
-		out := make([]map[string]any, 0, len(results))
-		for _, m := range results {
-			out = append(out, map[string]any{
-				"id":            m.ID,
-				"code":          m.Code,
-				"name":          m.Name,
-				"specification": m.Specification,
-				"unit":          m.Unit,
-				"price":         m.Price,
-				"description":   m.Description,
-				"category":      m.Category,
-				"quantity":      m.Quantity,
-				"project_id":    m.ProjectID,
-				"material":      m.Material,
-				"spec":          m.Spec,
-			})
-		}
-
-		response.SuccessWithPagination(c, out, int64(page), int64(pageSize), total)
-	}
-}
-
-// exportUnstoredMaterials exports unstored materials to Excel
-func exportUnstoredMaterials(service *Service) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		projectID, _ := strconv.ParseUint(c.Query("project_id"), 10, 64)
-
-		// Apply project access control
-		accessibleProjectIDs, err := auth.GetAccessibleProjectIDs(c, service.db)
-		if err != nil {
-			response.InternalError(c, "获取用户项目权限失败")
-			return
-		}
-
-		var projectIDs []uint
-		if accessibleProjectIDs != nil {
-			if len(accessibleProjectIDs) == 0 {
-				projectIDs = []uint{}
-			} else {
-				if projectID == 0 {
-					projectIDs = accessibleProjectIDs
-				} else {
-					hasAccess := false
-					for _, pid := range accessibleProjectIDs {
-						if uint(projectID) == pid {
-							hasAccess = true
-							break
-						}
-					}
-					if !hasAccess {
-						response.Forbidden(c, "无权访问该项目")
-						return
-					}
-					projectIDs = []uint{uint(projectID)}
-				}
-			}
-		} else if projectID > 0 {
-			projectIDs = []uint{uint(projectID)}
-		}
-
-		params := ListQueryParams{
-			Filter:     "unstored",
-			ProjectIDs: projectIDs,
-		}
-
-		results, _, err := service.ListMaterials(params)
-		if err != nil {
-			response.InternalError(c, "获取未入库物资列表失败")
-			return
-		}
-
-		// Create Excel file
-		f := excelize.NewFile()
-		defer f.Close()
-
-		sheet := "未入库物资"
-		f.NewSheet(sheet)
-		f.DeleteSheet("Sheet1")
-
-		// Set headers
-		headers := []string{"ID", "编码", "物资名称", "规格", "材质", "单位", "价格", "分类", "数量", "描述", "项目ID"}
-		for i, header := range headers {
-			cell := fmt.Sprintf("%s1", string(rune('A'+i)))
-			f.SetCellValue(sheet, cell, header)
-		}
-
-		// Set column widths
-		colWidths := []float64{8, 12, 15, 15, 12, 8, 10, 10, 8, 20, 10}
-		for i, width := range colWidths {
-			col := string(rune('A' + i))
-			f.SetColWidth(sheet, col, col, width)
-		}
-
-		// Fill data
-		for idx, m := range results {
-			row := idx + 2
-			spec := m.Specification
-			if spec == "" && m.Spec != "" {
-				spec = m.Spec
-			}
-
-			f.SetCellValue(sheet, fmt.Sprintf("A%d", row), m.ID)
-			f.SetCellValue(sheet, fmt.Sprintf("B%d", row), m.Code)
-			f.SetCellValue(sheet, fmt.Sprintf("C%d", row), m.Name)
-			f.SetCellValue(sheet, fmt.Sprintf("D%d", row), spec)
-			f.SetCellValue(sheet, fmt.Sprintf("E%d", row), m.Material)
-			f.SetCellValue(sheet, fmt.Sprintf("F%d", row), m.Unit)
-			f.SetCellValue(sheet, fmt.Sprintf("G%d", row), m.Price)
-			f.SetCellValue(sheet, fmt.Sprintf("H%d", row), m.Category)
-			f.SetCellValue(sheet, fmt.Sprintf("I%d", row), m.Quantity)
-			f.SetCellValue(sheet, fmt.Sprintf("J%d", row), m.Description)
-			f.SetCellValue(sheet, fmt.Sprintf("K%d", row), m.ProjectID)
-		}
-
-		buffer, err := f.WriteToBuffer()
-		if err != nil {
-			response.InternalError(c, "生成Excel文件失败")
-			return
-		}
-
-		c.Header("Content-Disposition", "attachment; filename=未入库物资导出.xlsx")
-		c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-		c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer.Bytes())
 	}
 }
 

@@ -24,6 +24,7 @@ import (
 	"github.com/yourorg/material-backend/backend/internal/api/notification"
 	"github.com/yourorg/material-backend/backend/internal/api/workflow"
 	"github.com/yourorg/material-backend/backend/internal/api/material_plan"
+	"github.com/yourorg/material-backend/backend/internal/api/agent"
 	"github.com/yourorg/material-backend/backend/internal/db"
 	"github.com/yourorg/material-backend/backend/internal/middleware"
 	"golang.org/x/crypto/bcrypt"
@@ -136,6 +137,7 @@ func main() {
 		&workflow.WorkflowDefinition{}, &workflow.WorkflowNode{}, &workflow.WorkflowEdge{},
 		&workflow.WorkflowNodeApprover{}, &workflow.WorkflowInstance{}, &workflow.WorkflowApproval{},
 		&workflow.WorkflowPendingTask{}, &workflow.WorkflowLog{},
+		&agent.AgentOperationLog{},
 	)
 
 	// create default admin role/user if not exists
@@ -234,6 +236,7 @@ func main() {
 		notification.RegisterRoutes(api, dbConn)
 		material_plan.RegisterRoutes(api, dbConn)
 		workflow.RegisterRoutes(api, dbConn)
+		agent.RegisterRoutes(api, dbConn)
 	}
 
 	// SPA路由回退 - 所有非API和非静态文件请求都返回对应的前端入口

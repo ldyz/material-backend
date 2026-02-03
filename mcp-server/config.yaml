@@ -1,0 +1,112 @@
+# MCP Server Configuration
+# Material Management System MCP Server
+
+server:
+  name: "material-management-mcp"
+  version: "1.0.0"
+  description: "MCP Server for Material Management System AI Agent operations"
+
+backend:
+  base_url: "http://localhost:8088"
+  timeout: 30
+  retry: 3
+
+authentication:
+  type: "jwt"
+  secret_key_env: "JWT_SECRET"
+  token_ttl: 3600
+
+logging:
+  level: "info"
+  format: "json"
+  file: "/var/log/mcp-server.log"
+
+# Available tools that AI agents can use
+tools:
+  - name: "query_materials"
+    description: "Query material master data"
+    enabled: true
+    rate_limit: 10
+    parameters:
+      - name: "search"
+        type: "string"
+        required: false
+        description: "Search keyword for material name or specification"
+      - name: "limit"
+        type: "integer"
+        required: false
+        description: "Maximum number of results (default: 10)"
+
+  - name: "analyze_inventory"
+    description: "Analyze inventory data and generate insights"
+    enabled: true
+    rate_limit: 10
+    parameters:
+      - name: "question"
+        type: "string"
+        required: true
+        description: "Natural language question about inventory"
+
+  - name: "create_material_plan"
+    description: "Create a material procurement plan"
+    enabled: true
+    requires_approval: false
+    parameters:
+      - name: "project_id"
+        type: "integer"
+        required: true
+        description: "Project ID"
+      - name: "items"
+        type: "array"
+        required: true
+        description: "Array of material plan items"
+      - name: "remark"
+        type: "string"
+        required: false
+        description: "Plan remarks"
+
+  - name: "get_stock_alerts"
+    description: "Get low stock alerts"
+    enabled: true
+    rate_limit: 5
+
+  - name: "approve_workflow"
+    description: "Approve a workflow task"
+    enabled: true
+    requires_approval: true
+    parameters:
+      - name: "task_id"
+        type: "integer"
+        required: true
+        description: "Workflow task ID"
+      - name: "remark"
+        type: "string"
+        required: false
+        description: "Approval remarks"
+
+  - name: "get_pending_tasks"
+    description: "Get pending workflow tasks"
+    enabled: true
+    rate_limit: 10
+
+# Available resources that AI agents can subscribe to
+resources:
+  - name: "inventory://alerts"
+    description: "Real-time inventory alerts"
+    refresh_interval: 300
+    enabled: true
+
+  - name: "workflow://pending-tasks"
+    description: "Pending workflow tasks"
+    refresh_interval: 60
+    enabled: true
+
+  - name: "material://plans"
+    description: "Material plans overview"
+    refresh_interval: 120
+    enabled: true
+
+  - name: "stock://summary"
+    description: "Stock summary statistics"
+    refresh_interval: 300
+    enabled: true

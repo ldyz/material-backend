@@ -2,27 +2,33 @@ package material
 
 import "time"
 
-// Material model maps to 'materials' table
+// Material model maps to 'material_master' table
 type Material struct {
-	ID            uint      `gorm:"primaryKey" json:"id"`
-	Code          *string   `gorm:"type:text" json:"code"`
-	Name          string    `gorm:"type:text;not null" json:"name"`
-	Specification string    `gorm:"type:text" json:"specification"`
-	Unit          string    `gorm:"type:text" json:"unit"`
-	Price         float64   `gorm:"type:real" json:"price"`
-	Description   string    `gorm:"type:text" json:"description"`
-	Category      string    `gorm:"type:text" json:"category"`
-	Quantity      int       `gorm:"type:integer" json:"quantity"`
-	ProjectID     *uint     `gorm:"type:integer" json:"project_id"`
-	Material      string    `gorm:"type:text" json:"material"`
-	Spec          string    `gorm:"type:text" json:"spec"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID            uint       `gorm:"primaryKey" json:"id"`
+	Code          *string    `gorm:"type:text" json:"code"`
+	Name          string     `gorm:"type:text;not null" json:"name"`
+	Specification string     `gorm:"type:text" json:"specification"`
+	Unit          string     `gorm:"type:text" json:"unit"`
+	Category      string     `gorm:"type:text" json:"category"`
+	SafetyStock   *int       `gorm:"type:integer" json:"safety_stock"`
+	Description   string     `gorm:"type:text" json:"description"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+
+	// Additional fields that are not in material_master table
+	// These are used for joining with other tables
+	ProjectID     *uint      `gorm:"-" json:"project_id,omitempty"`
+	ProjectName   *string    `gorm:"-" json:"project_name,omitempty"`
+	Quantity      int        `gorm:"-" json:"quantity,omitempty"`
+	StockQuantity float64    `gorm:"-" json:"stock_quantity,omitempty"`
+	Price         float64    `gorm:"-" json:"price,omitempty"`
+	Material      string     `gorm:"-" json:"material,omitempty"`
+	Spec          string     `gorm:"-" json:"spec,omitempty"`
 }
 
 // TableName specifies the table name for Material
 func (Material) TableName() string {
-	return "materials"
+	return "material_master"
 }
 
 // ToDTO converts Material to DTO format

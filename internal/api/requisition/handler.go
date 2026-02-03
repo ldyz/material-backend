@@ -174,6 +174,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			Items      []RequisitionItemReq `json:"items" binding:"required,dive"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
+			fmt.Printf("Create requisition validation error: %v\n", err)
 			response.BadRequest(c, err.Error())
 			return
 		}
@@ -802,6 +803,28 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			tx.Rollback()
 			response.InternalError(c, "提交发放失败")
 			return
+		}
+
+		// Update material plan issued quantities if linked to a plan
+		if requisition.PlanID != nil {
+			for _, item := range requisition.Items {
+				// Get actual quantity
+				actualQty := item.ActualQuantity
+				if actualQty == 0 {
+					actualQty = item.ApprovedQuantity
+				}
+
+				// Update issued_quantity in material_plan_items
+				result := db.Table("material_plan_items").
+					Where("plan_id = ? AND material_id = ?", *requisition.PlanID, item.MaterialID).
+					Update("issued_quantity", gorm.Expr("issued_quantity + ?", actualQty))
+
+				if result.Error != nil {
+					// Log error but don't fail the response
+					fmt.Printf("Warning: Failed to update issued_quantity for plan_id=%d, material_id=%d: %v\n",
+						*requisition.PlanID, item.MaterialID, result.Error)
+				}
+			}
 		}
 
 		// Reload the requisition with updated items

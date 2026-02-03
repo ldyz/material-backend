@@ -8,7 +8,12 @@
         @click-left="onClickLeft"
       >
         <template #right>
-          <NotificationCenter />
+          <van-icon
+            :badge="unreadCount > 0 ? unreadCount : null"
+            name="bell"
+            size="20"
+            @click="goToNotifications"
+          />
         </template>
       </van-nav-bar>
     </van-sticky>
@@ -37,25 +42,23 @@
         首页
       </van-tabbar-item>
       <van-tabbar-item
-        v-if="canViewInbound"
-        name="inbound"
-        icon="logistics"
+        name="plans"
+        icon="orders-o"
       >
-        入库
+        计划
       </van-tabbar-item>
       <van-tabbar-item
-        v-if="canViewRequisition"
-        name="outbound"
-        icon="send-gift-o"
+        name="materials"
+        icon="apps-o"
       >
-        出库
+        物资
       </van-tabbar-item>
       <van-tabbar-item
-        v-if="canViewConstructionLog"
-        name="construction"
-        icon="notes-o"
+        name="tasks"
+        icon="todo-list-o"
+        :badge="pendingTaskCount > 0 ? pendingTaskCount : null"
       >
-        日志
+        待办
       </van-tabbar-item>
       <van-tabbar-item name="profile" icon="user-o">
         我的
@@ -65,37 +68,31 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { usePermission } from '@/composables/usePermission'
-import NotificationCenter from '@/components/NotificationCenter.vue'
+import { useNotification } from '@/composables/useNotification'
 
 const route = useRoute()
 const router = useRouter()
-const { canViewInbound, canViewRequisition, canViewConstructionLog } = usePermission()
+const { unreadCount } = useNotification()
 
 const activeTab = ref('home')
+const pendingTaskCount = ref(0)
 
 // 是否显示顶部导航栏
 const showHeader = computed(() => {
   const path = route.path
 
-  // 详情页、创建页、审批页不显示顶部导航（这些页面有自己的导航栏）
+  // 详情页、创建页、审批页不显示顶部导航
   const shouldHide =
-    // 详情页：路径中包含单个数字ID的
-    /^\/inbound\/\d+$/.test(path) ||
-    /^\/outbound\/\d+$/.test(path) ||
-    /^\/construction\/\d+$/.test(path) ||
-    /^\/stock\/\d+$/.test(path) ||
-    // 创建页
+    /^\/(plans|inbound|outbound|materials)\/\d+$/.test(path) ||
     path.endsWith('/create') ||
-    // 审批页
     path.includes('/approve') ||
-    // 编辑页
-    path.includes('/edit')
+    path.includes('/edit') ||
+    path.includes('/issue')
 
-  // 首页、列表页、我的页面显示顶部导航
-  const showHeaderRoutes = ['/', '/home', '/inbound', '/outbound', '/profile', '/construction', '/stock']
+  // 显示顶部导航的路由
+  const showHeaderRoutes = ['/', '/home', '/plans', '/inbound', '/outbound', '/materials', '/stock', '/tasks', '/profile']
 
   return !shouldHide && showHeaderRoutes.some(p => path === p || path.startsWith(p + '/'))
 })
@@ -107,8 +104,7 @@ const pageTitle = computed(() => {
 
 // 是否显示返回按钮
 const showBack = computed(() => {
-  // 非首页显示返回按钮
-  return route.path !== '/'
+  return route.path !== '/' && route.path !== '/home'
 })
 
 // 返回上一页
@@ -120,18 +116,36 @@ function onClickLeft() {
   }
 }
 
+// 前往通知中心
+function goToNotifications() {
+  router.push('/notifications')
+}
+
+// 加载待办数量
+async function loadPendingCount() {
+  try {
+    // 从 localStorage 或 API 获取待办数量
+    const stored = localStorage.getItem('pending_task_count')
+    if (stored) {
+      pendingTaskCount.value = parseInt(stored, 10)
+    }
+  } catch (error) {
+    console.error('加载待办数量失败:', error)
+  }
+}
+
 // 根据路由更新当前 tab
 watch(
   () => route.path,
   (path) => {
     if (path === '/' || path.startsWith('/home')) {
       activeTab.value = 'home'
-    } else if (path.startsWith('/inbound')) {
-      activeTab.value = 'inbound'
-    } else if (path.startsWith('/outbound')) {
-      activeTab.value = 'outbound'
-    } else if (path.startsWith('/construction')) {
-      activeTab.value = 'construction'
+    } else if (path.startsWith('/plans')) {
+      activeTab.value = 'plans'
+    } else if (path.startsWith('/materials') || path.startsWith('/stock')) {
+      activeTab.value = 'materials'
+    } else if (path.startsWith('/tasks')) {
+      activeTab.value = 'tasks'
     } else if (path.startsWith('/profile')) {
       activeTab.value = 'profile'
     }
@@ -141,13 +155,24 @@ watch(
 
 // 切换 tab
 function onTabChange(name) {
-  router.push(`/${name === 'home' ? '' : name}`)
+  if (name === 'home') {
+    router.push('/')
+  } else {
+    router.push(`/${name}`)
+  }
 }
+
+onMounted(() => {
+  loadPendingCount()
+  // 定期更新待办数量
+  setInterval(loadPendingCount, 30000)
+})
 </script>
 
 <style scoped>
 .tabbar-layout {
   min-height: 100vh;
   background-color: #f7f8fa;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 </style>

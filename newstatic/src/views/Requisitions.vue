@@ -900,12 +900,9 @@ const handleSubmit = async () => {
       urgent: formData.urgent,
       remark: formData.remark,
       items: formData.items.map(item => ({
-        stock_id: item.stock_id || item.material_id,
-        name: item.material_name || item.name,
-        spec: item.spec || item.specification,
-        unit: item.unit,
-        material: item.material,
-        quantity: item.quantity || 0,
+        stock_id: item.stock_id,
+        material_id: item.material_id,
+        requested_quantity: item.quantity || 0,
         remark: item.remark || ''
       }))
     }

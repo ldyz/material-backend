@@ -63,9 +63,9 @@
               <div class="progress-card">
                 <div class="progress-label">到货进度</div>
                 <el-progress
-                  :percentage="Math.round(planDetail.progress.arrival_progress || 0)"
+                  :percentage="Math.round(planDetail.progress.receive_progress || 0)"
                   :stroke-width="12"
-                  :color="getProgressColor(planDetail.progress.arrival_progress)"
+                  :color="getProgressColor(planDetail.progress.receive_progress)"
                 />
               </div>
             </el-card>
@@ -114,17 +114,17 @@
           <el-table-column prop="category" label="分类" width="100" />
           <el-table-column prop="unit" label="单位" width="70" />
           <el-table-column prop="planned_quantity" label="计划数量" width="90" align="right" />
-          <el-table-column prop="arrived_quantity" label="已到货" width="80" align="right">
+          <el-table-column label="已到货" width="80" align="right">
             <template #default="scope">
-              {{ scope.row.arrived_quantity || 0 }}
+              {{ scope.row.received_quantity || 0 }}
             </template>
           </el-table-column>
-          <el-table-column prop="issued_quantity" label="已发放" width="80" align="right">
+          <el-table-column label="已发放" width="80" align="right">
             <template #default="scope">
               {{ scope.row.issued_quantity || 0 }}
             </template>
           </el-table-column>
-          <el-table-column prop="remaining_quantity" label="剩余" width="80" align="right">
+          <el-table-column label="剩余" width="80" align="right">
             <template #default="scope">
               {{ scope.row.remaining_quantity || 0 }}
             </template>
@@ -132,9 +132,9 @@
           <el-table-column label="进度" width="150" align="center">
             <template #default="scope">
               <el-progress
-                :percentage="Math.round(scope.row.arrival_progress || 0)"
+                :percentage="Math.round(scope.row.receive_progress || 0)"
                 :stroke-width="8"
-                :status="scope.row.arrival_progress >= 100 ? 'success' : undefined"
+                :status="scope.row.receive_progress >= 100 ? 'success' : undefined"
               />
             </template>
           </el-table-column>

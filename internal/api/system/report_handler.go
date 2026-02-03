@@ -22,7 +22,7 @@ func RegisterReportRoutes(r *gin.RouterGroup, db *gorm.DB) {
 		thirtyDaysAgo := now.AddDate(0, 0, -30)
 		var materialCount, stockCount, inboundCount, inboundApproved, reqCount, reqApproved int64
 		var totalStockValue float64
-		db.Model(&struct{}{}).Table("materials").Count(&materialCount)
+		db.Model(&struct{}{}).Table("material_master").Count(&materialCount)
 		db.Model(&struct{}{}).Table("stocks").Count(&stockCount)
 		db.Model(&struct{}{}).Table("stocks").Select("SUM(quantity * price)").Row().Scan(&totalStockValue)
 		db.Model(&struct{}{}).Table("inbound_orders").Where("created_at >= ?", thirtyDaysAgo).Count(&inboundCount)
@@ -99,7 +99,7 @@ func RegisterReportRoutes(r *gin.RouterGroup, db *gorm.DB) {
 		switch req.Type {
 		case "material":
 			var materials []map[string]any
-			query := db.Model(&struct{}{}).Table("materials")
+			query := db.Model(&struct{}{}).Table("material_master")
 			if req.ProjectID > 0 {
 				query = query.Where("project_id = ?", req.ProjectID)
 			}

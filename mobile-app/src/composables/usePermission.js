@@ -59,6 +59,12 @@ export function usePermission() {
   const canViewConstructionLog = computed(() => hasPermission(PERMISSIONS.CONSTRUCTION_LOG_VIEW))
   const canCreateConstructionLog = computed(() => hasPermission(PERMISSIONS.CONSTRUCTION_LOG_CREATE))
 
+  // 物资计划权限
+  const canViewMaterialPlan = computed(() => hasPermission(PERMISSIONS.MATERIAL_PLAN_VIEW))
+  const canCreateMaterialPlan = computed(() => hasPermission(PERMISSIONS.MATERIAL_PLAN_CREATE))
+  const canApproveMaterialPlan = computed(() => hasPermission(PERMISSIONS.MATERIAL_PLAN_APPROVE))
+  const canDeleteMaterialPlan = computed(() => hasPermission(PERMISSIONS.MATERIAL_PLAN_DELETE))
+
   // AI 分析权限
   const canUseAI = computed(() => hasPermission(PERMISSIONS.AI_ANALYZE))
 
@@ -80,6 +86,10 @@ export function usePermission() {
     canAdjustStock,
     canViewConstructionLog,
     canCreateConstructionLog,
+    canViewMaterialPlan,
+    canCreateMaterialPlan,
+    canApproveMaterialPlan,
+    canDeleteMaterialPlan,
     canUseAI,
   }
 }

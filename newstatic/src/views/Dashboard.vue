@@ -21,10 +21,6 @@
             <div class="stat-content">
               <div class="stat-value" v-loading="stat.loading">{{ stat.value }}</div>
               <div class="stat-label">{{ stat.title }}</div>
-              <div class="stat-trend" v-if="stat.trend">
-                <el-icon><TrendCharts /></el-icon>
-                <span>{{ stat.trendText }}</span>
-              </div>
             </div>
           </div>
         </el-col>
@@ -34,7 +30,7 @@
     <!-- 主要内容区域 -->
     <el-row :gutter="20" class="content-section">
       <!-- 快捷操作 -->
-      <el-col :xs="24" :lg="16">
+      <el-col :xs="24" :lg="24">
         <div class="card quick-actions-card">
           <div class="card-header">
             <h3 class="card-title">快捷操作</h3>
@@ -62,38 +58,6 @@
           </div>
         </div>
       </el-col>
-
-      <!-- 最近活动 -->
-      <el-col :xs="24" :lg="8">
-        <div class="card activity-card">
-          <div class="card-header">
-            <h3 class="card-title">最近活动</h3>
-            <el-button type="primary" text @click="viewAllLogs">查看全部</el-button>
-          </div>
-          <div class="activity-list" v-loading="logsLoading">
-            <div
-              v-for="activity in recentActivities"
-              :key="activity.id"
-              class="activity-item"
-            >
-              <div class="activity-icon" :class="activity.type">
-                <el-icon>
-                  <component :is="getActivityIcon(activity.type)" />
-                </el-icon>
-              </div>
-              <div class="activity-content">
-                <div class="activity-title">{{ activity.title }}</div>
-                <div class="activity-time">{{ activity.time }}</div>
-              </div>
-            </div>
-            <el-empty
-              v-if="recentActivities.length === 0 && !logsLoading"
-              description="暂无活动"
-              :image-size="80"
-            />
-          </div>
-        </div>
-      </el-col>
     </el-row>
   </div>
 </template>
@@ -113,7 +77,6 @@ import {
   Calendar,
   Flag,
   Bell,
-  TrendCharts,
   Plus,
   Upload,
   Download,
@@ -148,36 +111,42 @@ const statistics = ref([
     value: '-',
     icon: Box,
     color: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    status: 'success',
-    trend: 'up',
-    trendText: '+12%'
+    status: 'success'
+  },
+  {
+    title: '项目总数',
+    value: '-',
+    icon: Flag,
+    color: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+    status: 'primary'
   },
   {
     title: '库存预警',
     value: '-',
     icon: ShoppingCart,
     color: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-    status: 'warning',
-    trend: 'down',
-    trendText: '较上月'
+    status: 'warning'
   },
   {
     title: '待处理出库',
     value: '-',
     icon: Document,
     color: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-    status: 'info',
-    trend: 'neutral',
-    trendText: '待处理'
+    status: 'info'
   },
   {
-    title: '进行中计划',
+    title: '本月入库',
     value: '-',
-    icon: Flag,
-    color: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-    status: 'primary',
-    trend: 'up',
-    trendText: '+5%'
+    icon: Upload,
+    color: 'linear-gradient(135deg, #30cfd0 0%, #330867 100%)',
+    status: 'success'
+  },
+  {
+    title: '本月出库',
+    value: '-',
+    icon: Download,
+    color: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
+    status: 'primary'
   }
 ])
 
@@ -239,94 +208,35 @@ const quickActions = ref([
   }
 ])
 
-// 最近活动数据
-const recentActivities = ref([])
-const logsLoading = ref(false)
-
 // 获取统计数据
 const fetchStatistics = async () => {
   try {
     const response = await systemApi.getStats()
     const data = response.data || response
 
-    // 更新统计数据
+    // 更新统计数据 - 按照新的6个统计卡片顺序
     if (data.total_materials !== undefined) {
       statistics.value[0].value = data.total_materials.toLocaleString()
     }
+    if (data.total_projects !== undefined) {
+      statistics.value[1].value = data.total_projects.toLocaleString()
+    }
     if (data.low_stock_count !== undefined) {
-      statistics.value[1].value = data.low_stock_count.toLocaleString()
+      statistics.value[2].value = data.low_stock_count.toLocaleString()
     }
     if (data.pending_requisitions !== undefined) {
-      statistics.value[2].value = data.pending_requisitions.toLocaleString()
+      statistics.value[3].value = data.pending_requisitions.toLocaleString()
     }
-    if (data.total_users !== undefined) {
-      statistics.value[3].value = data.total_users.toLocaleString()
+    if (data.monthly_inbound !== undefined) {
+      statistics.value[4].value = data.monthly_inbound.toLocaleString()
+    }
+    if (data.monthly_requisitions !== undefined) {
+      statistics.value[5].value = data.monthly_requisitions.toLocaleString()
     }
   } catch (error) {
     console.error('获取统计数据失败:', error)
     // 保持默认值
   }
-}
-
-// 获取最近活动
-const fetchRecentActivities = async () => {
-  logsLoading.value = true
-  try {
-    const { data } = await systemApi.getLogs({
-      page: 1,
-      page_size: 5
-    })
-
-    const logs = data || []
-
-    recentActivities.value = logs.slice(0, 5).map((log, index) => ({
-      id: index,
-      type: log.status === 'success' || log.result === '成功' ? 'success' : 'error',
-      title: log.action || log.description || log.operation || '系统操作',
-      time: formatTime(log.created_at || log.timestamp || ''),
-      raw: log
-    }))
-  } catch (error) {
-    console.error('获取最近活动失败:', error)
-  } finally {
-    logsLoading.value = false
-  }
-}
-
-// 格式化时间
-const formatTime = (timeStr) => {
-  if (!timeStr) return ''
-
-  try {
-    const date = new Date(timeStr)
-    const now = new Date()
-    const diff = now - date
-
-    if (diff < 60000) { // 1分钟内
-      return '刚刚'
-    } else if (diff < 3600000) { // 1小时内
-      const minutes = Math.floor(diff / 60000)
-      return `${minutes}分钟前`
-    } else if (diff < 86400000) { // 24小时内
-      const hours = Math.floor(diff / 3600000)
-      return `${hours}小时前`
-    } else {
-      return date.toLocaleDateString('zh-CN')
-    }
-  } catch (error) {
-    return timeStr
-  }
-}
-
-// 获取活动图标
-const getActivityIcon = (type) => {
-  const iconMap = {
-    success: 'CircleCheck',
-    error: 'CircleClose',
-    info: 'InfoFilled',
-    warning: 'Warning'
-  }
-  return iconMap[type] || 'InfoFilled'
 }
 
 // 处理快捷操作
@@ -345,14 +255,8 @@ const viewAllActions = () => {
   console.log('查看全部快捷操作')
 }
 
-// 查看全部日志
-const viewAllLogs = () => {
-  router.push('/system')
-}
-
 onMounted(() => {
   fetchStatistics()
-  fetchRecentActivities()
 })
 </script>
 
@@ -447,18 +351,6 @@ onMounted(() => {
   margin-right: auto;
 }
 
-.stat-trend {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  color: #909399;
-}
-
-.stat-trend .el-icon {
-  font-size: 16px;
-}
-
 /* 主内容区域 */
 .content-section {
   margin-bottom: 24px;
@@ -535,70 +427,6 @@ onMounted(() => {
 }
 
 .action-desc {
-  font-size: 12px;
-  color: #909399;
-}
-
-/* 最近活动卡片 */
-.activity-card {
-  height: 100%;
-}
-
-.activity-list {
-  padding: 20px 0;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.activity-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 0;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.activity-item:last-child {
-  border-bottom: none;
-}
-
-.activity-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.activity-icon.success {
-  background-color: #f0f9ff;
-  color: #67c23a;
-}
-
-.activity-icon.error {
-  background-color: #fef0f0;
-  color: #f56c6c;
-}
-
-.activity-icon.info {
-  background-color: #e1f3ff;
-  color: #409eff;
-}
-
-.activity-content {
-  flex: 1;
-}
-
-.activity-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: #303133;
-  margin-bottom: 4px;
-}
-
-.activity-time {
   font-size: 12px;
   color: #909399;
 }

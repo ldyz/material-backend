@@ -147,9 +147,9 @@
             <div v-if="scope.row.quantity > 0" class="arrival-info">
               <div class="arrival-stats">
                 <span class="stat-item">计划: {{ scope.row.quantity }}</span>
-                <span class="stat-item arrived">已到: {{ scope.row.arrived_quantity || 0 }}</span>
+                <span class="stat-item arrived">已到: {{ scope.row.received_quantity || 0 }}</span>
                 <span class="stat-item" :class="{ 'warning': (scope.row.remaining_quantity || 0) < 10 }">
-                  剩余: {{ scope.row.remaining_quantity || (scope.row.quantity - (scope.row.arrived_quantity || 0)) }}
+                  剩余: {{ scope.row.remaining_quantity || (scope.row.quantity - (scope.row.received_quantity || 0)) }}
                 </span>
               </div>
               <el-tag v-if="scope.row.is_fully_arrived" type="success" size="small">已到齐</el-tag>
@@ -285,7 +285,7 @@ const fetchMaterials = async () => {
         return false
       }
       // 如果剩余数量为0，过滤掉
-      const remaining = item.remaining_quantity || (item.planned_quantity - (item.arrived_quantity || 0))
+      const remaining = item.remaining_quantity || (item.planned_quantity - (item.received_quantity || 0))
       if (item.planned_quantity > 0 && remaining <= 0) {
         return false
       }
@@ -335,7 +335,7 @@ const handleConfirm = () => {
       ElMessage.info(`物资"${row.name}"已在列表中`)
     } else {
       // 计算剩余可入数量
-      const remainingQty = row.remaining_quantity || (row.planned_quantity - (row.arrived_quantity || 0))
+      const remainingQty = row.remaining_quantity || (row.planned_quantity - (row.received_quantity || 0))
 
       selectedMaterials.value.push({
         material_id: row.id,
@@ -349,7 +349,7 @@ const handleConfirm = () => {
         remark: '',
         // 新增：到货信息用于验证
         planned_quantity: row.planned_quantity || 0,
-        arrived_quantity: row.arrived_quantity || 0,
+        received_quantity: row.received_quantity || 0,
         remaining_quantity: remainingQty,
         is_fully_arrived: row.is_fully_arrived || false
       })
@@ -411,7 +411,7 @@ const checkSelectable = (row) => {
     return false
   }
   // 如果剩余数量为0，禁止选择
-  const remaining = row.remaining_quantity || (row.planned_quantity - (row.arrived_quantity || 0))
+  const remaining = row.remaining_quantity || (row.planned_quantity - (row.received_quantity || 0))
   if (row.planned_quantity > 0 && remaining <= 0) {
     return false
   }

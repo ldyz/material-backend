@@ -357,10 +357,11 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		totalAmount := 0
 		for _, item := range req.Items {
 			orderItem := InboundOrderItem{
-				MaterialID: item.MaterialID,
-				Quantity:   item.Quantity,
-				UnitPrice:  item.UnitPrice,
-				Remark:     item.Remark,
+				StockID:    nil, // Will be set when approved
+				MaterialID:  item.MaterialID,
+				Quantity:    item.Quantity,
+				UnitPrice:   item.UnitPrice,
+				Remark:      item.Remark,
 			}
 			order.Items = append(order.Items, orderItem)
 			totalAmount += int(item.Quantity * item.UnitPrice * 100)
@@ -666,18 +667,24 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 			// Find or create stock record for the material
 			type StockRecord struct {
-				ID           uint
-				MaterialID   uint
-				Quantity     float64
-				SafetyStock  float64
-				Location     string
-				Unit         string
+				ID          uint
+				ProjectID   uint
+				MaterialID  uint
+				WarehouseID *uint
+				Quantity    float64
+				SafetyStock float64
+				Location    string
+				UnitCost    float64
 			}
 
-			// Try to find existing stock
+			// Try to find existing stock for this project and material
 			var quantityBefore, quantityAfter float64
 			var stockRecord StockRecord
-			if err := db.Table("stocks").Where("material_id = ?", item.MaterialID).First(&stockRecord).Error; err != nil {
+			var detail string
+
+			if err := db.Table("stocks").
+				Where("project_id = ? AND material_id = ?", order.ProjectID, item.MaterialID).
+				First(&stockRecord).Error; err != nil {
 				// Get material details to get unit
 				var material struct {
 					Unit string
@@ -688,16 +695,21 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 				quantityBefore = 0
 				quantityAfter = approvedQty
 				stockRecord = StockRecord{
+					ProjectID:   order.ProjectID,
 					MaterialID:  item.MaterialID,
+					WarehouseID: nil,
 					Quantity:    quantityAfter,
 					SafetyStock: 0,
 					Location:    "",
-					Unit:        material.Unit,
+					UnitCost:    0,
 				}
 				if err := db.Table("stocks").Create(&stockRecord).Error; err != nil {
 					response.InternalError(c, fmt.Sprintf("创建库存记录失败(material_id=%d): %v", item.MaterialID, err))
 					return
 				}
+
+				// Log the stock operation with material unit
+				detail = fmt.Sprintf("入库 %.2f %s，备注：入库单 %s", approvedQty, material.Unit, order.OrderNo)
 			} else {
 				// Update existing stock quantity
 				quantityBefore = stockRecord.Quantity
@@ -707,10 +719,16 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 					response.InternalError(c, fmt.Sprintf("更新库存记录失败(stock_id=%d): %v", stockRecord.ID, err))
 					return
 				}
-			}
 
-			// Log the stock operation with requisition ID
-			detail := fmt.Sprintf("入库 %.2f %s，备注：入库单 %s", approvedQty, stockRecord.Unit, order.OrderNo)
+				// Get material unit for logging
+				var material struct {
+					Unit string
+				}
+				db.Table("material_master").Where("id = ?", item.MaterialID).Select("unit").First(&material)
+
+				// Log the stock operation
+				detail = fmt.Sprintf("入库 %.2f %s，备注：入库单 %s", approvedQty, material.Unit, order.OrderNo)
+			}
 
 			// Get user ID for logging
 			userID, _ := c.Get("current_user_id")
@@ -724,22 +742,20 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			// Get project ID from order
 			projectID := order.ProjectID
 
-			// Get price from item (UnitPrice is in yuan)
-			price := item.UnitPrice
-
 			// Create StockLog entry with full details
 			stockLog := map[string]interface{}{
 				"stock_id":        stockRecord.ID,
-				"type":             "in",
-				"quantity":         approvedQty,
-				"quantity_before":  quantityBefore,
-				"quantity_after":   quantityAfter,
-				"price":            price,
-				"remark":           detail,
-				"project_id":       projectID,
-				"user_id":          uid,
-				"requisition_id":   nil,
-				"inbound_code":     order.OrderNo,
+				"type":            "in",
+				"quantity":        approvedQty,
+				"quantity_before": quantityBefore,
+				"quantity_after":  quantityAfter,
+				"source_type":     "inbound",
+				"source_id":       order.ID,
+				"source_no":       order.OrderNo,
+				"remark":          detail,
+				"project_id":      projectID,
+				"material_id":     item.MaterialID,
+				"user_id":         uid,
 			}
 			if err := db.Table("stock_logs").Create(&stockLog).Error; err != nil {
 				response.InternalError(c, fmt.Sprintf("创建库存日志失败: %v", err))
@@ -759,6 +775,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 				return
 			}
 		}
+
 
 		// Update order status to completed
 		order.Status = StatusCompleted

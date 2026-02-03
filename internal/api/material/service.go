@@ -1,6 +1,7 @@
 package material
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strconv"
@@ -18,136 +19,202 @@ func NewService(db *gorm.DB) *Service {
 	return &Service{db: db}
 }
 
-// ListQueryParams holds parameters for listing materials
+// ListQueryParams holds parameters for listing materials from plan items
 type ListQueryParams struct {
-	Page            int
-	PageSize        int
-	Search          string
-	Name            string
-	Material        string
-	Spec            string
-	Specification   string
-	Category        string
-	ProjectID       uint
-	ProjectIDs      []uint
-	Filter          string // "unstored" to filter fully stored materials
-	IncludeChildren bool
+	Page          int
+	PageSize      int
+	Search        string
+	Name          string
+	Specification string
+	Category      string
+	ProjectID     uint
+	PlanID        uint
 }
 
-// MaterialWithEnrichment holds material with enriched data
-type MaterialWithEnrichment struct {
-	ID               uint     `gorm:"column:id"`
-	Code             *string  `gorm:"column:code"`
-	Name             string   `gorm:"column:name"`
-	Specification    string   `gorm:"column:specification"`
-	Unit             string   `gorm:"column:unit"`
-	Price            float64  `gorm:"column:price"`
-	Description      string   `gorm:"column:description"`
-	Category         string   `gorm:"column:category"`
-	Quantity         int      `gorm:"column:quantity"`
-	StockQuantity    float64  `gorm:"column:stock_quantity"`
-	ProjectID        *uint    `gorm:"column:project_id"`
-	Material         string   `gorm:"column:material"`
-	Spec             string   `gorm:"column:spec"`
-	ProjectName      *string  `gorm:"column:project_name"`
-	PlannedQuantity  int      `gorm:"column:planned_quantity"`
-	ArrivedQuantity  int      `gorm:"column:arrived_quantity"`
+// PlanMaterialItem holds material item from plans
+type PlanMaterialItem struct {
+	ID               uint     `json:"id"`
+	PlanID           uint     `json:"plan_id"`
+	PlanNo           string   `json:"plan_no"`
+	PlanName         string   `json:"plan_name"`
+	ProjectID        uint     `json:"project_id"`
+	ProjectName      string   `json:"project_name"`
+	MaterialID       uint     `json:"material_id"`
+	MaterialCode     string   `json:"material_code"`
+	MaterialName     string   `json:"material_name"`
+	Specification    string   `json:"specification"`
+	Unit             string   `json:"unit"`
+	Category         string   `json:"category"`
+	PlannedQuantity  float64  `json:"planned_quantity"`
+	UnitPrice        float64  `json:"unit_price"`
+	ArrivedQuantity  float64  `json:"arrived_quantity"`
+	RemainingQty     float64  `json:"remaining_quantity"`
+	ArrivalPercent   float64  `json:"arrival_percent"`
+	Priority         string   `json:"priority"`
+	Status           string   `json:"status"`
+	RequiredDate     *string  `json:"required_date"`
+	Remark           string   `json:"remark"`
 }
 
-// ListMaterials retrieves materials with filters and pagination
-func (s *Service) ListMaterials(params ListQueryParams) ([]MaterialWithEnrichment, int64, error) {
-	var results []MaterialWithEnrichment
+// ListMaterials retrieves plan material items with filters and pagination
+func (s *Service) ListMaterials(params ListQueryParams) ([]PlanMaterialItem, int64, error) {
+	var results []PlanMaterialItem
 	var total int64
 
-	query := s.db.Model(&Material{})
+	// Build WHERE conditions
+	conditions := []string{}
+	args := []interface{}{}
 
-	// Apply search filter
+	// Search filter (name, specification, code, category)
 	if params.Search != "" {
-		query = query.Where(
-			"materials.name LIKE ? OR materials.material LIKE ? OR materials.spec LIKE ? OR materials.specification LIKE ? OR materials.category LIKE ?",
-			"%"+params.Search+"%", "%"+params.Search+"%", "%"+params.Search+"%", "%"+params.Search+"%", "%"+params.Search+"%",
-		)
+		conditions = append(conditions, "(mm.name LIKE ? OR mm.specification LIKE ? OR mm.code LIKE ? OR mm.category LIKE ?)")
+		args = append(args, "%"+params.Search+"%", "%"+params.Search+"%", "%"+params.Search+"%", "%"+params.Search+"%")
 	}
 
-	// Apply field filters
+	// Name filter
 	if params.Name != "" {
-		query = query.Where("materials.name LIKE ?", "%"+params.Name+"%")
+		conditions = append(conditions, "mm.name LIKE ?")
+		args = append(args, "%"+params.Name+"%")
 	}
-	if params.Material != "" {
-		query = query.Where("materials.material LIKE ?", "%"+params.Material+"%")
-	}
-	if params.Spec != "" {
-		query = query.Where("materials.spec LIKE ? OR materials.specification LIKE ?", "%"+params.Spec+"%", "%"+params.Spec+"%")
-	}
+
+	// Specification filter
 	if params.Specification != "" {
-		query = query.Where("materials.specification LIKE ? OR materials.spec LIKE ?", "%"+params.Specification+"%", "%"+params.Specification+"%")
+		conditions = append(conditions, "mm.specification LIKE ?")
+		args = append(args, "%"+params.Specification+"%")
 	}
+
+	// Category filter
 	if params.Category != "" {
-		query = query.Where("materials.category LIKE ?", "%"+params.Category+"%")
+		conditions = append(conditions, "mm.category LIKE ?")
+		args = append(args, "%"+params.Category+"%")
 	}
 
-	// Apply project filter
-	if len(params.ProjectIDs) > 0 {
-		query = query.Where("materials.project_id IN ?", params.ProjectIDs)
-	} else if params.ProjectID > 0 {
-		query = query.Where("materials.project_id = ?", params.ProjectID)
+	// Project filter
+	if params.ProjectID > 0 {
+		conditions = append(conditions, "mp.project_id = ?")
+		args = append(args, params.ProjectID)
 	}
 
-	// Filter unstored materials
-	if params.Filter == "unstored" {
-		query = query.Where(`
-			NOT EXISTS (
-				SELECT 1
-				FROM inbound_order_items ioi
-				INNER JOIN inbound_orders io ON ioi.order_id = io.id
-				WHERE ioi.material_id = materials.id
-				AND io.status IN ('approved', 'completed')
-				GROUP BY ioi.material_id
-				HAVING SUM(ioi.quantity) >= materials.quantity
-			)
-		`)
+	// Plan filter
+	if params.PlanID > 0 {
+		conditions = append(conditions, "mpi.plan_id = ?")
+		args = append(args, params.PlanID)
+	}
+
+	// Build WHERE clause
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = " WHERE " + conditions[0]
+		for i := 1; i < len(conditions); i++ {
+			whereClause += " AND " + conditions[i]
+		}
 	}
 
 	// Get total count
-	query.Count(&total)
+	countQuery := `
+		SELECT COUNT(*)
+		FROM material_plan_items mpi
+		INNER JOIN material_plans mp ON mpi.plan_id = mp.id
+		INNER JOIN projects p ON mp.project_id = p.id
+		INNER JOIN material_master mm ON mpi.material_id = mm.id
+	` + whereClause
+	s.db.Raw(countQuery, args...).Scan(&total)
 
-	// Execute query with joins
+	// Main query
 	offset := (params.Page - 1) * params.PageSize
-	s.db.Table("materials").
-		Select("materials.*, projects.name as project_name, COALESCE(stocks.quantity, 0) as stock_quantity").
-		Joins("LEFT JOIN projects ON materials.project_id = projects.id").
-		Joins("LEFT JOIN stocks ON stocks.material_id = materials.id").
-		Where(query).
-		Offset(offset).Limit(params.PageSize).Order("materials.id DESC").
-		Scan(&results)
+	query := `
+		SELECT
+			mpi.id,
+			mpi.plan_id,
+			mp.plan_no,
+			mp.plan_name,
+			mp.project_id,
+			p.name as project_name,
+			mpi.material_id,
+			mm.code as material_code,
+			mm.name as material_name,
+			mm.specification,
+			mm.unit,
+			mm.category,
+			mpi.planned_quantity,
+			COALESCE(mpi.unit_price, 0) as unit_price,
+			mpi.priority,
+			mpi.status,
+			mpi.required_date,
+			mpi.remark
+		FROM material_plan_items mpi
+		INNER JOIN material_plans mp ON mpi.plan_id = mp.id
+		INNER JOIN projects p ON mp.project_id = p.id
+		INNER JOIN material_master mm ON mpi.material_id = mm.id
+	` + whereClause + `
+		ORDER BY mpi.id DESC
+		LIMIT ? OFFSET ?
+	`
+	queryArgs := append(args, params.PageSize, offset)
+	rows, err := s.db.Raw(query, queryArgs...).Rows()
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	// Scan results
+	for rows.Next() {
+		var item PlanMaterialItem
+		var requiredDate sql.NullString
+		var unitPrice sql.NullFloat64
+
+		err := rows.Scan(
+			&item.ID,
+			&item.PlanID,
+			&item.PlanNo,
+			&item.PlanName,
+			&item.ProjectID,
+			&item.ProjectName,
+			&item.MaterialID,
+			&item.MaterialCode,
+			&item.MaterialName,
+			&item.Specification,
+			&item.Unit,
+			&item.Category,
+			&item.PlannedQuantity,
+			&unitPrice,
+			&item.Priority,
+			&item.Status,
+			&requiredDate,
+			&item.Remark,
+		)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		if unitPrice.Valid {
+			item.UnitPrice = unitPrice.Float64
+		}
+		if requiredDate.Valid {
+			item.RequiredDate = &requiredDate.String
+		}
+
+		// Calculate arrived quantity from inbound_items
+		var arrivedQty float64
+		s.db.Raw(`
+			SELECT COALESCE(SUM(ii.quantity), 0)
+			FROM inbound_items ii
+			INNER JOIN inbound_orders io ON ii.inbound_order_id = io.id
+			WHERE ii.material_id = ?
+			AND io.project_id = ?
+			AND io.status IN ('approved', 'completed')
+		`, item.MaterialID, item.ProjectID).Scan(&arrivedQty)
+
+		item.ArrivedQuantity = arrivedQty
+		item.RemainingQty = item.PlannedQuantity - arrivedQty
+		if item.PlannedQuantity > 0 {
+			item.ArrivalPercent = (arrivedQty / item.PlannedQuantity) * 100
+		}
+
+		results = append(results, item)
+	}
 
 	return results, total, nil
-}
-
-// EnrichWithPlanInfo enriches materials with plan information
-func (s *Service) EnrichWithPlanInfo(materials []MaterialWithEnrichment) map[uint]PlanInfo {
-	materialIDs := make([]uint, len(materials))
-	for i, m := range materials {
-		materialIDs[i] = m.ID
-	}
-
-	var planInfos []PlanInfo
-	s.db.Raw(`
-		SELECT
-			material_id,
-			COALESCE(SUM(planned_quantity), 0) as planned_quantity,
-			COALESCE(SUM(arrived_quantity), 0) as arrived_quantity
-		FROM material_plan_items
-		WHERE material_id = ANY($1)
-		GROUP BY material_id
-	`, materialIDs).Scan(&planInfos)
-
-	planMap := make(map[uint]PlanInfo)
-	for _, info := range planInfos {
-		planMap[info.MaterialID] = info
-	}
-
-	return planMap
 }
 
 // GetMaterial retrieves a material by ID
@@ -168,9 +235,10 @@ type CreateMaterialRequest struct {
 	Name          string
 	Specification string
 	Unit          string
-	Price         float64
 	Description   string
 	Category      string
+	// These fields are not in material_master table but kept for API compatibility
+	Price         float64
 	Quantity      int
 	ProjectID     uint
 	Material      string
@@ -184,12 +252,6 @@ func (s *Service) CreateMaterial(req *CreateMaterialRequest) (*Material, error) 
 		return nil, errors.New("物资名称不能为空")
 	}
 
-	// Validate project exists
-	var projectExists int64
-	if s.db.Table("projects").Where("id = ?", req.ProjectID).Count(&projectExists); projectExists == 0 {
-		return nil, errors.New("指定的项目不存在")
-	}
-
 	// Check for duplicate code
 	var code *string
 	if req.Code != "" {
@@ -200,20 +262,13 @@ func (s *Service) CreateMaterial(req *CreateMaterialRequest) (*Material, error) 
 		}
 	}
 
-	projectIDPtr := &req.ProjectID
-
 	m := &Material{
 		Code:          code,
 		Name:          req.Name,
 		Specification: req.Specification,
 		Unit:          req.Unit,
-		Price:         req.Price,
 		Description:   req.Description,
 		Category:      req.Category,
-		Quantity:      req.Quantity,
-		ProjectID:     projectIDPtr,
-		Material:      req.Material,
-		Spec:          req.Spec,
 	}
 
 	if err := s.db.Create(m).Error; err != nil {

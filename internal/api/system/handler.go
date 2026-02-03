@@ -670,7 +670,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 		// 获取物资总数
 		var totalMaterials int64
-		db.Table("materials").Count(&totalMaterials)
+		db.Table("material_master").Count(&totalMaterials)
 		stats["total_materials"] = totalMaterials
 
 		// 获取库存相关统计
@@ -1150,7 +1150,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		}
 
 		var stats []CategoryStat
-		if err := db.Table("materials").
+		if err := db.Table("material_master").
 			Select("COALESCE(category, '未分类') as category, COUNT(*) as count").
 			Group("category").
 			Order("count DESC").

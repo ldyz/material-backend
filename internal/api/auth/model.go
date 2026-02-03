@@ -104,6 +104,20 @@ func (u *User) HasPermission(permission string) bool {
 	return false
 }
 
+// HasPermissionString checks if a permissions string contains a specific permission
+func HasPermissionString(permissionsStr string, permission string) bool {
+	if permissionsStr == "" {
+		return false
+	}
+	perms := strings.Split(permissionsStr, ",")
+	for _, p := range perms {
+		if strings.TrimSpace(p) == permission {
+			return true
+		}
+	}
+	return false
+}
+
 // ToDTO converts user to a map response (permissions are parsed)
 func (u *User) ToDTO() map[string]any {
 	// 使用 map 来去重角色（避免数据库中 user_roles 重复记录导致返回重复角色）

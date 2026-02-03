@@ -190,7 +190,7 @@ export const projectApi = {
    */
   getMembers(id) {
     return request({
-      url: `/project/projects/${id}/members`,
+      url: `/projects/${id}/members`,
       method: 'GET'
     })
   },
@@ -207,7 +207,7 @@ export const projectApi = {
    */
   addMember(id, data) {
     return request({
-      url: `/project/projects/${id}/members`,
+      url: `/projects/${id}/members`,
       method: 'POST',
       data
     })
@@ -237,7 +237,7 @@ export const projectApi = {
    */
   getProjectTree(id) {
     return request({
-      url: `/project/projects/${id}/tree`,
+      url: `/projects/${id}/tree`,
       method: 'GET'
     })
   },
@@ -252,7 +252,7 @@ export const projectApi = {
    */
   getChildren(id) {
     return request({
-      url: `/project/projects/${id}/children`,
+      url: `/projects/${id}/children`,
       method: 'GET'
     })
   },
@@ -267,7 +267,7 @@ export const projectApi = {
    */
   aggregateProgress(id) {
     return request({
-      url: `/project/projects/${id}/aggregate-progress`,
+      url: `/projects/${id}/aggregate-progress`,
       method: 'POST'
     })
   }
@@ -283,6 +283,93 @@ export const projectApi = {
  * @namespace materialApi
  */
 export const materialApi = {
+  // ========== 物资主数据API ==========
+
+  /**
+   * 获取物资主数据列表
+   *
+   * @param {Object} params - 查询参数
+   * @returns {Promise} 返回物资主数据列表
+   */
+  getMasterList(params) {
+    return request({
+      url: '/materials/master',
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 获取物资主数据详情
+   *
+   * @param {number} id - 物资主数据ID
+   * @returns {Promise} 返回物资主数据详情
+   */
+  getMasterDetail(id) {
+    return request({
+      url: `/materials/master/${id}`,
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 创建物资主数据
+   *
+   * @param {Object} data - 物资主数据信息
+   * @returns {Promise} 返回创建的物资主数据
+   */
+  createMaster(data) {
+    return request({
+      url: '/materials/master',
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 更新物资主数据
+   *
+   * @param {number} id - 物资主数据ID
+   * @param {Object} data - 更新的物资主数据信息
+   * @returns {Promise} 返回更新后的物资主数据
+   */
+  updateMaster(id, data) {
+    return request({
+      url: `/materials/master/${id}`,
+      method: 'PUT',
+      data
+    })
+  },
+
+  /**
+   * 删除物资主数据
+   *
+   * @param {number} id - 物资主数据ID
+   * @returns {Promise} 返回删除结果
+   */
+  deleteMaster(id) {
+    return request({
+      url: `/materials/master/${id}`,
+      method: 'DELETE'
+    })
+  },
+
+  /**
+   * 获取项目物资列表（带库存）
+   *
+   * @param {Object} params - 查询参数
+   * @returns {Promise} 返回项目物资列表
+   */
+  getProjectMaterials(params) {
+    return request({
+      url: '/materials/master/project',
+      method: 'GET',
+      params
+    })
+  },
+
+  // ========== 物资管理API ==========
+
   /**
    * 获取物资列表
    *
@@ -407,6 +494,20 @@ export const materialApi = {
   },
 
   /**
+   * 批量创建物资
+   *
+   * @param {Object} data - 导入数据
+   * @returns {Promise} 返回导入结果
+   */
+  batchCreate(data) {
+    return request({
+      url: '/material/materials/batch-create',
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
    * 导出物资数据
    *
    * 导出为 Excel 文件
@@ -420,6 +521,48 @@ export const materialApi = {
       method: 'GET',
       params,
       responseType: 'blob'
+    })
+  },
+
+  /**
+   * 获取未入库物资列表
+   *
+   * @param {Object} params - 查询参数
+   * @returns {Promise} 返回未入库物资列表
+   */
+  getUnstored(params) {
+    return request({
+      url: '/material/materials/unstored',
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 导出未入库物资
+   *
+   * @param {Object} params - 查询参数
+   * @returns {Promise} 返回 Excel 文件 Blob
+   */
+  exportUnstored(params) {
+    return request({
+      url: '/material/materials/unstored/export',
+      method: 'GET',
+      params,
+      responseType: 'blob'
+    })
+  },
+
+  /**
+   * 获取物资日志
+   *
+   * @param {number} id - 物资ID
+   * @returns {Promise} 返回物资日志列表
+   */
+  getLogs(id) {
+    return request({
+      url: `/materials/${id}/logs`,
+      method: 'GET'
     })
   },
 
@@ -516,14 +659,6 @@ export const materialApi = {
    * 当计划项没有关联物资库时，自动创建物资记录
    *
    * @param {Array} materials - 物资数据数组
-   * @param {string} materials[].name - 物资名称
-   * @param {string} materials[].code - 物资编码
-   * @param {string} materials[].specification - 规格型号
-   * @param {string} materials[].category - 分类
-   * @param {string} materials[].unit - 单位
-   * @param {number} materials[].price - 单价
-   * @param {number} materials[].quantity - 数量
-   * @param {number} materials[].project_id - 项目ID（可选）
    * @returns {Promise} 返回创建的物资列表
    */
   batchCreateMaterials(materials) {
@@ -567,6 +702,73 @@ export const stockApi = {
   },
 
   /**
+   * 获取库存预警列表
+   *
+   * @returns {Promise} 返回库存预警列表
+   */
+  getAlerts() {
+    return request({
+      url: '/stock/stocks/alerts',
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 获取库存详情
+   *
+   * @param {number} id - 库存ID
+   * @returns {Promise} 返回库存详情
+   */
+  getDetail(id) {
+    return request({
+      url: `/stock/stocks/${id}`,
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 创建库存记录
+   *
+   * @param {Object} data - 库存信息
+   * @returns {Promise} 返回创建的库存
+   */
+  create(data) {
+    return request({
+      url: '/stock/stocks',
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 更新库存
+   *
+   * @param {number} id - 库存ID
+   * @param {Object} data - 更新的库存信息
+   * @returns {Promise} 返回更新后的库存
+   */
+  update(id, data) {
+    return request({
+      url: `/stock/stocks/${id}`,
+      method: 'PUT',
+      data
+    })
+  },
+
+  /**
+   * 删除库存
+   *
+   * @param {number} id - 库存ID
+   * @returns {Promise} 返回删除结果
+   */
+  delete(id) {
+    return request({
+      url: `/stock/stocks/${id}`,
+      method: 'DELETE'
+    })
+  },
+
+  /**
    * 获取库存变动日志
    *
    * 用于追溯库存的出入库历史记录
@@ -582,6 +784,32 @@ export const stockApi = {
       url: '/stock/stock-logs',
       method: 'GET',
       params
+    })
+  },
+
+  /**
+   * 获取库存操作日志
+   *
+   * @param {number} id - 库存ID
+   * @returns {Promise} 返回库存日志列表
+   */
+  getStockLogs(id) {
+    return request({
+      url: `/stocks/${id}/logs`,
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 删除库存日志
+   *
+   * @param {number} id - 日志ID
+   * @returns {Promise} 返回删除结果
+   */
+  deleteLog(id) {
+    return request({
+      url: `/stock/stock-logs/${id}`,
+      method: 'DELETE'
     })
   },
 
@@ -605,20 +833,53 @@ export const stockApi = {
   },
 
   /**
+   * 物资入库
+   *
+   * 增加指定物资的库存数量
+   *
+   * @param {number} id - 库存ID
+   * @param {Object} data - 入库信息
+   * @param {number} data.quantity - 入库数量（必填）
+   * @param {string} data.remark - 备注信息（可选）
+   * @returns {Promise} 返回入库后的库存信息
+   */
+  in(id, data) {
+    return request({
+      url: `/stock/stocks/${id}/in`,
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
    * 物资出库
    *
    * 减少指定物资的库存数量
    *
+   * @param {number} id - 库存ID
    * @param {Object} data - 出库信息
-   * @param {number} data.id - 库存ID
-   * @param {number} data.quantity - 出库数量
-   * @param {string} data.recipient - 领用人
-   * @param {string} data.remark - 备注信息
+   * @param {number} data.quantity - 出库数量（必填）
+   * @param {string} data.remark - 备注信息（可选）
    * @returns {Promise} 返回出库后的库存信息
    */
-  out(data) {
+  out(id, data) {
     return request({
-      url: `/stock/stocks/${data.id}/out`,
+      url: `/stock/stocks/${id}/out`,
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 库存调整
+   *
+   * @param {number} id - 库存ID
+   * @param {Object} data - 调整信息
+   * @returns {Promise} 返回调整结果
+   */
+  adjust(id, data) {
+    return request({
+      url: `/stocks/${id}/adjust`,
       method: 'POST',
       data
     })
@@ -651,6 +912,18 @@ export const stockApi = {
  * @namespace requisitionApi
  */
 export const requisitionApi = {
+  /**
+   * 获取待处理出库单数量
+   *
+   * @returns {Promise} 返回待处理数量
+   */
+  getPendingCount() {
+    return request({
+      url: '/requisition/requisitions/pending/count',
+      method: 'GET'
+    })
+  },
+
   /**
    * 获取出库单列表
    *
@@ -797,6 +1070,20 @@ export const requisitionApi = {
   },
 
   /**
+   * 获取领料单明细列表
+   *
+   * @param {Object} params - 查询参数
+   * @returns {Promise} 返回领料单明细列表
+   */
+  getItems(params) {
+    return request({
+      url: '/requisition-items',
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
    * 获取工作流审批历史
    *
    * 查看出库单的完整审批记录
@@ -808,41 +1095,6 @@ export const requisitionApi = {
     return request({
       url: `/workflow-instances/${id}/approvals`,
       method: 'GET'
-    })
-  },
-
-  /**
-   * 获取可执行的操作
-   *
-   * 根据当前用户权限和单据状态
-   * 返回可以执行的操作列表
-   *
-   * @param {number} id - 出库单ID
-   * @returns {Promise} 返回可执行的操作列表
-   */
-  getAvailableActions(id) {
-    return request({
-      url: `/requisition/requisitions/${id}/available-actions`,
-      method: 'GET'
-    })
-  },
-
-  /**
-   * 批量审批出库单
-   *
-   * 一次审批多个出库单
-   * 适用于快速处理多个待审批单据
-   *
-   * @param {number[]} ids - 出库单ID数组
-   * @param {Object} data - 审批信息
-   * @param {string} data.approval_comment - 审批意见
-   * @returns {Promise} 返回批量审批结果
-   */
-  batchApprove(ids, data) {
-    return request({
-      url: '/requisition/requisitions/batch-approve',
-      method: 'POST',
-      data: { ids, ...data }
     })
   }
 }
@@ -856,6 +1108,18 @@ export const requisitionApi = {
  * @namespace inboundApi
  */
 export const inboundApi = {
+  /**
+   * 获取待处理入库单数量
+   *
+   * @returns {Promise} 返回待处理数量
+   */
+  getPendingCount() {
+    return request({
+      url: '/inbound/inbound-orders/pending/count',
+      method: 'GET'
+    })
+  },
+
   /**
    * 获取入库单列表
    *
@@ -873,6 +1137,49 @@ export const inboundApi = {
       url: '/inbound/inbound-orders',
       method: 'GET',
       params
+    })
+  },
+
+  /**
+   * 获取入库单模板
+   *
+   * @returns {Promise} 返回入库单模板
+   */
+  getTemplate() {
+    return request({
+      url: '/inbound/template',
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 提交入库单
+   *
+   * @param {Object} data - 入库单信息
+   * @returns {Promise} 返回提交结果
+   */
+  submit(data) {
+    return request({
+      url: '/inbound/submit',
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 导入入库单
+   *
+   * @param {FormData} data - 包含文件的FormData
+   * @returns {Promise} 返回导入结果
+   */
+  import(data) {
+    return request({
+      url: '/inbound/import',
+      method: 'POST',
+      data,
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
     })
   },
 
@@ -1203,6 +1510,191 @@ export const systemApi = {
       url: '/system/info',
       method: 'GET'
     })
+  },
+
+  /**
+   * 获取最近活动
+   *
+   * @returns {Promise} 返回最近活动列表
+   */
+  getRecentActivities() {
+    return request({
+      url: '/system/recent-activities',
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 获取物资分类统计
+   *
+   * @returns {Promise} 返回物资分类统计
+   */
+  getMaterialCategoryStats() {
+    return request({
+      url: '/system/material-category-stats',
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 获取项目物资统计
+   *
+   * @returns {Promise} 返回项目物资统计
+   */
+  getProjectMaterialStats() {
+    return request({
+      url: '/system/project-material-stats',
+      method: 'GET'
+    })
+  },
+
+  // ========== 系统日志扩展 ==========
+
+  /**
+   * 清空系统日志
+   *
+   * @returns {Promise} 返回清空结果
+   */
+  clearLogs() {
+    return request({
+      url: '/system/logs/clear',
+      method: 'POST'
+    })
+  },
+
+  /**
+   * 删除系统日志
+   *
+   * @returns {Promise} 返回删除结果
+   */
+  deleteLogs() {
+    return request({
+      url: '/system/logs',
+      method: 'DELETE'
+    })
+  },
+
+  // ========== 数据备份扩展 ==========
+
+  /**
+   * 获取备份历史
+   *
+   * @returns {Promise} 返回备份历史
+   */
+  getBackupHistory() {
+    return request({
+      url: '/system/backup/history',
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 下载备份
+   *
+   * @param {string} backupName - 备份名称
+   * @returns {Promise} 返回备份文件
+   */
+  downloadBackup(backupName) {
+    return request({
+      url: `/system/backup/${backupName}/download`,
+      method: 'GET',
+      responseType: 'blob'
+    })
+  },
+
+  /**
+   * 创建备份（报表接口）
+   *
+   * @returns {Promise} 返回创建结果
+   */
+  createBackupReport() {
+    return request({
+      url: '/system/backup/create',
+      method: 'POST'
+    })
+  },
+
+  // ========== 报表管理 ==========
+
+  /**
+   * 获取仪表板数据
+   *
+   * @returns {Promise} 返回仪表板数据
+   */
+  getDashboard() {
+    return request({
+      url: '/system/reports/dashboard',
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 获取报表列表
+   *
+   * @returns {Promise} 返回报表列表
+   */
+  getReports() {
+    return request({
+      url: '/system/reports',
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 生成报表
+   *
+   * @param {Object} data - 报表参数
+   * @returns {Promise} 返回生成结果
+   */
+  generateReport(data) {
+    return request({
+      url: '/system/reports/generate',
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 下载报表
+   *
+   * @param {Object} params - 查询参数
+   * @returns {Promise} 返回报表文件
+   */
+  downloadReport(params) {
+    return request({
+      url: '/system/reports/download',
+      method: 'GET',
+      params,
+      responseType: 'blob'
+    })
+  },
+
+  /**
+   * 下载指定报表
+   *
+   * @param {string} reportName - 报表名称
+   * @returns {Promise} 返回报表文件
+   */
+  downloadReportByName(reportName) {
+    return request({
+      url: `/system/reports/${reportName}/download`,
+      method: 'GET',
+      responseType: 'blob'
+    })
+  },
+
+  /**
+   * 删除报表
+   *
+   * @param {Object} data - 删除参数
+   * @returns {Promise} 返回删除结果
+   */
+  deleteReport(data) {
+    return request({
+      url: '/system/reports/delete',
+      method: 'POST',
+      data
+    })
   }
 }
 
@@ -1269,7 +1761,7 @@ export const constructionLogApi = {
    */
   create(data) {
     return request({
-      url: '/construction_log/',
+      url: '/construction_log/logs',
       method: 'POST',
       data
     })
@@ -1304,6 +1796,23 @@ export const constructionLogApi = {
     return request({
       url: `/construction_log/${id}`,
       method: 'DELETE'
+    })
+  },
+
+  /**
+   * 上传日志图片
+   *
+   * @param {FormData} formData - 包含图片的FormData
+   * @returns {Promise} 返回上传结果
+   */
+  uploadImage(formData) {
+    return request({
+      url: '/construction_log/upload_image',
+      method: 'POST',
+      data: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
     })
   }
 }
@@ -2854,5 +3363,438 @@ export const materialPlanApi = {
       url: '/material-plan/workflow/pending',
       method: 'GET'
     })
+  },
+
+  /**
+   * 同步计划项的物资ID
+   *
+   * 更新物资计划项的material_id
+   *
+   * @param {number} planId - 计划ID
+   * @param {Object} data - 更新数据
+   * @param {Array} data.items - 计划项列表
+   * @returns {Promise} 返回更新结果
+   */
+  syncPlanMaterialIds(planId, data) {
+    return request({
+      url: `/material-plan/plans/${planId}/sync-materials`,
+      method: 'POST',
+      data
+    })
   }
 }
+
+// ==================== 文件上传 API ====================
+
+/**
+ * 文件上传 API 接口
+ *
+ * 提供图片、文件等资源上传功能
+ *
+ * @namespace uploadApi
+ */
+export const uploadApi = {
+  /**
+   * 上传图片
+   *
+   * 用于富文本编辑器等场景的图片上传
+   *
+   * @param {FormData} formData - 包含文件的FormData对象
+   * @param {File} formData.file - 图片文件
+   * @returns {Promise} 返回上传结果，包含图片URL
+   *
+   * @example
+   * const formData = new FormData()
+   * formData.append('file', file)
+   * const result = await uploadApi.uploadImage(formData)
+   * console.log(result.data.url) // 图片URL
+   */
+  uploadImage(formData) {
+    return request({
+      url: '/upload/image',
+      method: 'POST',
+      data: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+  },
+
+  /**
+   * 上传文件
+   *
+   * 用于通用文件上传
+   *
+   * @param {FormData} formData - 包含文件的FormData对象
+   * @param {File} formData.file - 文件
+   * @returns {Promise} 返回上传结果，包含文件URL
+   */
+  uploadFile(formData) {
+    return request({
+      url: '/upload/file',
+      method: 'POST',
+      data: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+  },
+
+  /**
+   * 批量上传图片
+   *
+   * @param {FormData} formData - 包含多个文件的FormData对象
+   * @returns {Promise} 返回上传结果，包含所有文件URL
+   */
+  uploadImages(formData) {
+    return request({
+      url: '/upload/images',
+      method: 'POST',
+      data: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+  }
+}
+
+// ==================== 通知管理 API ====================
+
+/**
+ * 通知管理 API 接口
+ *
+ * 提供系统通知的查询、标记已读、删除等功能
+ *
+ * @namespace notificationApi
+ */
+export const notificationApi = {
+  /**
+   * 获取通知列表
+   *
+   * @param {Object} params - 查询参数
+   * @param {number} params.page - 页码
+   * @param {number} params.per_page - 每页数量
+   * @returns {Promise} 返回通知列表
+   */
+  getList(params) {
+    return request({
+      url: '/notifications',
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 获取未读通知数量
+   *
+   * @returns {Promise} 返回未读数量
+   */
+  getUnreadCount() {
+    return request({
+      url: '/notifications/count',
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 标记通知为已读
+   *
+   * @param {number} id - 通知ID
+   * @returns {Promise} 返回标记结果
+   */
+  markAsRead(id) {
+    return request({
+      url: `/notifications/${id}/read`,
+      method: 'PUT'
+    })
+  },
+
+  /**
+   * 全部标记为已读
+   *
+   * @returns {Promise} 返回标记结果
+   */
+  markAllAsRead() {
+    return request({
+      url: '/notifications/read-all',
+      method: 'PUT'
+    })
+  },
+
+  /**
+   * 删除通知
+   *
+   * @param {number} id - 通知ID
+   * @returns {Promise} 返回删除结果
+   */
+  delete(id) {
+    return request({
+      url: `/notifications/${id}`,
+      method: 'DELETE'
+    })
+  },
+
+  /**
+   * 清空所有通知
+   *
+   * @returns {Promise} 返回删除结果
+   */
+  clearAll() {
+    return request({
+      url: '/notifications',
+      method: 'DELETE'
+    })
+  }
+}
+
+/**
+ * AI Agent API
+ *
+ * 提供AI Agent操作接口，支持未来接入Claude Desktop等AI Agent
+ *
+ * @namespace agentApi
+ */
+export const agentApi = {
+  /**
+   * 获取可用能力列表
+   *
+   * 获取当前AI Agent支持的所有操作和资源
+   *
+   * @returns {Promise} 返回能力列表
+   */
+  getCapabilities() {
+    return request({
+      url: '/agent/capabilities',
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 验证操作合法性
+   *
+   * 预验证操作是否被允许，不执行实际操作
+   *
+   * @param {Object} data - 验证请求
+   * @param {string} data.operation - 操作类型
+   * @param {string} data.resource - 资源类型
+   * @param {Object} data.parameters - 操作参数
+   * @returns {Promise} 返回验证结果
+   */
+  validateOperation(operation, resource, parameters) {
+    return request({
+      url: '/agent/validate',
+      method: 'POST',
+      data: {
+        operation,
+        resource,
+        parameters
+      }
+    })
+  },
+
+  /**
+   * 执行 AI Agent 操作
+   *
+   * 执行指定的AI Agent操作
+   *
+   * @param {string} operation - 操作类型 (query/analyze/create_material_plan/update_stock/approve_workflow/generate_report)
+   * @param {string} resource - 资源类型 (material/stock/workflow/material_plan)
+   * @param {Object} parameters - 操作参数
+   * @param {string} reasoning - AI推理过程说明
+   * @returns {Promise} 返回操作结果
+   */
+  operate(operation, resource, parameters, reasoning) {
+    return request({
+      url: '/agent/operate',
+      method: 'POST',
+      data: {
+        operation,
+        resource,
+        parameters,
+        reasoning
+      }
+    })
+  },
+
+  /**
+   * AI 查询
+   *
+   * 使用自然语言查询数据
+   *
+   * @param {string} question - 查询问题
+   * @param {number} limit - 结果数量限制 (默认10)
+   * @param {Array} fields - 返回字段列表
+   * @param {Object} filters - 过滤条件
+   * @returns {Promise} 返回查询结果
+   */
+  query(question, limit = 10, fields = null, filters = null) {
+    return request({
+      url: '/agent/query',
+      method: 'POST',
+      data: {
+        question,
+        limit,
+        fields,
+        filters
+      }
+    })
+  },
+
+  /**
+   * 工作流操作
+   *
+   * 执行工作流审批操作
+   *
+   * @param {number} taskId - 任务ID
+   * @param {string} action - 操作类型 (approve/reject/return)
+   * @param {string} remark - 备注/意见
+   * @param {number} toNodeId - 目标节点ID (用于退回操作)
+   * @returns {Promise} 返回操作结果
+   */
+  workflow(taskId, action, remark = '', toNodeId = null) {
+    return request({
+      url: '/agent/workflow',
+      method: 'POST',
+      data: {
+        task_id: taskId,
+        action,
+        remark,
+        to_node_id: toNodeId
+      }
+    })
+  },
+
+  /**
+   * 获取操作日志
+   *
+   * 查询AI Agent操作日志
+   *
+   * @param {Object} params - 查询参数
+   * @param {number} params.page - 页码
+   * @param {number} params.page_size - 每页数量
+   * @param {string} params.operation - 操作类型过滤
+   * @param {string} params.resource - 资源类型过滤
+   * @param {string} params.status - 状态过滤 (pending/completed/failed)
+   * @param {string} params.agent_id - Agent ID过滤
+   * @param {string} params.start_date - 开始日期
+   * @param {string} params.end_date - 结束日期
+   * @returns {Promise} 返回日志列表
+   */
+  getLogs(params) {
+    return request({
+      url: '/agent/logs',
+      method: 'GET',
+      params
+    })
+  },
+
+  // ========== 便捷方法 ==========
+
+  /**
+   * 查询物资
+   *
+   * @param {string} search - 搜索关键词
+   * @param {number} limit - 结果数量
+   */
+  queryMaterials(search = '', limit = 10) {
+    return this.operate(
+      'query',
+      'material',
+      { search, limit },
+      'Query materials from user request'
+    )
+  },
+
+  /**
+   * 分析库存
+   *
+   * @param {string} question - 分析问题
+   */
+  analyzeInventory(question = '库存分析') {
+    return this.operate(
+      'analyze',
+      'inventory',
+      { question },
+      `Inventory analysis: ${question}`
+    )
+  },
+
+  /**
+   * 获取库存预警
+   */
+  getStockAlerts() {
+    return this.operate(
+      'query',
+      'stock',
+      { low_stock_alert: true },
+      'Get low stock alerts'
+    )
+  },
+
+  /**
+   * 获取待办任务
+   */
+  getPendingTasks() {
+    return this.operate(
+      'query',
+      'workflow',
+      { status: 'pending' },
+      'Get pending workflow tasks'
+    )
+  },
+
+  /**
+   * 创建物资计划
+   *
+   * @param {number} projectId - 项目ID
+   * @param {Array} items - 计划明细
+   * @param {string} remark - 备注
+   */
+  createMaterialPlan(projectId, items, remark = '') {
+    return this.operate(
+      'create_material_plan',
+      'material_plan',
+      {
+        project_id: projectId,
+        items,
+        remark
+      },
+      `AI generated material plan for project ${projectId}`
+    )
+  },
+
+  /**
+   * 更新库存
+   *
+   * @param {number} stockId - 库存ID
+   * @param {number} quantity - 新数量
+   * @param {string} remark - 备注
+   */
+  updateStock(stockId, quantity, remark = '') {
+    return this.operate(
+      'update_stock',
+      'stock',
+      {
+        stock_id: stockId,
+        quantity,
+        remark
+      },
+      `Stock update for stock_id ${stockId}`
+    )
+  },
+
+  /**
+   * 生成报表
+   *
+   * @param {string} reportType - 报表类型 (inventory_summary/material_plan_summary)
+   */
+  generateReport(reportType = 'inventory_summary') {
+    return this.operate(
+      'generate_report',
+      'report',
+      { report_type: reportType },
+      `Generate ${reportType} report`
+    )
+  }
+}
+

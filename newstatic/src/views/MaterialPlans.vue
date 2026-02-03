@@ -953,11 +953,19 @@ const handleAddItem = () => {
     remark: ''
   })
   editingItemIndex = -1
+  // Clear validation state to prevent stale validation errors
+  itemFormRef.value?.clearValidate()
   itemDialogVisible.value = true
 }
 
 const handleSaveItem = async () => {
   try {
+    // Ensure form ref exists before validating
+    if (!itemFormRef.value) {
+      ElMessage.error('表单未初始化，请重试')
+      return
+    }
+
     await itemFormRef.value.validate()
 
     const item = { ...itemForm }
@@ -969,7 +977,10 @@ const handleSaveItem = async () => {
 
     itemDialogVisible.value = false
   } catch (error) {
-    console.error('保存项目失败:', error)
+    // Validation failed - show error message but keep dialog open
+    if (error?.message) {
+      console.error('表单验证失败:', error.message)
+    }
   }
 }
 

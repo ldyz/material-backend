@@ -22,14 +22,19 @@ type InboundOrder struct {
 	TotalAmount  int       `gorm:"default:0" json:"total_amount"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
-	Items        []InboundOrderItem `gorm:"foreignKey:OrderID;constraint:OnDelete:CASCADE" json:"items,omitempty"`
+	Items        []InboundOrderItem `gorm:"foreignKey:InboundOrderID;constraint:OnDelete:CASCADE" json:"items,omitempty"`
+}
+
+// TableName specifies the table name for InboundOrder
+func (InboundOrder) TableName() string {
+	return "inbound_orders"
 }
 
 // InboundOrderItem model maps to 'inbound_items' table (v2 - simplified)
 type InboundOrderItem struct {
 	ID              uint          `gorm:"primaryKey" json:"id"`
 	InboundOrderID  uint          `gorm:"not null;index" json:"inbound_order_id"`
-	StockID         uint          `gorm:"index" json:"stock_id"`
+	StockID         *uint         `gorm:"index" json:"stock_id"`
 	MaterialID      uint          `gorm:"not null;index" json:"material_id"`
 	Quantity        float64       `gorm:"type:decimal(15,3);not null;default:0" json:"quantity"`
 	UnitPrice       float64       `gorm:"type:decimal(15,2);default:0" json:"unit_price"`
@@ -37,6 +42,11 @@ type InboundOrderItem struct {
 	Remark          string        `gorm:"type:text" json:"remark"`
 	CreatedAt       time.Time     `json:"created_at"`
 	Order           *InboundOrder `gorm:"foreignKey:InboundOrderID" json:"-"`
+}
+
+// TableName specifies the table name for InboundOrderItem
+func (InboundOrderItem) TableName() string {
+	return "inbound_items"
 }
 
 // Status constants

@@ -48,6 +48,11 @@ type MaterialPlanItem struct {
 	Plan            *MaterialPlan `gorm:"foreignKey:PlanID" json:"-"`
 }
 
+// TableName specifies the table name for MaterialPlanItem
+func (MaterialPlanItem) TableName() string {
+	return "material_plan_items"
+}
+
 // Status constants for MaterialPlan
 const (
 	PlanStatusDraft      = "draft"
@@ -124,6 +129,14 @@ type UpdateMaterialPlanRequest struct {
 	Items              []CreateMaterialPlanItemRequest `json:"items"`
 }
 
+// SyncMaterialIDsRequest DTO for syncing material IDs for plan items
+type SyncMaterialIDsRequest struct {
+	Items []struct {
+		ID         uint `json:"id"`
+		MaterialID uint `json:"material_id"`
+	} `json:"items"`
+}
+
 // ToDTO returns basic plan DTO
 func (p *MaterialPlan) ToDTO() map[string]any {
 	return map[string]any{
@@ -190,28 +203,31 @@ func (p *MaterialPlan) ToDTOWithEnrichment(db *gorm.DB) map[string]any {
 			itemDTO["unit"] = material.Unit
 		}
 
-		// Calculate actual issued quantity from stock_logs
-		if len(requisitionIDs) > 0 {
-			var stockID struct {
-				ID uint
-			}
-			// Get stock_id for this material in this project
-			if err := db.Table("stocks").Where("project_id = ? AND material_id = ?", p.ProjectID, item.MaterialID).
-				Select("id").First(&stockID).Error; err == nil {
+		// Calculate total received quantity from inbound_items (入库)
+		// Only count approved or completed inbound orders
+		var totalReceived float64
+		db.Raw(`
+			SELECT COALESCE(SUM(ii.quantity), 0)
+			FROM inbound_items ii
+			INNER JOIN inbound_orders io ON ii.inbound_order_id = io.id
+			WHERE ii.material_id = ?
+			AND io.project_id = ?
+			AND io.status IN ('approved', 'completed')
+		`, item.MaterialID, p.ProjectID).Scan(&totalReceived)
+		itemDTO["received_quantity"] = totalReceived
+		itemDTO["receive_progress"] = calculateProgress(totalReceived, item.PlannedQuantity)
 
-				// Calculate total issued quantity from stock_logs
-				var totalIssued float64
-				db.Table("stock_logs").
-					Where("stock_id = ? AND type = ? AND source_type = ? AND source_id IN ?",
-						stockID.ID, "out", "requisition", requisitionIDs).
-					Select("COALESCE(SUM(quantity), 0)").
-					Scan(&totalIssued)
+		// Calculate total issued quantity from stock_logs (出库/领料)
+		var totalIssued float64
+		db.Table("stock_logs").
+			Where("project_id = ? AND material_id = ? AND type = ? AND source_type = ?",
+				p.ProjectID, item.MaterialID, "out", "requisition").
+			Select("COALESCE(SUM(quantity), 0)").
+			Scan(&totalIssued)
 
-				itemDTO["issued_quantity"] = totalIssued
-				itemDTO["issue_progress"] = calculateProgress(totalIssued, item.PlannedQuantity)
-				itemDTO["remaining_quantity"] = item.PlannedQuantity - totalIssued
-			}
-		}
+		itemDTO["issued_quantity"] = totalIssued
+		itemDTO["issue_progress"] = calculateProgress(totalIssued, item.PlannedQuantity)
+		itemDTO["remaining_quantity"] = item.PlannedQuantity - totalIssued
 
 		items = append(items, itemDTO)
 	}
@@ -222,19 +238,21 @@ func (p *MaterialPlan) ToDTOWithEnrichment(db *gorm.DB) map[string]any {
 }
 
 // ToDTO returns basic item DTO
+// Note: arrived_quantity and issued_quantity are not included as they should be
+// calculated dynamically from stock_logs table via GetPlanItemsProgress method
 func (i *MaterialPlanItem) ToDTO() map[string]any {
 	return map[string]any{
 		"id":               i.ID,
 		"plan_id":          i.PlanID,
 		"material_id":      i.MaterialID,
 		"planned_quantity": i.PlannedQuantity,
-		"unit_price":       i.UnitPrice,
-		"required_date":    i.RequiredDate,
-		"priority":         i.Priority,
-		"status":           i.Status,
-		"remark":           i.Remark,
-		"created_at":       i.CreatedAt,
-		"updated_at":       i.UpdatedAt,
+		"unit_price":    i.UnitPrice,
+		"required_date": i.RequiredDate,
+		"priority":      i.Priority,
+		"status":        i.Status,
+		"remark":        i.Remark,
+		"created_at":    i.CreatedAt,
+		"updated_at":    i.UpdatedAt,
 	}
 }
 

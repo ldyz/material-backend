@@ -182,7 +182,7 @@ func (wi *WorkflowIntegration) executeInboundApproval(order *InboundOrder, appro
 
 		// 获取项目ID
 		var projectID uint
-		wi.db.Table("materials").Where("id = ?", item.MaterialID).
+		wi.db.Table("material_master").Where("id = ?", item.MaterialID).
 			Select("project_id").Scan(&projectID)
 
 		// 创建库存日志
@@ -202,9 +202,19 @@ func (wi *WorkflowIntegration) executeInboundApproval(order *InboundOrder, appro
 		wi.db.Table("stock_logs").Create(&stockLog)
 	}
 
+
 	// 更新订单状态为已完成
 	order.Status = StatusCompleted
 	return wi.db.Save(order).Error
+}
+
+// getMaterialIDsFromItems 从入库单项中提取物资ID列表
+func getMaterialIDsFromItems(items []InboundOrderItem) []uint {
+	materialIDs := make([]uint, 0, len(items))
+	for _, item := range items {
+		materialIDs = append(materialIDs, item.MaterialID)
+	}
+	return materialIDs
 }
 
 // InboundApprovalItem 入库单审批项

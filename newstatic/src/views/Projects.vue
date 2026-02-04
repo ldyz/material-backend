@@ -340,36 +340,118 @@
         </el-form-item>
 
         <el-form-item label="关联成员" prop="member_ids">
-          <el-select
-            v-model="formData.member_ids"
-            multiple
-            filterable
-            placeholder="请选择关联成员"
-            style="width: 100%"
-            :disabled="isViewMode"
-          >
-            <el-option-group
-              v-for="group in groupedUsers"
-              :key="group.label"
-              :label="group.label"
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+            <el-tag
+              v-for="userId in formData.member_ids"
+              :key="userId"
+              :closable="!isViewMode"
+              @close="removeMember(userId)"
+              style="margin: 2px"
             >
-              <el-option
-                v-for="user in group.users"
-                :key="user.id"
-                :label="`${user.username} (${user.full_name || user.email})`"
-                :value="user.id"
-              >
-                <span style="float: left">{{ user.username }}</span>
-                <span style="float: right; color: #8492a6; font-size: 13px">
-                  {{ user.full_name || user.email }}
-                </span>
-              </el-option>
-            </el-option-group>
-          </el-select>
-          <div class="text-gray text-sm">可以多选，关联后这些用户可以访问该项目</div>
+              {{ getUserNameById(userId) }}
+            </el-tag>
+            <el-button
+              v-if="!isViewMode"
+              type="primary"
+              size="small"
+              @click="openMemberSelector"
+              icon="Plus"
+            >
+              选择成员
+            </el-button>
+          </div>
+          <div class="text-gray text-sm mt-1">
+            已选择 {{ formData.member_ids?.length || 0 }} 个成员，点击"选择成员"按钮进行修改
+          </div>
         </el-form-item>
       </el-form>
     </Dialog>
+
+    <!-- 成员选择对话框 -->
+    <el-dialog
+      v-model="memberSelectorVisible"
+      title="选择项目成员"
+      width="800px"
+      :close-on-click-modal="false"
+    >
+      <div style="margin-bottom: 16px">
+        <el-input
+          v-model="memberSearchText"
+          placeholder="搜索用户名、姓名或邮箱"
+          prefix-icon="Search"
+          clearable
+          style="width: 300px"
+        />
+      </div>
+
+      <div style="max-height: 500px; overflow-y: auto">
+        <div v-for="group in filteredGroupedUsers" :key="group.label">
+          <div style="
+            background: #f5f7fa;
+            padding: 10px 16px;
+            font-weight: bold;
+            color: #606266;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+          ">
+            <el-checkbox
+              v-model="group.checked"
+              :indeterminate="group.indeterminate"
+              @change="handleGroupCheck(group)"
+            >
+              {{ group.label }} ({{ group.users.length }}人，已选{{ getGroupSelectedCount(group) }}人)
+            </el-checkbox>
+          </div>
+
+          <el-checkbox-group v-model="selectedMembersTemp">
+            <div
+              v-for="user in group.users"
+              :key="user.id"
+              style="
+                padding: 8px 16px;
+                border-bottom: 1px solid #ebeef5;
+                display: flex;
+                align-items: center;
+              "
+            >
+              <el-checkbox :label="user.id" style="flex: 1">
+                <div style="display: flex; align-items: center; gap: 12px; flex: 1">
+                  <div style="flex: 1">
+                    <div style="font-weight: 500">{{ user.username }}</div>
+                    <div style="font-size: 12px; color: #909399">
+                      {{ user.full_name || '未设置姓名' }} | {{ user.email }}
+                    </div>
+                  </div>
+                  <el-tag v-if="user.is_active" type="success" size="small">活跃</el-tag>
+                  <el-tag v-else type="info" size="small">离线</el-tag>
+                </div>
+              </el-checkbox>
+            </div>
+          </el-checkbox-group>
+        </div>
+
+        <el-empty
+          v-if="filteredGroupedUsers.length === 0"
+          description="没有找到匹配的用户"
+          :image-size="100"
+        />
+      </div>
+
+      <template #footer>
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span style="color: #909399; font-size: 14px">
+            已选择 {{ selectedMembersTemp.length }} 个成员
+          </span>
+          <div>
+            <el-button @click="memberSelectorVisible = false">取消</el-button>
+            <el-button type="primary" @click="confirmMemberSelection">确定</el-button>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -450,6 +532,95 @@ const formData = reactive({
   description: '',
   member_ids: [],
   parent_id: null
+})
+
+// 成员选择器相关
+const memberSelectorVisible = ref(false)
+const memberSearchText = ref('')
+const selectedMembersTemp = ref([])
+const originalMemberIds = ref([])
+
+// 打开成员选择器
+const openMemberSelector = () => {
+  // 保存原始选中的成员ID
+  originalMemberIds.value = [...(formData.member_ids || [])]
+  // 初始化临时选择
+  selectedMembersTemp.value = [...(formData.member_ids || [])]
+  // 清空搜索
+  memberSearchText.value = ''
+  // 打开对话框
+  memberSelectorVisible.value = true
+}
+
+// 移除成员
+const removeMember = (userId) => {
+  formData.member_ids = formData.member_ids.filter(id => id !== userId)
+}
+
+// 根据ID获取用户名
+const getUserNameById = (userId) => {
+  const user = userList.value.find(u => u.id === userId)
+  if (user) {
+    return user.full_name || user.username
+  }
+  return `用户${userId}`
+}
+
+// 确认成员选择
+const confirmMemberSelection = () => {
+  formData.member_ids = [...selectedMembersTemp.value]
+  memberSelectorVisible.value = false
+}
+
+// 获取分组中已选择的数量
+const getGroupSelectedCount = (group) => {
+  return group.users.filter(u => selectedMembersTemp.value.includes(u.id)).length
+}
+
+// 处理分组全选/取消
+const handleGroupCheck = (group) => {
+  const userIds = group.users.map(u => u.id)
+  if (group.checked) {
+    // 全选：添加该组所有用户
+    userIds.forEach(id => {
+      if (!selectedMembersTemp.value.includes(id)) {
+        selectedMembersTemp.value.push(id)
+      }
+    })
+  } else {
+    // 取消全选：移除该组所有用户
+    selectedMembersTemp.value = selectedMembersTemp.value.filter(id => !userIds.includes(id))
+  }
+}
+
+// 过滤并分组的用户（支持搜索）
+const filteredGroupedUsers = computed(() => {
+  const searchText = memberSearchText.value.toLowerCase().trim()
+  const groups = groupedUsers.value.map(group => {
+    // 过滤用户
+    const filteredUsers = group.users.filter(user => {
+      if (!searchText) return true
+      return (
+        (user.username && user.username.toLowerCase().includes(searchText)) ||
+        (user.full_name && user.full_name.toLowerCase().includes(searchText)) ||
+        (user.email && user.email.toLowerCase().includes(searchText))
+      )
+    })
+
+    // 计算该组是否全选或半选
+    const checked = filteredUsers.length > 0 && filteredUsers.every(u => selectedMembersTemp.value.includes(u.id))
+    const indeterminate = filteredUsers.some(u => selectedMembersTemp.value.includes(u.id)) && !checked
+
+    return {
+      ...group,
+      users: filteredUsers,
+      checked,
+      indeterminate
+    }
+  })
+
+  // 只返回有用户的分组
+  return groups.filter(g => g.users.length > 0)
 })
 
 // 表单验证规则
@@ -708,6 +879,11 @@ watch(() => searchForm.status, () => {
   pagination.page = 1
   fetchData()
 })
+
+// 监听临时选择变化，更新分组的checked/indeterminate状态
+watch(() => selectedMembersTemp.value, () => {
+  // filteredGroupedUsers computed会自动重新计算
+}, { deep: true })
 
 // 重置
 const handleReset = () => {

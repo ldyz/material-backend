@@ -213,25 +213,22 @@ const fetchPlanItems = async () => {
 
   loading.value = true
   try {
-    const { data } = await materialPlanApi.getPlanItems(props.planId)
-    const allItems = data || []
+    // 使用计划详情API获取完整计划数据（包含计算好的进度）
+    const { data } = await materialPlanApi.getPlanDetail(props.planId)
+    const planDetail = data || {}
+
+    // 从计划详情中获取物资项列表
+    const allItems = planDetail.items || []
 
     // 过滤出未到齐的物资（排除已完成入库的物资）
-    // 根据计划数量和已收货数量计算完成度
+    // 使用计划详情API中已经计算好的 receive_progress
     const itemsWithRemaining = allItems.filter(item => {
-      const planned = item.planned_quantity || 0
-      const received = item.received_quantity || 0
-
-      // 如果没有计划数量，不过滤（可能允许入库）
-      if (planned === 0) {
-        return true
-      }
-
-      // 计算完成度百分比
-      const progress = (received / planned) * 100
-
-      // 只过滤掉100%完成的物资
-      return progress < 100
+      // 检查是否有剩余数量
+      const remaining = (item.planned_quantity || 0) - (item.received_quantity || 0)
+      // 检查完成度（使用后端计算好的值）
+      const progress = item.receive_progress || 0
+      // 只显示还有剩余且未完成100%的物资
+      return remaining > 0 && progress < 100
     })
 
     // 检查是否有物资缺少material_id

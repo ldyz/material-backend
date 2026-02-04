@@ -213,8 +213,7 @@
             size="small"
           >
             <el-table-column prop="material_name" label="物资名称" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="spec" label="规格型号" width="120" show-overflow-tooltip />
-            <el-table-column prop="material" label="材质" width="100" show-overflow-tooltip />
+            <el-table-column prop="specification" label="规格型号" width="120" show-overflow-tooltip />
             <el-table-column prop="unit" label="单位" width="80" />
             <el-table-column prop="quantity" label="数量" width="100" align="right" />
             <el-table-column prop="unit_price" label="单价" width="100" align="right">

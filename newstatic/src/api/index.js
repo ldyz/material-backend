@@ -147,8 +147,7 @@ export const projectApi = {
   create(data) {
     return request({
       url: '/project/projects',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data
     })
   },
@@ -322,8 +321,7 @@ export const materialApi = {
   createMaster(data) {
     return request({
       url: '/materials/master',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data
     })
   },
@@ -737,8 +735,7 @@ export const stockApi = {
   create(data) {
     return request({
       url: '/stock/stocks',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data
     })
   },
@@ -830,7 +827,6 @@ export const stockApi = {
   in(data) {
     return request({
       url: `/stock/stocks/${data.id}/in`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -869,7 +865,6 @@ export const stockApi = {
   out(id, data) {
     return request({
       url: `/stock/stocks/${id}/out`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -978,8 +973,7 @@ export const requisitionApi = {
   create(data) {
     return request({
       url: '/requisition/requisitions',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data
     })
   },
@@ -1049,7 +1043,6 @@ export const requisitionApi = {
   reject(id, data) {
     return request({
       url: `/requisition/requisitions/${id}/reject`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -1168,8 +1161,7 @@ export const inboundApi = {
   submit(data) {
     return request({
       url: '/inbound/inbound/submit',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data
     })
   },
@@ -1183,8 +1175,7 @@ export const inboundApi = {
   import(data) {
     return request({
       url: '/inbound/inbound/import',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data,
       headers: {
         'Content-Type': 'multipart/form-data'
@@ -1276,7 +1267,6 @@ export const inboundApi = {
   approve(id, data) {
     return request({
       url: `/inbound/inbound-orders/${id}/approve`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -1659,8 +1649,7 @@ export const systemApi = {
   generateReport(data) {
     return request({
       url: '/system/reports/generate',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data
     })
   },
@@ -2002,7 +1991,6 @@ export const progressApi = {
   addDependency(taskId, data) {
     return request({
       url: `/progress/tasks/${taskId}/dependencies`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -2123,7 +2111,6 @@ export const progressApi = {
   create(data) {
     return request({
       url: `/progress/project/${data.project_id}/tasks`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -2492,7 +2479,6 @@ export const userApi = {
   resetPassword(id, data) {
     return request({
       url: `/auth/users/${id}/reset-password`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -2551,8 +2537,7 @@ export const roleApi = {
   create(data) {
     return request({
       url: '/auth/roles',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data
     })
   },
@@ -2606,7 +2591,6 @@ export const roleApi = {
   assignPermissions(id, data) {
     return request({
       url: `/auth/roles/${id}/permissions`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -2637,8 +2621,7 @@ export const aiApi = {
   analyze(data) {
     return request({
       url: '/system/ai/analyze',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data
     })
   },
@@ -2766,8 +2749,7 @@ export const aiApi = {
   updateConfig(data) {
     return request({
       url: '/system/ai/config',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data
     })
   },
@@ -3017,7 +2999,6 @@ export const workflowApi = {
   approveTask(id, data) {
     return request({
       url: `/workflow-tasks/${id}/approve`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -3036,7 +3017,6 @@ export const workflowApi = {
   rejectTask(id, data) {
     return request({
       url: `/workflow-tasks/${id}/reject`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -3203,7 +3183,6 @@ export const materialPlanApi = {
   approvePlan(id, data) {
     return request({
       url: `/material-plan/plans/${id}/approve`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -3220,7 +3199,6 @@ export const materialPlanApi = {
   rejectPlan(id, data) {
     return request({
       url: `/material-plan/plans/${id}/reject`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -3263,7 +3241,6 @@ export const materialPlanApi = {
   cancelPlan(id, data) {
     return request({
       url: `/material-plan/plans/${id}/cancel`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -3292,7 +3269,6 @@ export const materialPlanApi = {
   addPlanItem(id, data) {
     return request({
       url: `/material-plan/plans/${id}/items`,
-      url: '/project/projects',
     method: 'POST',
       data
     })
@@ -3473,8 +3449,7 @@ export const uploadApi = {
   uploadImages(formData) {
     return request({
       url: '/upload/images',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data: formData,
       headers: {
         'Content-Type': 'multipart/form-data'
@@ -3608,8 +3583,7 @@ export const agentApi = {
   validateOperation(operation, resource, parameters) {
     return request({
       url: '/agent/validate',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data: {
         operation,
         resource,

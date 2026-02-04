@@ -926,6 +926,10 @@ const handleSubmit = async () => {
 
 // 审核
 const handleApprove = (row) => {
+  if (!row || !row.id) {
+    ElMessage.error('出库单信息不完整')
+    return
+  }
   currentRequisition.value = row
   approveForm.approved = true
   approveForm.remark = ''
@@ -954,6 +958,10 @@ const handleApproveSubmit = async () => {
 
 // 发货
 const handleIssue = (row) => {
+  if (!row || !row.id) {
+    ElMessage.error('出库单信息不完整')
+    return
+  }
   currentRequisition.value = row
   issueForm.issue_date = new Date().toISOString().split('T')[0]
   issueForm.remark = ''
@@ -966,6 +974,12 @@ const handleIssueSubmit = async () => {
 
   try {
     await issueFormRef.value.validate()
+
+    if (!currentRequisition.value || !currentRequisition.value.id) {
+      ElMessage.error('出库单信息不完整，请重试')
+      return
+    }
+
     issueDialogLoading.value = true
 
     await requisitionApi.issue(currentRequisition.value.id, issueForm)
@@ -975,6 +989,7 @@ const handleIssueSubmit = async () => {
     fetchData()
   } catch (error) {
     console.error('发货失败:', error)
+    ElMessage.error(error?.message || '发货失败')
   } finally {
     issueDialogLoading.value = false
   }

@@ -140,6 +140,7 @@
       :title="dialogTitle"
       width="900px"
       :loading="dialogLoading"
+      :show-footer="!isViewMode"
       @confirm="handleSubmit"
     >
       <template #extra v-if="isViewMode">

@@ -1206,15 +1206,19 @@ const generateMockHistory = (inbound) => {
   console.log('生成审批历史，入库单数据:', inbound)
   const histories = []
 
+  const orderNo = inbound.order_no || inbound.inbound_no || 'Unknown'
+  const creatorName = inbound.creator_name || '当前用户'
+  const createdAt = inbound.created_at || new Date().toISOString()
+
   // 1. 创建记录（草稿）
   histories.push({
     action: 'draft',
-    operator_name: inbound.receiver || inbound.creator_name || '当前用户',
-    operator: inbound.receiver || inbound.creator_name || '当前用户',
+    operator_name: inbound.receiver || creatorName,
+    operator: inbound.receiver || creatorName,
     department: '采购部',
-    remark: '创建入库单',
-    description: `创建入库单 ${inbound.order_no || inbound.inbound_no}`,
-    created_at: inbound.created_at,
+    remark: '',
+    description: `创建入库单 ${orderNo}`,
+    created_at: createdAt,
     status: '草稿',
     status_type: 'info'
   })
@@ -1223,41 +1227,47 @@ const generateMockHistory = (inbound) => {
   if (inbound.status !== 'draft') {
     histories.push({
       action: 'pending',
-      operator_name: inbound.creator_name || '当前用户',
-      operator: inbound.creator_name || '当前用户',
+      operator_name: creatorName,
+      operator: creatorName,
       department: '采购部',
       remark: '',
       description: '提交审核',
-      created_at: inbound.updated_at || inbound.created_at,
+      created_at: inbound.updated_at || createdAt,
       status: '待审核',
       status_type: 'warning'
     })
   }
 
   // 3. 最终状态（已完成或已拒绝）
-  if (inbound.status === 'completed') {
+  if (inbound.status === 'completed' || inbound.status === 'approved') {
     // 已完成流程
     histories.push({
       action: 'approved',
-      operator_name: inbound.approver || '审核员',
-      operator: inbound.approver || '审核员',
+      operator_name: '审核员',
+      operator: '审核员',
       department: '管理部',
-      remark: inbound.approve_remark || inbound.remark || '',
+      remark: inbound.remark || '',
       description: '审核通过，库存已更新',
-      created_at: inbound.approved_at || inbound.updated_at || inbound.created_at,
+      created_at: inbound.updated_at || createdAt,
       status: '已完成',
       status_type: 'success'
     })
   } else if (inbound.status === 'rejected') {
-    // 已拒绝流程
+    // 已拒绝流程 - 从备注中提取拒绝原因
+    let rejectReason = inbound.remark || ''
+    const rejectMatch = inbound.remark?.match(/拒绝原因[：:]\s*(.+)/)
+    if (rejectMatch && rejectMatch[1]) {
+      rejectReason = rejectMatch[1].trim()
+    }
+
     histories.push({
       action: 'rejected',
-      operator_name: inbound.approver || '审核员',
-      operator: inbound.approver || '审核员',
+      operator_name: '审核员',
+      operator: '审核员',
       department: '管理部',
-      remark: inbound.approve_remark || inbound.remark || '',
+      remark: rejectReason,
       description: '审核拒绝',
-      created_at: inbound.approved_at || inbound.updated_at || inbound.created_at,
+      created_at: inbound.updated_at || createdAt,
       status: '已拒绝',
       status_type: 'danger'
     })

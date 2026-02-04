@@ -35,8 +35,7 @@ export const authApi = {
   login(data) {
     return request({
       url: '/auth/login',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data
     })
   },
@@ -80,8 +79,7 @@ export const authApi = {
   changePassword(data) {
     return request({
       url: '/auth/change-password',
-      url: '/project/projects',
-    method: 'POST',
+      method: 'POST',
       data
     })
   }

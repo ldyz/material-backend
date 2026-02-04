@@ -217,12 +217,21 @@ const fetchPlanItems = async () => {
     const allItems = data || []
 
     // 过滤出未到齐的物资（排除已完成入库的物资）
-    // 使用进度判断，而不是状态字段
+    // 根据计划数量和已收货数量计算完成度
     const itemsWithRemaining = allItems.filter(item => {
-      const remaining = (item.planned_quantity || 0) - (item.received_quantity || 0)
-      const progress = item.receive_progress || 0
-      // 排除已完全到货的物资（剩余数量为0或进度>=100%）
-      return remaining > 0 && progress < 100
+      const planned = item.planned_quantity || 0
+      const received = item.received_quantity || 0
+
+      // 如果没有计划数量，不过滤（可能允许入库）
+      if (planned === 0) {
+        return true
+      }
+
+      // 计算完成度百分比
+      const progress = (received / planned) * 100
+
+      // 只过滤掉100%完成的物资
+      return progress < 100
     })
 
     // 检查是否有物资缺少material_id

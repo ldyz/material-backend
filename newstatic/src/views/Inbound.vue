@@ -738,7 +738,7 @@ const handleEdit = (row) => {
 }
 
 // 查看
-const handleView = (row) => {
+const handleView = async (row) => {
   // 保存完整数据到currentInbound，供审批使用
   currentInbound.value = row
 
@@ -759,11 +759,18 @@ const handleView = (row) => {
     total_amount: row.total_amount || 0,
     updated_at: row.updated_at,
     created_at: row.created_at,
-    plan_id: row.plan_id || null
+    plan_id: row.plan_id || null,
+    // 添加审批相关字段
+    approver: row.approver || row.approved_by || '',
+    approved_at: row.approved_at || '',
+    approve_remark: row.approve_remark || ''
   })
+
+  // 先填充数据，再获取审批历史
+  await fetchWorkflowHistory(row.id)
+
   isViewMode.value = true
   dialogVisible.value = true
-  fetchWorkflowHistory(row.id)
 }
 
 // 删除

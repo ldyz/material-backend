@@ -1247,7 +1247,8 @@ const handleWorkflowAction = async (action) => {
 // 判断是否可编辑
 const canEdit = (row) => {
   if (!authStore.hasPermission('inbound_edit')) return false
-  return row.status === 'draft' || row.status === 'rejected'
+  // 只允许编辑草稿状态的入库单，已拒绝的不可以编辑
+  return row.status === 'draft'
 }
 
 // 判断是否可审核

@@ -230,10 +230,9 @@
           </el-table>
 
           <!-- 工作流历史记录 -->
-          <template v-if="workflowHistories.length > 0">
-            <el-divider content-position="left">审批历史</el-divider>
-            <WorkflowHistory :histories="workflowHistories" />
-          </template>
+          <el-divider content-position="left">审批历史</el-divider>
+          <WorkflowHistory v-if="workflowHistories.length > 0" :histories="workflowHistories" />
+          <el-empty v-else description="暂无审批历史" :image-size="80" />
         </template>
 
         <!-- 编辑模式：显示表单 -->
@@ -1189,8 +1188,8 @@ const fetchWorkflowHistory = async (id) => {
     workflowHistories.value = data || []
   } catch (error) {
     console.error('获取工作流历史失败:', error)
-    // 如果没有专门的接口，使用审核历史模拟
-    workflowHistories.value = generateMockHistory(formData.value)
+    // 如果API调用失败，使用当前数据生成历史记录
+    workflowHistories.value = generateMockHistory(formData)
   }
 }
 

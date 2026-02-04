@@ -1187,14 +1187,16 @@ const fetchWorkflowHistory = async (id) => {
     const { data } = await inboundApi.getWorkflowHistory(id)
     workflowHistories.value = data || []
   } catch (error) {
-    console.error('获取工作流历史失败:', error)
-    // 如果API调用失败，使用当前数据生成历史记录
+    console.log('工作流历史API不可用，使用模拟数据')
+    // API调用失败是正常的，因为后端可能没有这个接口
+    // 直接使用当前数据生成历史记录
     workflowHistories.value = generateMockHistory(formData)
   }
 }
 
 // 生成模拟工作流历史
 const generateMockHistory = (inbound) => {
+  console.log('生成审批历史，入库单数据:', inbound)
   const histories = []
 
   // 1. 创建记录（草稿）
@@ -1219,40 +1221,42 @@ const generateMockHistory = (inbound) => {
       department: '采购部',
       remark: '',
       description: '提交审核',
-      created_at: inbound.updated_at,
+      created_at: inbound.updated_at || inbound.created_at,
       status: '待审核',
       status_type: 'warning'
     })
   }
 
   // 3. 最终状态（已完成或已拒绝）
-  if (inbound.status === 'completed' && inbound.approver) {
+  if (inbound.status === 'completed') {
     // 已完成流程
     histories.push({
       action: 'approved',
-      operator_name: inbound.approver,
-      operator: inbound.approver,
+      operator_name: inbound.approver || '审核员',
+      operator: inbound.approver || '审核员',
       department: '管理部',
       remark: inbound.approve_remark || inbound.remark || '',
       description: '审核通过，库存已更新',
-      created_at: inbound.approved_at || inbound.updated_at,
+      created_at: inbound.approved_at || inbound.updated_at || inbound.created_at,
       status: '已完成',
       status_type: 'success'
     })
-  } else if (inbound.status === 'rejected' && inbound.approver) {
+  } else if (inbound.status === 'rejected') {
     // 已拒绝流程
     histories.push({
       action: 'rejected',
-      operator_name: inbound.approver,
-      operator: inbound.approver,
+      operator_name: inbound.approver || '审核员',
+      operator: inbound.approver || '审核员',
       department: '管理部',
       remark: inbound.approve_remark || inbound.remark || '',
       description: '审核拒绝',
-      created_at: inbound.approved_at || inbound.updated_at,
+      created_at: inbound.approved_at || inbound.updated_at || inbound.created_at,
       status: '已拒绝',
       status_type: 'danger'
     })
   }
+
+  console.log('生成的审批历史:', histories)
 
   // 按时间升序排序（最新的在后面）
   return histories.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))

@@ -1197,43 +1197,65 @@ const fetchWorkflowHistory = async (id) => {
 const generateMockHistory = (inbound) => {
   const histories = []
 
-  // 创建记录
+  // 1. 创建记录（草稿）
   histories.push({
     action: 'draft',
-    operator_name: inbound.receiver || '当前用户',
-    operator: inbound.receiver || '当前用户',
+    operator_name: inbound.receiver || inbound.creator_name || '当前用户',
+    operator: inbound.receiver || inbound.creator_name || '当前用户',
     department: '采购部',
     remark: '创建入库单',
-    description: `创建入库单 ${inbound.inbound_no}`,
-    created_at: inbound.created_at
+    description: `创建入库单 ${inbound.order_no || inbound.inbound_no}`,
+    created_at: inbound.created_at,
+    status: '草稿',
+    status_type: 'info'
   })
 
-  // 审核记录
-  if (inbound.status === 'completed' || inbound.status === 'rejected') {
+  // 2. 待审核状态（已提交审核）
+  if (inbound.status !== 'draft') {
     histories.push({
       action: 'pending',
-      operator_name: '审核员',
-      operator: '审核员',
-      department: '管理部',
+      operator_name: inbound.creator_name || '当前用户',
+      operator: inbound.creator_name || '当前用户',
+      department: '采购部',
       remark: '',
       description: '提交审核',
-      created_at: inbound.created_at
+      created_at: inbound.updated_at,
+      status: '待审核',
+      status_type: 'warning'
     })
-
-    if (inbound.approver) {
-      histories.push({
-        action: inbound.status,
-        operator_name: inbound.approver || '审核员',
-        operator: inbound.approver || '审核员',
-        department: '管理部',
-        remark: inbound.approve_remark || '',
-        description: inbound.status === 'completed' ? '审核通过，库存已更新' : '审核拒绝',
-        created_at: inbound.approved_at || inbound.updated_at
-      })
-    }
   }
 
-  return histories.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  // 3. 最终状态（已完成或已拒绝）
+  if (inbound.status === 'completed' && inbound.approver) {
+    // 已完成流程
+    histories.push({
+      action: 'approved',
+      operator_name: inbound.approver,
+      operator: inbound.approver,
+      department: '管理部',
+      remark: inbound.approve_remark || inbound.remark || '',
+      description: '审核通过，库存已更新',
+      created_at: inbound.approved_at || inbound.updated_at,
+      status: '已完成',
+      status_type: 'success'
+    })
+  } else if (inbound.status === 'rejected' && inbound.approver) {
+    // 已拒绝流程
+    histories.push({
+      action: 'rejected',
+      operator_name: inbound.approver,
+      operator: inbound.approver,
+      department: '管理部',
+      remark: inbound.approve_remark || inbound.remark || '',
+      description: '审核拒绝',
+      created_at: inbound.approved_at || inbound.updated_at,
+      status: '已拒绝',
+      status_type: 'danger'
+    })
+  }
+
+  // 按时间升序排序（最新的在后面）
+  return histories.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
 }
 
 // 处理工作流操作

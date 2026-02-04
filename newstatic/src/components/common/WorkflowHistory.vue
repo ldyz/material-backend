@@ -28,10 +28,6 @@
             <div class="step-operator">
               <el-icon><User /></el-icon>
               {{ item.operator_name || item.operator || '系统' }}
-              <span v-if="item.department" class="step-department">
-                <el-icon><OfficeBuilding /></el-icon>
-                {{ item.department }}
-              </span>
             </div>
           </div>
         </div>
@@ -55,8 +51,7 @@ import {
   Finished,
   Box,
   Document,
-  User,
-  OfficeBuilding
+  User
 } from '@element-plus/icons-vue'
 
 const props = defineProps({
@@ -278,13 +273,6 @@ const formatTime = (time) => {
   gap: 4px;
   font-size: 12px;
   color: #909399;
-}
-
-.step-department {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 10px;
 }
 
 /* 确保水平滚动条样式美观 */

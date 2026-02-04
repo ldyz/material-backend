@@ -875,12 +875,17 @@ const handleApproveSubmit = async () => {
     await approveFormRef.value.validate()
     approveDialogLoading.value = true
 
+    // 构建请求数据
+    const requestData = {
+      remark: approveForm.remark
+    }
+
     // 根据审核结果调用不同的API
     if (approveForm.approved) {
-      await inboundApi.approve(currentInbound.value.id, approveForm)
+      await inboundApi.approve(currentInbound.value.id, requestData)
       ElMessage.success('审核通过')
     } else {
-      await inboundApi.reject(currentInbound.value.id, approveForm)
+      await inboundApi.reject(currentInbound.value.id, requestData)
       ElMessage.success('已拒绝')
     }
 

@@ -369,8 +369,32 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		}
 		order.TotalAmount = totalAmount
 
-		if err := db.Create(&order).Error; err != nil {
+		// 使用事务确保工作流启动成功才创建入库单
+		tx := db.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+			}
+		}()
+
+		// 创建入库单
+		if err := tx.Create(&order).Error; err != nil {
+			tx.Rollback()
 			response.InternalError(c, err.Error())
+			return
+		}
+
+		// 启动工作流
+		wfIntegration := NewWorkflowIntegration(db)
+		if err := wfIntegration.StartInboundWorkflow(&order, creatorID, creatorName); err != nil {
+			tx.Rollback()
+			response.InternalError(c, fmt.Sprintf("启动工作流失败: %v", err))
+			return
+		}
+
+		// 提交事务
+		if err := tx.Commit().Error; err != nil {
+			response.InternalError(c, "保存入库单失败")
 			return
 		}
 
@@ -924,6 +948,40 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			order.ID, order.OrderNo, req.Remark)
 
 		response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "入库单已拒绝")
+	})
+
+	// Get workflow history for inbound order
+	g.GET("/inbound-orders/:id/workflow-history", auth.PermissionMiddleware(db, "inbound_view"), func(c *gin.Context) {
+		id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+
+		// Get workflow integration
+		wfIntegration := NewWorkflowIntegration(db)
+		approvals, err := wfIntegration.GetInboundWorkflowApprovals(uint(id))
+		if err != nil {
+			// If no workflow instance found, return empty array
+			response.Success(c, []any{})
+			return
+		}
+
+		// Transform approval records to match frontend format
+		data := make([]map[string]any, 0)
+		for _, approval := range approvals {
+			item := map[string]any{
+				"id":            approval.ID,
+				"instance_id":   approval.InstanceID,
+				"node_id":       approval.NodeID,
+				"node_key":      approval.NodeKey,
+				"approver_id":   approval.ApproverID,
+				"approver_name": approval.ApproverName,
+				"action":        approval.Action,
+				"remark":        approval.Remark,
+				"approved_at":   approval.ApprovedAt,
+				"created_at":    approval.CreatedAt,
+			}
+			data = append(data, item)
+		}
+
+		response.Success(c, data)
 	})
 
 	// Submit inbound order (same as create, for compatibility)

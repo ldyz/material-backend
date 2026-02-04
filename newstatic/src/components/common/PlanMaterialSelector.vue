@@ -216,10 +216,11 @@ const fetchPlanItems = async () => {
     const { data } = await materialPlanApi.getPlanItems(props.planId)
     const allItems = data || []
 
-    // 过滤出未到齐的物资
+    // 过滤出未到齐的物资（排除已完成入库的物资）
     const itemsWithRemaining = allItems.filter(item => {
       const remaining = (item.planned_quantity || 0) - (item.received_quantity || 0)
-      return remaining > 0
+      const isCompleted = item.status === 'completed'
+      return remaining > 0 && !isCompleted
     })
 
     // 检查是否有物资缺少material_id

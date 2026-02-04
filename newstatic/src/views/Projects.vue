@@ -415,31 +415,33 @@
               </div>
             </template>
 
-            <el-checkbox-group v-model="selectedMembersTemp">
-              <div
-                v-for="user in group.users"
-                :key="user.id"
-                style="
-                  padding: 10px 16px;
-                  border-bottom: 1px solid #ebeef5;
-                  display: flex;
-                  align-items: center;
-                "
+            <div
+              v-for="user in group.users"
+              :key="user.id"
+              style="
+                padding: 10px 16px;
+                border-bottom: 1px solid #ebeef5;
+                display: flex;
+                align-items: center;
+              "
+            >
+              <el-checkbox
+                :model-value="selectedMembersTemp.includes(user.id)"
+                @change="toggleUserSelection(user.id)"
+                style="flex: 1"
               >
-                <el-checkbox :label="user.id" style="flex: 1">
-                  <div style="display: flex; align-items: center; gap: 12px; flex: 1">
-                    <div style="flex: 1">
-                      <div style="font-weight: 500; font-size: 14px">{{ user.username }}</div>
-                      <div style="font-size: 12px; color: #909399; margin-top: 2px">
-                        {{ user.full_name || '未设置姓名' }} | {{ user.email }}
-                      </div>
+                <div style="display: flex; align-items: center; gap: 12px; flex: 1">
+                  <div style="flex: 1">
+                    <div style="font-weight: 500; font-size: 14px">{{ user.username }}</div>
+                    <div style="font-size: 12px; color: #909399; margin-top: 2px">
+                      {{ user.full_name || '未设置姓名' }} | {{ user.email }}
                     </div>
-                    <el-tag v-if="user.is_active" type="success" size="small">活跃</el-tag>
-                    <el-tag v-else type="info" size="small">离线</el-tag>
                   </div>
-                </el-checkbox>
-              </div>
-            </el-checkbox-group>
+                  <el-tag v-if="user.is_active" type="success" size="small">活跃</el-tag>
+                  <el-tag v-else type="info" size="small">离线</el-tag>
+                </div>
+              </el-checkbox>
+            </div>
           </el-collapse-item>
         </el-collapse>
 
@@ -603,6 +605,18 @@ const handleGroupCheck = (group) => {
   } else {
     // 取消全选：移除该组所有用户
     selectedMembersTemp.value = selectedMembersTemp.value.filter(id => !userIds.includes(id))
+  }
+}
+
+// 切换单个用户选择
+const toggleUserSelection = (userId) => {
+  const index = selectedMembersTemp.value.indexOf(userId)
+  if (index > -1) {
+    // 已选中，移除
+    selectedMembersTemp.value.splice(index, 1)
+  } else {
+    // 未选中，添加
+    selectedMembersTemp.value.push(userId)
   }
 }
 

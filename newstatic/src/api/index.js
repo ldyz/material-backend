@@ -1301,7 +1301,7 @@ export const inboundApi = {
    */
   getWorkflowHistory(id) {
     return request({
-      url: `/inbound-orders/${id}/workflow-history`,
+      url: `/inbound/inbound-orders/${id}/workflow-history`,
       method: 'GET'
     })
   },

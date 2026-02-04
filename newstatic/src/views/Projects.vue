@@ -385,53 +385,63 @@
       </div>
 
       <div style="max-height: 500px; overflow-y: auto">
-        <div v-for="group in filteredGroupedUsers" :key="group.label">
-          <div style="
-            background: #f5f7fa;
-            padding: 10px 16px;
-            font-weight: bold;
-            color: #606266;
-            border-radius: 4px;
-            margin-bottom: 8px;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-          ">
-            <el-checkbox
-              v-model="group.checked"
-              :indeterminate="group.indeterminate"
-              @change="handleGroupCheck(group)"
-            >
-              {{ group.label }} ({{ group.users.length }}人，已选{{ getGroupSelectedCount(group) }}人)
-            </el-checkbox>
-          </div>
-
-          <el-checkbox-group v-model="selectedMembersTemp">
-            <div
-              v-for="user in group.users"
-              :key="user.id"
-              style="
-                padding: 8px 16px;
-                border-bottom: 1px solid #ebeef5;
+        <el-collapse v-model="expandedRoles" accordion>
+          <el-collapse-item
+            v-for="group in filteredGroupedUsers"
+            :key="group.label"
+            :name="group.label"
+          >
+            <template #title>
+              <div style="
                 display: flex;
                 align-items: center;
-              "
-            >
-              <el-checkbox :label="user.id" style="flex: 1">
-                <div style="display: flex; align-items: center; gap: 12px; flex: 1">
-                  <div style="flex: 1">
-                    <div style="font-weight: 500">{{ user.username }}</div>
-                    <div style="font-size: 12px; color: #909399">
-                      {{ user.full_name || '未设置姓名' }} | {{ user.email }}
+                gap: 12px;
+                padding: 4px 0;
+                width: 100%;
+              ">
+                <el-checkbox
+                  :model-value="group.checked"
+                  :indeterminate="group.indeterminate"
+                  @change="handleGroupCheck(group)"
+                  @click.stop
+                >
+                  <span style="font-weight: 500; font-size: 14px">
+                    {{ group.label }}
+                  </span>
+                  <span style="color: #909399; font-size: 13px; margin-left: 8px">
+                    ({{ group.users.length }}人，已选{{ getGroupSelectedCount(group) }}人)
+                  </span>
+                </el-checkbox>
+              </div>
+            </template>
+
+            <el-checkbox-group v-model="selectedMembersTemp">
+              <div
+                v-for="user in group.users"
+                :key="user.id"
+                style="
+                  padding: 10px 16px;
+                  border-bottom: 1px solid #ebeef5;
+                  display: flex;
+                  align-items: center;
+                "
+              >
+                <el-checkbox :label="user.id" style="flex: 1">
+                  <div style="display: flex; align-items: center; gap: 12px; flex: 1">
+                    <div style="flex: 1">
+                      <div style="font-weight: 500; font-size: 14px">{{ user.username }}</div>
+                      <div style="font-size: 12px; color: #909399; margin-top: 2px">
+                        {{ user.full_name || '未设置姓名' }} | {{ user.email }}
+                      </div>
                     </div>
+                    <el-tag v-if="user.is_active" type="success" size="small">活跃</el-tag>
+                    <el-tag v-else type="info" size="small">离线</el-tag>
                   </div>
-                  <el-tag v-if="user.is_active" type="success" size="small">活跃</el-tag>
-                  <el-tag v-else type="info" size="small">离线</el-tag>
-                </div>
-              </el-checkbox>
-            </div>
-          </el-checkbox-group>
-        </div>
+                </el-checkbox>
+              </div>
+            </el-checkbox-group>
+          </el-collapse-item>
+        </el-collapse>
 
         <el-empty
           v-if="filteredGroupedUsers.length === 0"
@@ -539,6 +549,7 @@ const memberSelectorVisible = ref(false)
 const memberSearchText = ref('')
 const selectedMembersTemp = ref([])
 const originalMemberIds = ref([])
+const expandedRoles = ref([]) // 控制展开的角色列表
 
 // 打开成员选择器
 const openMemberSelector = () => {
@@ -548,6 +559,8 @@ const openMemberSelector = () => {
   selectedMembersTemp.value = [...(formData.member_ids || [])]
   // 清空搜索
   memberSearchText.value = ''
+  // 重置展开状态
+  expandedRoles.value = []
   // 打开对话框
   memberSelectorVisible.value = true
 }

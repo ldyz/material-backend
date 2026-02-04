@@ -485,7 +485,25 @@ const approveForm = reactive({
   approved: true,
   remark: ''
 })
-const approveFormRules = {}
+
+// 审核表单验证规则
+const approveFormRules = computed(() => ({
+  remark: [
+    {
+      required: !approveForm.approved,
+      message: '拒绝时必须填写审核意见',
+      trigger: 'blur',
+      validator: (rule, value, callback) => {
+        // 拒绝时必须填写原因
+        if (approveForm.approved === false && !value) {
+          callback(new Error('拒绝时必须填写审核意见'))
+        } else {
+          callback()
+        }
+      }
+    }
+  ]
+}))
 
 // 获取列表数据
 // 适配统一响应格式
@@ -668,6 +686,13 @@ watch(() => searchForm.project_id, () => {
   fetchData()
 })
 
+// 监听审核结果变化，重新验证表单
+watch(() => approveForm.approved, () => {
+  if (approveFormRef.value) {
+    approveFormRef.value.validateField('remark')
+  }
+})
+
 // 搜索
 const handleSearch = () => {
   pagination.page = 1
@@ -694,11 +719,15 @@ const handleAdd = () => {
 
 // 编辑
 const handleEdit = (row) => {
+  // 编辑已拒绝的入库单时，自动填充验收人和入库日期
+  const receiver = row.receiver || authStore.displayName
+  const inboundDate = row.inbound_date || new Date().toISOString().split('T')[0]
+
   Object.assign(formData, {
     id: row.id,
     supplier: row.supplier,
-    receiver: row.receiver,
-    inbound_date: row.inbound_date,
+    receiver: receiver,
+    inbound_date: inboundDate,
     remark: row.remark || '',
     items: row.items || [],
     plan_id: row.plan_id || null
@@ -815,7 +844,20 @@ const handleSubmit = async () => {
 const handleApprove = (row) => {
   currentInbound.value = row
   approveForm.approved = true
-  approveForm.remark = ''
+
+  // 如果是已拒绝的单据，提取拒绝理由
+  if (row.status === 'rejected' && row.remark) {
+    // 尝试从备注中提取拒绝原因
+    const rejectMatch = row.remark.match(/拒绝原因[：:]\s*(.+?)(?:\n|$)/)
+    if (rejectMatch && rejectMatch[1]) {
+      approveForm.remark = rejectMatch[1].trim()
+    } else {
+      approveForm.remark = row.remark
+    }
+  } else {
+    approveForm.remark = ''
+  }
+
   approveDialogVisible.value = true
 }
 

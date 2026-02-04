@@ -240,7 +240,10 @@ const formatTime = (time) => {
 
 <style scoped>
 .workflow-status {
-  padding: 20px 0;
+  padding: 10px 0;
+  /* 限制为2行高度：标题1行 + 描述1行 */
+  max-height: 80px;
+  overflow: hidden;
 }
 
 .status-title {
@@ -248,6 +251,7 @@ const formatTime = (time) => {
   align-items: center;
   gap: 10px;
   font-size: 14px;
+  line-height: 1.5;
 }
 
 .status-time {
@@ -257,25 +261,39 @@ const formatTime = (time) => {
 }
 
 .status-description {
-  margin-top: 8px;
+  margin-top: 4px;
   font-size: 13px;
   color: #606266;
+  line-height: 1.5;
+  /* 限制为1行 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .workflow-actions {
-  margin-top: 20px;
+  margin-top: 10px;
   display: flex;
   gap: 10px;
   justify-content: center;
 }
 
+/* 隐藏步骤条的描述，只保留标题，节省空间 */
 :deep(.el-step__title) {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
+  line-height: 1.5;
 }
 
 :deep(.el-step__description) {
-  font-size: 12px;
-  color: #909399;
+  display: none;
+}
+
+:deep(.el-steps) {
+  max-height: 40px;
+}
+
+:deep(.el-step) {
+  flex-basis: 30% !important;
 }
 </style>

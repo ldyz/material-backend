@@ -125,11 +125,13 @@ func (wi *WorkflowIntegration) executeInboundApproval(order *InboundOrder, appro
 			approvedQty = qty
 		}
 
-		// 获取材料单位
-		var material struct {
-			Unit string
+		// 获取项目ID和单位
+		var materialInfo struct {
+			ProjectID uint
+			Unit       string
 		}
-		wi.db.Table("material_master").Where("id = ?", item.MaterialID).Select("unit").First(&material)
+		wi.db.Table("material_master").Where("id = ?", item.MaterialID).
+			Select("project_id, unit").First(&materialInfo)
 
 		// 尝试查找现有库存
 		var existingStock struct {
@@ -148,11 +150,11 @@ func (wi *WorkflowIntegration) executeInboundApproval(order *InboundOrder, appro
 			// 没有找到，创建新库存记录
 			currentTime := time.Now()
 			newStock := map[string]interface{}{
+				"project_id":   materialInfo.ProjectID,
 				"material_id":  item.MaterialID,
 				"quantity":     float64(approvedQty),
 				"safety_stock": 0,
 				"location":     "",
-				"unit":         material.Unit,
 				"created_at":   currentTime,
 				"updated_at":   currentTime,
 			}
@@ -178,29 +180,25 @@ func (wi *WorkflowIntegration) executeInboundApproval(order *InboundOrder, appro
 		}
 
 		// 记录库存操作日志
-		detail := fmt.Sprintf("入库 %.2f %s，备注：入库单 %s", float64(approvedQty), material.Unit, order.OrderNo)
-
-		// 获取项目ID
-		var projectID uint
-		wi.db.Table("material_master").Where("id = ?", item.MaterialID).
-			Select("project_id").Scan(&projectID)
+		detail := fmt.Sprintf("入库 %.2f %s，备注：入库单 %s", float64(approvedQty), materialInfo.Unit, order.OrderNo)
 
 		// 创建库存日志
 		stockLog := map[string]interface{}{
 			"stock_id":        stockID,
 			"type":            "in",
 			"quantity":        float64(approvedQty),
-			"quantity_before":  quantityBefore,
+			"quantity_before": quantityBefore,
 			"quantity_after":   quantityBefore + float64(approvedQty),
 			"time":            time.Now(),
 			"remark":          detail,
-			"project_id":      projectID,
+			"project_id":      materialInfo.ProjectID,
 			"user_id":         approverID,
 			"requisition_id":  nil,
 			"inbound_code":    order.OrderNo,
 		}
 		wi.db.Table("stock_logs").Create(&stockLog)
 	}
+
 
 
 	// 更新订单状态为已完成

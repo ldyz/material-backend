@@ -125,13 +125,12 @@ func (wi *WorkflowIntegration) executeInboundApproval(order *InboundOrder, appro
 			approvedQty = qty
 		}
 
-		// 获取项目ID和单位
+		// 获取单位信息
 		var materialInfo struct {
-			ProjectID uint
-			Unit       string
+			Unit string
 		}
 		wi.db.Table("material_master").Where("id = ?", item.MaterialID).
-			Select("project_id, unit").First(&materialInfo)
+			Select("unit").First(&materialInfo)
 
 		// 尝试查找现有库存
 		var existingStock struct {
@@ -150,7 +149,7 @@ func (wi *WorkflowIntegration) executeInboundApproval(order *InboundOrder, appro
 			// 没有找到，创建新库存记录
 			currentTime := time.Now()
 			newStock := map[string]interface{}{
-				"project_id":   materialInfo.ProjectID,
+				"project_id":   order.ProjectID,
 				"material_id":  item.MaterialID,
 				"quantity":     float64(approvedQty),
 				"safety_stock": 0,
@@ -191,7 +190,7 @@ func (wi *WorkflowIntegration) executeInboundApproval(order *InboundOrder, appro
 			"quantity_after":   quantityBefore + float64(approvedQty),
 			"time":            time.Now(),
 			"remark":          detail,
-			"project_id":      materialInfo.ProjectID,
+			"project_id":      order.ProjectID,
 			"user_id":         approverID,
 			"requisition_id":  nil,
 			"inbound_code":    order.OrderNo,

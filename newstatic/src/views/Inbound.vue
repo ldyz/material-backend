@@ -275,9 +275,8 @@
               <el-form-item label="关联计划" prop="plan_id">
                 <el-select
                   v-model="formData.plan_id"
-                  placeholder="选择物资计划（可选）"
+                  placeholder="请选择物资计划"
                   filterable
-                  clearable
                   style="width: 100%"
                   :popper-options="{
                     strategy: 'fixed',
@@ -325,14 +324,8 @@
               :project-id="formData.project_id"
               @change="handleItemsChange"
             />
-            <MaterialSelector
-              v-else
-              v-model="formData.items"
-              :editable="!isViewMode"
-              @change="handleItemsChange"
-            />
-            <div v-if="!formData.plan_id" class="tip-text">
-              提示：选择物资计划后，可以选择计划中未到货的物资
+            <div v-else class="tip-text">
+              请先选择物资计划
             </div>
           </el-form-item>
         </template>
@@ -402,7 +395,6 @@ import {
 } from '@element-plus/icons-vue'
 import Dialog from '@/components/common/Dialog.vue'
 import TableToolbar from '@/components/common/TableToolbar.vue'
-import MaterialSelector from '@/components/common/MaterialSelector.vue'
 import PlanMaterialSelector from '@/components/common/PlanMaterialSelector.vue'
 import WorkflowHistory from '@/components/common/WorkflowHistory.vue'
 import WorkflowStatus from '@/components/common/WorkflowStatus.vue'
@@ -478,6 +470,9 @@ const formRules = {
   ],
   inbound_date: [
     { required: true, message: '请选择入库日期', trigger: 'change' }
+  ],
+  plan_id: [
+    { required: true, message: '请选择物资计划', trigger: 'change' }
   ]
 }
 

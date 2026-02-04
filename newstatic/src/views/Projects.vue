@@ -348,17 +348,23 @@
             style="width: 100%"
             :disabled="isViewMode"
           >
-            <el-option
-              v-for="user in userList"
-              :key="user.id"
-              :label="`${user.username} (${user.full_name || user.email})`"
-              :value="user.id"
+            <el-option-group
+              v-for="group in groupedUsers"
+              :key="group.label"
+              :label="group.label"
             >
-              <span style="float: left">{{ user.username }}</span>
-              <span style="float: right; color: #8492a6; font-size: 13px">
-                {{ user.full_name || user.email }}
-              </span>
-            </el-option>
+              <el-option
+                v-for="user in group.users"
+                :key="user.id"
+                :label="`${user.username} (${user.full_name || user.email})`"
+                :value="user.id"
+              >
+                <span style="float: left">{{ user.username }}</span>
+                <span style="float: right; color: #8492a6; font-size: 13px">
+                  {{ user.full_name || user.email }}
+                </span>
+              </el-option>
+            </el-option-group>
           </el-select>
           <div class="text-gray text-sm">可以多选，关联后这些用户可以访问该项目</div>
         </el-form-item>
@@ -621,6 +627,44 @@ const fetchUsers = async () => {
     console.error('获取用户列表失败:', error)
   }
 }
+
+// 按角色分组用户
+const groupedUsers = computed(() => {
+  const groups = {}
+  const users = userList.value || []
+
+  users.forEach(user => {
+    // 获取用户角色（优先使用roles数组中的第一个角色名称，否则使用role字段）
+    let roleName = '其他用户'
+    if (user.roles && user.roles.length > 0 && user.roles[0].name) {
+      roleName = user.roles[0].name
+    } else if (user.role) {
+      roleName = user.role
+    } else if (user.full_name) {
+      roleName = user.full_name
+    }
+
+    // 初始化分组
+    if (!groups[roleName]) {
+      groups[roleName] = []
+    }
+
+    // 添加用户到分组
+    groups[roleName].push(user)
+  })
+
+  // 转换为数组格式
+  return Object.keys(groups).map(roleName => ({
+    label: roleName,
+    users: groups[roleName]
+  })).sort((a, b) => {
+    // 将"系统管理员"和"项目经理"排在前面
+    const priority = { '系统管理员': 1, '项目经理': 2, '其他用户': 999 }
+    const aPriority = priority[a.label] ?? 999
+    const bPriority = priority[b.label] ?? 999
+    return aPriority - bPriority
+  })
+})
 
 // 加载项目成员
 // 适配统一响应格式

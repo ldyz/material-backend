@@ -1189,95 +1189,15 @@ const getStatusDescription = (status) => {
 }
 
 // 获取工作流历史
-// 适配统一响应格式
 const fetchWorkflowHistory = async (id) => {
   try {
     const { data } = await inboundApi.getWorkflowHistory(id)
     workflowHistories.value = data || []
   } catch (error) {
-    console.log('工作流历史API不可用，使用模拟数据')
-    // API调用失败是正常的，因为后端可能没有这个接口
-    // 直接使用当前数据生成历史记录
-    workflowHistories.value = generateMockHistory(formData)
+    console.error('获取审批历史失败:', error)
+    // API调用失败时设置为空数组
+    workflowHistories.value = []
   }
-}
-
-// 生成模拟工作流历史
-const generateMockHistory = (inbound) => {
-  console.log('生成审批历史，入库单数据:', inbound)
-  const histories = []
-
-  const orderNo = inbound.order_no || inbound.inbound_no || 'Unknown'
-  const creatorName = inbound.creator_name || '当前用户'
-  const createdAt = inbound.created_at || new Date().toISOString()
-
-  // 1. 创建记录（草稿）
-  histories.push({
-    action: 'draft',
-    operator_name: inbound.receiver || creatorName,
-    operator: inbound.receiver || creatorName,
-    department: '采购部',
-    remark: '',
-    description: `创建入库单 ${orderNo}`,
-    created_at: createdAt,
-    status: '草稿',
-    status_type: 'info'
-  })
-
-  // 2. 待审核状态（已提交审核）
-  if (inbound.status !== 'draft') {
-    histories.push({
-      action: 'pending',
-      operator_name: creatorName,
-      operator: creatorName,
-      department: '采购部',
-      remark: '',
-      description: '提交审核',
-      created_at: inbound.updated_at || createdAt,
-      status: '待审核',
-      status_type: 'warning'
-    })
-  }
-
-  // 3. 最终状态（已完成或已拒绝）
-  if (inbound.status === 'completed' || inbound.status === 'approved') {
-    // 已完成流程
-    histories.push({
-      action: 'approved',
-      operator_name: '审核员',
-      operator: '审核员',
-      department: '管理部',
-      remark: inbound.remark || '',
-      description: '审核通过，库存已更新',
-      created_at: inbound.updated_at || createdAt,
-      status: '已完成',
-      status_type: 'success'
-    })
-  } else if (inbound.status === 'rejected') {
-    // 已拒绝流程 - 从备注中提取拒绝原因
-    let rejectReason = inbound.remark || ''
-    const rejectMatch = inbound.remark?.match(/拒绝原因[：:]\s*(.+)/)
-    if (rejectMatch && rejectMatch[1]) {
-      rejectReason = rejectMatch[1].trim()
-    }
-
-    histories.push({
-      action: 'rejected',
-      operator_name: '审核员',
-      operator: '审核员',
-      department: '管理部',
-      remark: rejectReason,
-      description: '审核拒绝',
-      created_at: inbound.updated_at || createdAt,
-      status: '已拒绝',
-      status_type: 'danger'
-    })
-  }
-
-  console.log('生成的审批历史:', histories)
-
-  // 按时间升序排序（最新的在后面）
-  return histories.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
 }
 
 // 处理工作流操作

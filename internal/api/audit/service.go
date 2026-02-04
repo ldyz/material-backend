@@ -383,36 +383,37 @@ func InitAuditService(database *gorm.DB) {
 
 // 便捷函数（需要在应用启动时初始化）
 func LogCreate(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string, data interface{}) error {
-	if auditService != nil {
-		return auditService.LogCreate(userID, username, module, resourceType, resourceID, resourceNo, data)
+	if auditService == nil {
+		// 记录错误日志便于调试
+		return fmt.Errorf("audit service not initialized")
 	}
-	return nil
+	return auditService.LogCreate(userID, username, module, resourceType, resourceID, resourceNo, data)
 }
 
 func LogUpdate(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string, before, after interface{}) error {
-	if auditService != nil {
-		return auditService.LogUpdate(userID, username, module, resourceType, resourceID, resourceNo, before, after)
+	if auditService == nil {
+		return fmt.Errorf("audit service not initialized")
 	}
-	return nil
+	return auditService.LogUpdate(userID, username, module, resourceType, resourceID, resourceNo, before, after)
 }
 
 func LogDelete(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string, deletedData interface{}) error {
-	if auditService != nil {
-		return auditService.LogDelete(userID, username, module, resourceType, resourceID, resourceNo, deletedData)
+	if auditService == nil {
+		return fmt.Errorf("audit service not initialized")
 	}
-	return nil
+	return auditService.LogDelete(userID, username, module, resourceType, resourceID, resourceNo, deletedData)
 }
 
 func LogApprove(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string, comment string) error {
-	if auditService != nil {
-		return auditService.LogApprove(userID, username, module, resourceType, resourceID, resourceNo, comment)
+	if auditService == nil {
+		return fmt.Errorf("audit service not initialized")
 	}
-	return nil
+	return auditService.LogApprove(userID, username, module, resourceType, resourceID, resourceNo, comment)
 }
 
 func LogReject(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string, reason string) error {
-	if auditService != nil {
-		return auditService.LogReject(userID, username, module, resourceType, resourceID, resourceNo, reason)
+	if auditService == nil {
+		return fmt.Errorf("audit service not initialized")
 	}
-	return nil
+	return auditService.LogReject(userID, username, module, resourceType, resourceID, resourceNo, reason)
 }

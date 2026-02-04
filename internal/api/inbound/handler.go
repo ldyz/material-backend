@@ -402,8 +402,11 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		db.Preload("Items").First(&order, order.ID)
 
 		// 记录操作日志
-		audit.LogCreate(&creatorID, creatorName, audit.ModuleInbound, audit.ResourceInboundOrder,
-			order.ID, order.OrderNo, req)
+		if err := audit.LogCreate(&creatorID, creatorName, audit.ModuleInbound, audit.ResourceInboundOrder,
+			order.ID, order.OrderNo, req); err != nil {
+			// 记录日志失败不应影响业务流程，只记录错误
+			fmt.Printf("记录操作日志失败: %v\n", err)
+		}
 
 		response.Created(c, order.ToDTOWithEnrichment(db), "入库单创建成功")
 	})
@@ -635,8 +638,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			db.Preload("Items").First(&order, id)
 
 			// 记录操作日志
-			audit.LogApprove(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
-				order.ID, order.OrderNo, remark)
+			if err := audit.LogApprove(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
+				order.ID, order.OrderNo, remark); err != nil {
+				fmt.Printf("记录操作日志失败: %v\n", err)
+			}
 
 			response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "审批通过")
 			return
@@ -839,8 +844,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		}
 
 		// 记录操作日志
-		audit.LogApprove(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
-			order.ID, order.OrderNo, remark)
+		if err := audit.LogApprove(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
+			order.ID, order.OrderNo, remark); err != nil {
+			fmt.Printf("记录操作日志失败: %v\n", err)
+		}
 
 		response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "入库单已批准")
 	})
@@ -892,8 +899,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			db.Preload("Items").First(&order, id)
 
 			// 记录操作日志
-			audit.LogReject(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
-				order.ID, order.OrderNo, req.Remark)
+			if err := audit.LogReject(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
+				order.ID, order.OrderNo, req.Remark); err != nil {
+				fmt.Printf("记录操作日志失败: %v\n", err)
+			}
 
 			response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "已拒绝")
 			return
@@ -944,8 +953,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		}
 
 		// 记录操作日志
-		audit.LogReject(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
-			order.ID, order.OrderNo, req.Remark)
+		if err := audit.LogReject(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
+			order.ID, order.OrderNo, req.Remark); err != nil {
+			fmt.Printf("记录操作日志失败: %v\n", err)
+		}
 
 		response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "入库单已拒绝")
 	})

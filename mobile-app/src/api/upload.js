@@ -22,19 +22,6 @@ export function uploadImage(formData) {
 }
 
 /**
- * 上传单个文件
- * @param {FormData} formData - 包含file字段的表单数据
- * @returns {Promise} 返回上传后的文件信息
- */
-export function uploadFile(formData) {
-  return request.post('/upload/file', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
-  })
-}
-
-/**
  * 批量上传图片
  * @param {FormData} formData - 包含多个file字段的表单数据
  * @returns {Promise} 返回上传后的图片URL数组

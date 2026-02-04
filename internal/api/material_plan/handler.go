@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/yourorg/material-backend/backend/internal/api/auth"
+	"github.com/yourorg/material-backend/backend/internal/api/audit"
 	"github.com/yourorg/material-backend/backend/internal/api/response"
 	jwtpkg "github.com/yourorg/material-backend/backend/pkg/jwt"
 	"gorm.io/gorm"
@@ -322,6 +323,10 @@ func createPlan(service *Service) gin.HandlerFunc {
 		// Load items for response
 		service.db.Preload("Items").First(plan, plan.ID)
 
+		// 记录操作日志
+		audit.LogCreate(&userID, userName, audit.ModuleMaterialPlan, audit.ResourceMaterialPlan,
+			plan.ID, plan.PlanNo, req)
+
 		response.Created(c, plan.ToDTOWithEnrichment(service.db), "计划创建成功")
 	}
 }
@@ -413,6 +418,13 @@ func updatePlan(service *Service) gin.HandlerFunc {
 			return
 		}
 
+		// Get user info for logging
+		_, userName, _ := getUserInfo(c)
+
+		// Get original plan for logging
+		var originalPlan MaterialPlan
+		service.db.First(&originalPlan, uint(planID))
+
 		var req UpdateMaterialPlanRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			response.BadRequest(c, "Invalid request format: "+err.Error())
@@ -424,6 +436,10 @@ func updatePlan(service *Service) gin.HandlerFunc {
 			response.BadRequest(c, err.Error())
 			return
 		}
+
+		// 记录操作日志
+		audit.LogUpdate(nil, userName, audit.ModuleMaterialPlan, audit.ResourceMaterialPlan,
+			plan.ID, plan.PlanNo, originalPlan.ToDTO(), plan.ToDTO())
 
 		response.SuccessWithMessage(c, plan.ToDTOWithEnrichment(service.db), "计划更新成功")
 	}
@@ -439,10 +455,19 @@ func deletePlan(service *Service) gin.HandlerFunc {
 			return
 		}
 
+		// Get plan info for logging
+		var plan MaterialPlan
+		service.db.First(&plan, uint(planID))
+		_, userName, _ := getUserInfo(c)
+
 		if err := service.DeletePlan(uint(planID)); err != nil {
 			response.BadRequest(c, err.Error())
 			return
 		}
+
+		// 记录操作日志
+		audit.LogDelete(nil, userName, audit.ModuleMaterialPlan, audit.ResourceMaterialPlan,
+			uint(planID), plan.PlanNo, plan.ToDTO())
 
 		response.SuccessOnlyMessage(c, "计划删除成功")
 	}
@@ -492,6 +517,10 @@ func submitPlan(workflow *WorkflowIntegration) gin.HandlerFunc {
 			return
 		}
 
+		// 记录操作日志
+		audit.LogApprove(&userID, userName, audit.ModuleMaterialPlan, audit.ResourceMaterialPlan,
+			plan.ID, plan.PlanNo, "提交计划审核")
+
 		response.SuccessOnlyMessage(c, "计划已提交审核")
 	}
 }
@@ -527,6 +556,14 @@ func approvePlan(workflow *WorkflowIntegration) gin.HandlerFunc {
 			return
 		}
 
+		// Get plan info for logging
+		var plan MaterialPlan
+		workflow.db.First(&plan, uint(planID))
+
+		// 记录操作日志
+		audit.LogApprove(&userID, userName, audit.ModuleMaterialPlan, audit.ResourceMaterialPlan,
+			plan.ID, plan.PlanNo, req.Remark)
+
 		response.SuccessOnlyMessage(c, "审批成功")
 	}
 }
@@ -561,6 +598,14 @@ func rejectPlan(workflow *WorkflowIntegration) gin.HandlerFunc {
 			response.BadRequest(c, err.Error())
 			return
 		}
+
+		// Get plan info for logging
+		var plan MaterialPlan
+		workflow.db.First(&plan, uint(planID))
+
+		// 记录操作日志
+		audit.LogReject(&userID, userName, audit.ModuleMaterialPlan, audit.ResourceMaterialPlan,
+			plan.ID, plan.PlanNo, req.Remark)
 
 		response.SuccessOnlyMessage(c, "计划已拒绝")
 	}

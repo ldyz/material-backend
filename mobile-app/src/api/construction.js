@@ -69,12 +69,3 @@ export function uploadImage(formData) {
     },
   })
 }
-
-/**
- * 获取天气信息
- * @param {string} date - 日期 (YYYY-MM-DD)
- * @returns {Promise} 返回天气信息
- */
-export function getWeather(date) {
-  return request.get('/construction_log/logs/weather', { params: { date } })
-}

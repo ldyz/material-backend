@@ -15,7 +15,7 @@ import (
 )
 
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
-	r := rg.Group("project")
+	r := rg.Group("/project")
 	// require token for all project routes
 	r.Use(jwtpkg.TokenMiddleware())
 

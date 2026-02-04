@@ -10,21 +10,22 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"github.com/yourorg/material-backend/backend/internal/api/agent"
 	"github.com/yourorg/material-backend/backend/internal/api/auth"
-	"github.com/yourorg/material-backend/backend/internal/api/project"
+	"github.com/yourorg/material-backend/backend/internal/api/construction_log"
+	"github.com/yourorg/material-backend/backend/internal/api/inbound"
+	audit2 "github.com/yourorg/material-backend/backend/internal/api/audit"
 	"github.com/yourorg/material-backend/backend/internal/api/material"
 	"github.com/yourorg/material-backend/backend/internal/api/material_master"
-	"github.com/yourorg/material-backend/backend/internal/api/inbound"
+	"github.com/yourorg/material-backend/backend/internal/api/material_plan"
+	"github.com/yourorg/material-backend/backend/internal/api/notification"
+	"github.com/yourorg/material-backend/backend/internal/api/project"
+	"github.com/yourorg/material-backend/backend/internal/api/progress"
 	"github.com/yourorg/material-backend/backend/internal/api/requisition"
 	"github.com/yourorg/material-backend/backend/internal/api/stock"
 	"github.com/yourorg/material-backend/backend/internal/api/system"
-	"github.com/yourorg/material-backend/backend/internal/api/construction_log"
 	"github.com/yourorg/material-backend/backend/internal/api/upload"
-	"github.com/yourorg/material-backend/backend/internal/api/progress"
-	"github.com/yourorg/material-backend/backend/internal/api/notification"
 	"github.com/yourorg/material-backend/backend/internal/api/workflow"
-	"github.com/yourorg/material-backend/backend/internal/api/material_plan"
-	"github.com/yourorg/material-backend/backend/internal/api/agent"
 	"github.com/yourorg/material-backend/backend/internal/db"
 	"github.com/yourorg/material-backend/backend/internal/middleware"
 	"golang.org/x/crypto/bcrypt"
@@ -138,6 +139,7 @@ func main() {
 		&workflow.WorkflowNodeApprover{}, &workflow.WorkflowInstance{}, &workflow.WorkflowApproval{},
 		&workflow.WorkflowPendingTask{}, &workflow.WorkflowLog{},
 		&agent.AgentOperationLog{},
+		&audit2.OperationLog{}, // 操作日志表
 	)
 
 	// create default admin role/user if not exists
@@ -161,6 +163,9 @@ func main() {
 
 	// 初始化默认物资分类
 	initializeMaterialCategories(dbConn)
+
+	// 初始化操作日志服务
+	audit2.InitAuditService(dbConn)
 
 	r := gin.Default()
 
@@ -237,6 +242,7 @@ func main() {
 		material_plan.RegisterRoutes(api, dbConn)
 		workflow.RegisterRoutes(api, dbConn)
 		agent.RegisterRoutes(api, dbConn)
+		audit2.RegisterRoutes(api, dbConn) // 操作日志路由
 	}
 
 	// SPA路由回退 - 所有非API和非静态文件请求都返回对应的前端入口

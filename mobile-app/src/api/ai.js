@@ -6,7 +6,7 @@ import request from '@/utils/request'
  * @returns {Promise}
  */
 export function analyzeQuestion(question) {
-  return request.post('/ai/analyze', { question })
+  return request.post('/system/ai/analyze', { question })
 }
 
 /**
@@ -15,16 +15,16 @@ export function analyzeQuestion(question) {
  * @returns {Promise}
  */
 export function getInsights(params) {
-  return request.get('/ai/insights', { params })
+  return request.get('/system/ai/insights', { params })
 }
 
 /**
- * 获取智能推荐 (后端路由是 /ai/suggestions)
+ * 获取智能推荐 (后端路由是 /system/ai/suggestions)
  * @param {string} type - 推荐类型
  * @returns {Promise}
  */
 export function getRecommendations(type) {
-  return request.get('/ai/suggestions', { params: { type } })
+  return request.get('/system/ai/suggestions', { params: { type } })
 }
 
 /**
@@ -33,5 +33,5 @@ export function getRecommendations(type) {
  * @returns {Promise}
  */
 export function getAIHistory(params) {
-  return request.get('/ai/history', { params })
+  return request.get('/system/ai/history', { params })
 }

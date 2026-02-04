@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/yourorg/material-backend/backend/internal/api/auth"
+	"github.com/yourorg/material-backend/backend/internal/api/audit"
 	"github.com/yourorg/material-backend/backend/internal/api/response"
 	"github.com/yourorg/material-backend/backend/internal/api/workflow"
 	jwtpkg "github.com/yourorg/material-backend/backend/pkg/jwt"
@@ -375,6 +376,11 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 		// Reload with items for enrichment
 		db.Preload("Items").First(&order, order.ID)
+
+		// 记录操作日志
+		audit.LogCreate(&creatorID, creatorName, audit.ModuleInbound, audit.ResourceInboundOrder,
+			order.ID, order.OrderNo, req)
+
 		response.Created(c, order.ToDTOWithEnrichment(db), "入库单创建成功")
 	})
 
@@ -604,6 +610,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			// 重新加载订单
 			db.Preload("Items").First(&order, id)
 
+			// 记录操作日志
+			audit.LogApprove(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
+				order.ID, order.OrderNo, remark)
+
 			response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "审批通过")
 			return
 		}
@@ -787,6 +797,27 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 		// Reload with items for enrichment
 		db.Preload("Items").First(&order, order.ID)
+
+		// Get user info for logging
+		userID, _ := c.Get("current_user_id")
+		var uid uint
+		if userID != nil {
+			if id, ok := userID.(int64); ok {
+				uid = uint(id)
+			}
+		}
+		userName, _ := c.Get("username")
+		var name string
+		if userName != nil {
+			name = userName.(string)
+		} else {
+			name = "未知用户"
+		}
+
+		// 记录操作日志
+		audit.LogApprove(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
+			order.ID, order.OrderNo, remark)
+
 		response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "入库单已批准")
 	})
 
@@ -836,6 +867,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			// 重新加载订单
 			db.Preload("Items").First(&order, id)
 
+			// 记录操作日志
+			audit.LogReject(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
+				order.ID, order.OrderNo, req.Remark)
+
 			response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "已拒绝")
 			return
 		}
@@ -867,6 +902,27 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 		// Reload with items for enrichment
 		db.Preload("Items").First(&order, order.ID)
+
+		// Get user info for logging
+		userID, _ := c.Get("current_user_id")
+		var uid uint
+		if userID != nil {
+			if id, ok := userID.(int64); ok {
+				uid = uint(id)
+			}
+		}
+		userName, _ := c.Get("username")
+		var name string
+		if userName != nil {
+			name = userName.(string)
+		} else {
+			name = "未知用户"
+		}
+
+		// 记录操作日志
+		audit.LogReject(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
+			order.ID, order.OrderNo, req.Remark)
+
 		response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "入库单已拒绝")
 	})
 

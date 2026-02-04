@@ -190,7 +190,7 @@ export const projectApi = {
    */
   getMembers(id) {
     return request({
-      url: `/projects/${id}/members`,
+      url: `/project/projects/${id}/members`,
       method: 'GET'
     })
   },
@@ -207,7 +207,7 @@ export const projectApi = {
    */
   addMember(id, data) {
     return request({
-      url: `/projects/${id}/members`,
+      url: `/project/projects/${id}/members`,
       method: 'POST',
       data
     })
@@ -222,7 +222,7 @@ export const projectApi = {
    */
   removeMember(id, userId) {
     return request({
-      url: `/projects/${id}/members/${userId}`,
+      url: `/project/projects/${id}/members/${userId}`,
       method: 'DELETE'
     })
   },
@@ -237,7 +237,7 @@ export const projectApi = {
    */
   getProjectTree(id) {
     return request({
-      url: `/projects/${id}/tree`,
+      url: `/project/projects/${id}/tree`,
       method: 'GET'
     })
   },
@@ -252,7 +252,7 @@ export const projectApi = {
    */
   getChildren(id) {
     return request({
-      url: `/projects/${id}/children`,
+      url: `/project/projects/${id}/children`,
       method: 'GET'
     })
   },
@@ -267,7 +267,7 @@ export const projectApi = {
    */
   aggregateProgress(id) {
     return request({
-      url: `/projects/${id}/aggregate-progress`,
+      url: `/project/projects/${id}/aggregate-progress`,
       method: 'POST'
     })
   }
@@ -465,7 +465,7 @@ export const materialApi = {
    */
   import(data) {
     return request({
-      url: '/material/materials/import',
+      url: '/material/material/materials/import',
       method: 'POST',
       data,
       headers: {
@@ -524,151 +524,7 @@ export const materialApi = {
     })
   },
 
-  /**
-   * 获取未入库物资列表
-   *
-   * @param {Object} params - 查询参数
-   * @returns {Promise} 返回未入库物资列表
-   */
-  getUnstored(params) {
-    return request({
-      url: '/material/materials/unstored',
-      method: 'GET',
-      params
-    })
-  },
-
-  /**
-   * 导出未入库物资
-   *
-   * @param {Object} params - 查询参数
-   * @returns {Promise} 返回 Excel 文件 Blob
-   */
-  exportUnstored(params) {
-    return request({
-      url: '/material/materials/unstored/export',
-      method: 'GET',
-      params,
-      responseType: 'blob'
-    })
-  },
-
-  /**
-   * 获取物资日志
-   *
-   * @param {number} id - 物资ID
-   * @returns {Promise} 返回物资日志列表
-   */
-  getLogs(id) {
-    return request({
-      url: `/materials/${id}/logs`,
-      method: 'GET'
-    })
-  },
-
-  // ==================== 物资分类 API ====================
-
-  /**
-   * 获取所有物资分类
-   *
-   * @returns {Promise} 返回分类列表
-   */
-  getCategories() {
-    return request({
-      url: '/material/categories',
-      method: 'GET'
-    })
-  },
-
-  /**
-   * 获取单个分类详情
-   *
-   * @param {number} id - 分类ID
-   * @returns {Promise} 返回分类详细信息
-   */
-  getCategory(id) {
-    return request({
-      url: `/material/categories/${id}`,
-      method: 'GET'
-    })
-  },
-
-  /**
-   * 创建物资分类
-   *
-   * @param {Object} data - 分类信息
-   * @param {string} data.name - 分类名称（必填）
-   * @param {string} data.code - 分类编码
-   * @param {number} data.sort - 排序
-   * @param {string} data.remark - 备注
-   * @returns {Promise} 返回创建的分类信息
-   */
-  createCategory(data) {
-    return request({
-      url: '/material/categories',
-      method: 'POST',
-      data
-    })
-  },
-
-  /**
-   * 更新物资分类
-   *
-   * @param {number} id - 分类ID
-   * @param {Object} data - 要更新的分类信息
-   * @returns {Promise} 返回更新后的分类信息
-   */
-  updateCategory(id, data) {
-    return request({
-      url: `/material/categories/${id}`,
-      method: 'PUT',
-      data
-    })
-  },
-
-  /**
-   * 删除物资分类
-   *
-   * @param {number} id - 分类ID
-   * @returns {Promise} 返回删除结果
-   */
-  deleteCategory(id) {
-    return request({
-      url: `/material/categories/${id}`,
-      method: 'DELETE'
-    })
-  },
-
-  /**
-   * 批量更新分类排序
-   *
-   * @param {Array} sorts - 排序数组 [{id: 1, sort: 1}, {id: 2, sort: 2}]
-   * @returns {Promise} 返回更新结果
-   */
-  updateCategorySort(sorts) {
-    return request({
-      url: '/material/categories/sort',
-      method: 'POST',
-      data: { sorts }
-    })
-  },
-
-  /**
-   * 批量创建物资（用于计划导入自动创建物资）
-   *
-   * 当计划项没有关联物资库时，自动创建物资记录
-   *
-   * @param {Array} materials - 物资数据数组
-   * @returns {Promise} 返回创建的物资列表
-   */
-  batchCreateMaterials(materials) {
-    return request({
-      url: '/material/materials/batch-create',
-      method: 'POST',
-      data: { materials }
-    })
-  }
-}
+  
 
 // ==================== 库存管理 API ====================
 
@@ -1077,7 +933,7 @@ export const requisitionApi = {
    */
   getItems(params) {
     return request({
-      url: '/requisition-items',
+      url: '/requisition/requisition-items',
       method: 'GET',
       params
     })
@@ -1147,7 +1003,7 @@ export const inboundApi = {
    */
   getTemplate() {
     return request({
-      url: '/inbound/template',
+      url: '/inbound/inbound/template',
       method: 'GET'
     })
   },
@@ -1160,7 +1016,7 @@ export const inboundApi = {
    */
   submit(data) {
     return request({
-      url: '/inbound/submit',
+      url: '/inbound/inbound/submit',
       method: 'POST',
       data
     })
@@ -1174,7 +1030,7 @@ export const inboundApi = {
    */
   import(data) {
     return request({
-      url: '/inbound/import',
+      url: '/inbound/inbound/import',
       method: 'POST',
       data,
       headers: {
@@ -1322,25 +1178,7 @@ export const inboundApi = {
     })
   },
 
-  /**
-   * 批量审批入库单
-   *
-   * 一次审批多个入库单
-   * 适用于快速处理多个待审批单据
-   *
-   * @param {number[]} ids - 入库单ID数组
-   * @param {Object} data - 审批信息
-   * @param {string} data.approval_comment - 审批意见
-   * @returns {Promise} 返回批量审批结果
-   */
-  batchApprove(ids, data) {
-    return request({
-      url: '/inbound/inbound-orders/batch-approve',
-      method: 'POST',
-      data: { ids, ...data }
-    })
-  }
-}
+  
 
 /**
  * 系统管理 API
@@ -3302,89 +3140,7 @@ export const materialPlanApi = {
     })
   },
 
-  /**
-   * 获取计划统计概览
-   *
-   * @returns {Promise} 返回统计数据
-   */
-  getStatistics() {
-    return request({
-      url: '/material-plan/statistics/overview',
-      method: 'GET'
-    })
-  },
-
-  /**
-   * 获取计划详细统计
-   *
-   * @param {number} id - 计划ID
-   * @returns {Promise} 返回统计数据
-   */
-  getPlanStatistics(id) {
-    return request({
-      url: `/material-plan/statistics/plan/${id}`,
-      method: 'GET'
-    })
-  },
-
-  /**
-   * 获取计划工作流状态
-   *
-   * @param {number} id - 计划ID
-   * @returns {Promise} 返回工作流状态信息
-   */
-  getPlanWorkflow(id) {
-    return request({
-      url: `/material-plan/plans/${id}/workflow`,
-      method: 'GET'
-    })
-  },
-
-  /**
-   * 获取计划审批记录
-   *
-   * @param {number} id - 计划ID
-   * @returns {Promise} 返回审批记录列表
-   */
-  getPlanApprovals(id) {
-    return request({
-      url: `/material-plan/plans/${id}/approvals`,
-      method: 'GET'
-    })
-  },
-
-  /**
-   * 获取待办任务列表
-   *
-   * @returns {Promise} 返回待办任务列表
-   */
-  getPendingTasks() {
-    return request({
-      url: '/material-plan/workflow/pending',
-      method: 'GET'
-    })
-  },
-
-  /**
-   * 同步计划项的物资ID
-   *
-   * 更新物资计划项的material_id
-   *
-   * @param {number} planId - 计划ID
-   * @param {Object} data - 更新数据
-   * @param {Array} data.items - 计划项列表
-   * @returns {Promise} 返回更新结果
-   */
-  syncPlanMaterialIds(planId, data) {
-    return request({
-      url: `/material-plan/plans/${planId}/sync-materials`,
-      method: 'POST',
-      data
-    })
-  }
-}
-
-// ==================== 文件上传 API ====================
+  // ==================== 文件上传 API ====================
 
 /**
  * 文件上传 API 接口
@@ -3420,43 +3176,7 @@ export const uploadApi = {
     })
   },
 
-  /**
-   * 上传文件
-   *
-   * 用于通用文件上传
-   *
-   * @param {FormData} formData - 包含文件的FormData对象
-   * @param {File} formData.file - 文件
-   * @returns {Promise} 返回上传结果，包含文件URL
-   */
-  uploadFile(formData) {
-    return request({
-      url: '/upload/file',
-      method: 'POST',
-      data: formData,
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-  },
-
-  /**
-   * 批量上传图片
-   *
-   * @param {FormData} formData - 包含多个文件的FormData对象
-   * @returns {Promise} 返回上传结果，包含所有文件URL
-   */
-  uploadImages(formData) {
-    return request({
-      url: '/upload/images',
-      method: 'POST',
-      data: formData,
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-  }
-}
+  
 
 // ==================== 通知管理 API ====================
 
@@ -3478,7 +3198,7 @@ export const notificationApi = {
    */
   getList(params) {
     return request({
-      url: '/notifications',
+      url: '/notification/notifications',
       method: 'GET',
       params
     })
@@ -3491,7 +3211,7 @@ export const notificationApi = {
    */
   getUnreadCount() {
     return request({
-      url: '/notifications/count',
+      url: '/notification/notifications/count',
       method: 'GET'
     })
   },
@@ -3516,7 +3236,7 @@ export const notificationApi = {
    */
   markAllAsRead() {
     return request({
-      url: '/notifications/read-all',
+      url: '/notification/notifications/read-all',
       method: 'PUT'
     })
   },
@@ -3541,7 +3261,7 @@ export const notificationApi = {
    */
   clearAll() {
     return request({
-      url: '/notifications',
+      url: '/notification/notifications',
       method: 'DELETE'
     })
   }

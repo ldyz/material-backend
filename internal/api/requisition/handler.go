@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/yourorg/material-backend/backend/internal/api/auth"
+	"github.com/yourorg/material-backend/backend/internal/api/audit"
 	"github.com/yourorg/material-backend/backend/internal/api/notification"
 	"github.com/yourorg/material-backend/backend/internal/api/response"
 	"github.com/yourorg/material-backend/backend/internal/api/stock"
@@ -333,6 +334,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			dto["project_name"] = nil
 		}
 
+		// 记录操作日志
+		audit.LogCreate(&uid, username, audit.ModuleRequisition, audit.ResourceRequisition,
+			createdReq.ID, createdReq.RequisitionNo, req)
+
 		response.Created(c, dto, "申请单创建成功")
 	})
 
@@ -505,6 +510,11 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			if wfErr == nil {
 				// 工作流审批成功
 				db.Preload("Items").First(&requisition, id)
+
+				// 记录操作日志
+				audit.LogApprove(&uid, name, audit.ModuleRequisition, audit.ResourceRequisition,
+					requisition.ID, requisition.RequisitionNo, notes)
+
 				response.SuccessWithMessage(c, requisition.ToDTO(), "审批通过")
 				return
 			}
@@ -597,6 +607,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		} else {
 			dto["project_name"] = nil
 		}
+
+		// 记录操作日志
+		audit.LogApprove(&uid, name, audit.ModuleRequisition, audit.ResourceRequisition,
+			requisition.ID, requisition.RequisitionNo, notes)
 
 		response.SuccessWithMessage(c, dto, "申请单审核成功")
 	})
@@ -847,6 +861,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			dto["project_name"] = nil
 		}
 
+		// 记录操作日志
+		audit.LogCreate(&uid, username, audit.ModuleRequisition, "RequisitionIssue",
+			requisition.ID, requisition.RequisitionNo, req)
+
 		response.SuccessWithMessage(c, dto, "申请单发放成功")
 	})
 
@@ -905,6 +923,11 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			if wfErr == nil {
 				// 工作流拒绝成功
 				db.Preload("Items").First(&requisition, id)
+
+				// 记录操作日志
+				audit.LogReject(&uid, name, audit.ModuleRequisition, audit.ResourceRequisition,
+					requisition.ID, requisition.RequisitionNo, remark)
+
 				response.SuccessWithMessage(c, requisition.ToDTO(), "已拒绝")
 				return
 			}
@@ -971,6 +994,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		} else {
 			dto["project_name"] = nil
 		}
+
+		// 记录操作日志
+		audit.LogReject(&uid, name, audit.ModuleRequisition, audit.ResourceRequisition,
+			requisition.ID, requisition.RequisitionNo, remark)
 
 		response.SuccessWithMessage(c, dto, "申请单已拒绝")
 	})

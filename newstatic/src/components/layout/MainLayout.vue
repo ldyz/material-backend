@@ -116,7 +116,8 @@ import {
   Setting,
   DataAnalysis,
   Grid,
-  Connection
+  Connection,
+  Clock
 } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 
@@ -219,6 +220,12 @@ const menuConfig = [
     title: '工作流管理',
     icon: Connection,
     permissions: ['system_config'] // 使用系统配置权限
+  },
+  {
+    path: '/operation-logs',
+    title: '操作日志',
+    icon: Clock,
+    permissions: ['audit_view'] // 操作日志查看权限
   },
   {
     path: '/system',

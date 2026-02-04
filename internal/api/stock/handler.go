@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/yourorg/material-backend/backend/internal/api/auth"
+	"github.com/yourorg/material-backend/backend/internal/api/audit"
 	"github.com/yourorg/material-backend/backend/internal/api/response"
 	jwtpkg "github.com/yourorg/material-backend/backend/pkg/jwt"
 	"github.com/xuri/excelize/v2"
@@ -504,6 +505,21 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		}
 
 		logOp(db, stock.ID, "in", fmt.Sprintf("入库 %.2f，备注：%s", req.Quantity, req.Remark), c, 0, req.Quantity, quantityBefore, quantityAfter, "adjust", 0, "")
+
+		// 记录操作日志
+		userIDInt, _ := c.Get("current_user_id")
+		var userID *uint
+		if userIDInt != nil {
+			if id, ok := userIDInt.(int64); ok {
+				uid := uint(id)
+				userID = &uid
+			}
+		}
+		userName, _ := c.Get("current_username")
+		username, _ := userName.(string)
+
+		audit.LogCreate(userID, username, audit.ModuleStock, audit.ResourceStock,
+			stock.ID, "", map[string]any{"quantity": req.Quantity, "remark": req.Remark})
 
 		response.SuccessWithMessage(c, getStockWithMaterial(db, stock.ID), "入库成功")
 	})

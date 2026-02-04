@@ -182,6 +182,16 @@ const routes = [
         }
       },
       {
+        path: 'operation-logs',
+        name: 'OperationLogs',
+        component: () => import('@/views/OperationLogs.vue'),
+        meta: {
+          requiresAuth: true,
+          title: '操作日志',
+          permissions: ['audit_view']
+        }
+      },
+      {
         path: 'system',
         name: 'System',
         component: () => import('@/views/System.vue'),

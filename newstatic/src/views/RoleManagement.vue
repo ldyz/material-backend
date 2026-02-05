@@ -184,8 +184,8 @@ const permissionTree = [
     children: [
       { id: 'role_view', label: '查看角色' },
       { id: 'role_create', label: '创建角色' },
-      { id: 'role_edit', '编辑角色' },
-      { id: 'role_delete', '删除角色' },
+      { id: 'role_edit', label: '编辑角色' },
+      { id: 'role_delete', label: '删除角色' },
       { id: 'role_assign_permissions', label: '分配权限' }
     ]
   },
@@ -206,7 +206,7 @@ const permissionTree = [
       { id: 'material_view', label: '查看物资' },
       { id: 'material_create', label: '创建物资' },
       { id: 'material_edit', label: '编辑物资' },
-      { id: 'material_delete', '删除物资' },
+      { id: 'material_delete', label: '删除物资' },
       { id: 'material_import', label: '导入物资' }
     ]
   },
@@ -217,7 +217,7 @@ const permissionTree = [
       { id: 'material_plan_view', label: '查看物资计划' },
       { id: 'material_plan_create', label: '创建物资计划' },
       { id: 'material_plan_edit', label: '编辑物资计划' },
-      { id: 'material_plan_delete', '删除物资计划' },
+      { id: 'material_plan_delete', label: '删除物资计划' },
       { id: 'material_plan_approve', label: '审核物资计划' }
     ]
   },
@@ -228,7 +228,7 @@ const permissionTree = [
       { id: 'stock_view', label: '查看库存' },
       { id: 'stock_create', label: '创建库存' },
       { id: 'stock_edit', label: '编辑' },
-      { id: 'stock_delete', '删除' },
+      { id: 'stock_delete', label: '删除' },
       { id: 'stock_in', label: '入库' },
       { id: 'stock_out', label: '出库' },
       { id: 'stock_export', label: '导出' },
@@ -250,7 +250,7 @@ const permissionTree = [
       { id: 'inbound_view', label: '查看入库单' },
       { id: 'inbound_create', label: '创建入库单' },
       { id: 'inbound_edit', label: '编辑入库单' },
-      { id: 'inbound_delete', '删除入库单' },
+      { id: 'inbound_delete', label: '删除入库单' },
       { id: 'inbound_approve', label: '审核入库单' },
       { id: 'inbound_export', label: '导出' }
     ]
@@ -262,7 +262,7 @@ const permissionTree = [
       { id: 'requisition_view', label: '查看出库单' },
       { id: 'requisition_create', label: '创建出库单' },
       { id: 'requisition_edit', label: '编辑出库单' },
-      { id: 'requisition_delete', '删除出库单' },
+      { id: 'requisition_delete', label: '删除出库单' },
       { id: 'requisition_approve', label: '审核出库单' },
       { id: 'requisition_issue', label: '发货' },
       { id: 'requisition_export', label: '导出' }
@@ -275,7 +275,7 @@ const permissionTree = [
       { id: 'construction_log_view', label: '查看日志' },
       { id: 'construction_log_create', label: '创建日志' },
       { id: 'construction_log_edit', label: '编辑日志' },
-      { id: 'construction_log_delete', '删除日志' },
+      { id: 'construction_log_delete', label: '删除日志' },
       { id: 'construction_log_export', label: '导出日志' }
     ]
   },
@@ -286,7 +286,7 @@ const permissionTree = [
       { id: 'progress_view', label: '查看进度' },
       { id: 'progress_create', label: '创建任务' },
       { id: 'progress_edit', label: '编辑任务' },
-      { id: 'progress_delete', '删除任务' },
+      { id: 'progress_delete', label: '删除任务' },
       { id: 'progress_export', label: '导出' }
     ]
   },
@@ -326,7 +326,7 @@ const permissionTree = [
       { id: 'workflow_view', label: '查看工作流' },
       { id: 'workflow_create', label: '创建工作流' },
       { id: 'workflow_edit', label: '编辑工作流' },
-      { id: 'workflow_delete', '删除工作流' },
+      { id: 'workflow_delete', label: '删除工作流' },
       { id: 'workflow_activate', label: '激活工作流' },
       { id: 'workflow_instance_view', label: '查看实例' },
       { id: 'workflow_instance_resubmit', label: '重新提交' },

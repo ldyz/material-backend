@@ -1399,27 +1399,6 @@ export const systemApi = {
   },
 
   /**
-   * 获取系统日志
-   *
-   * 查询系统操作日志
-   *
-   * @param {Object} params - 查询参数
-   * @param {number} params.page - 页码
-   * @param {number} params.page_size - 每页数量
-   * @param {string} params.level - 日志级别
-   * @param {string} params.start_time - 开始时间
-   * @param {string} params.end_time - 结束时间
-   * @returns {Promise} 返回日志列表
-   */
-  getLogs(params) {
-    return request({
-      url: '/system/logs',
-      method: 'GET',
-      params
-    })
-  },
-
-  /**
    * 创建数据备份
    *
    * 创建数据库的完整备份
@@ -1599,18 +1578,6 @@ export const systemApi = {
       url: `/system/backup/${backupName}/download`,
       method: 'GET',
       responseType: 'blob'
-    })
-  },
-
-  /**
-   * 创建备份（报表接口）
-   *
-   * @returns {Promise} 返回创建结果
-   */
-  createBackupReport() {
-    return request({
-      url: '/system/backup/create',
-      method: 'POST'
     })
   },
 

@@ -61,48 +61,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		})
 	})
 
-	// register (public)
-	r.POST("/auth/register", func(c *gin.Context) {
-		var req struct {
-			Username string `json:"username" binding:"required"`
-			Password string `json:"password" binding:"required"`
-			Email    string `json:"email"`
-			FullName string `json:"full_name"`
-		}
-		if err := c.ShouldBindJSON(&req); err != nil {
-			response.BadRequest(c, err.Error())
-			return
-		}
-
-		// Check if username already exists
-		var existingUser User
-		if err := db.Where("username = ?", req.Username).First(&existingUser).Error; err == nil {
-			response.BadRequest(c, "用户名已存在")
-			return
-		}
-
-		// Create new user
-		user := User{
-			Username: req.Username,
-			Email:    req.Email,
-			FullName: req.FullName,
-			IsActive: true,
-			Role:     "user",
-		}
-
-		if err := user.SetPassword(req.Password); err != nil {
-			response.InternalError(c, "设置密码失败")
-			return
-		}
-
-		if err := db.Create(&user).Error; err != nil {
-			response.InternalError(c, err.Error())
-			return
-		}
-
-		response.Created(c, user.ToDTO(), "注册成功")
-	})
-
 	// protected routes
 	auth := r.Group("/auth")
 	auth.Use(jwtpkg.TokenMiddleware())

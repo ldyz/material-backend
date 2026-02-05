@@ -1527,32 +1527,6 @@ export const systemApi = {
     })
   },
 
-  // ========== 系统日志扩展 ==========
-
-  /**
-   * 清空系统日志
-   *
-   * @returns {Promise} 返回清空结果
-   */
-  clearLogs() {
-    return request({
-      url: '/system/logs/clear',
-      method: 'POST'
-    })
-  },
-
-  /**
-   * 删除系统日志
-   *
-   * @returns {Promise} 返回删除结果
-   */
-  deleteLogs() {
-    return request({
-      url: '/system/logs',
-      method: 'DELETE'
-    })
-  },
-
   // ========== 数据备份扩展 ==========
 
   /**

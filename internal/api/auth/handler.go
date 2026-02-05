@@ -103,38 +103,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		response.Created(c, user.ToDTO(), "注册成功")
 	})
 
-	// debug-token (public)
-	r.GET("/auth/debug-token", func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			response.SuccessWithMeta(c, nil, map[string]interface{}{
-				"token":   nil,
-				"message": "No token provided",
-			})
-			return
-		}
-
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		claims, err := jwtpkg.ParseToken(tokenString)
-		if err != nil {
-			response.SuccessWithMeta(c, nil, map[string]interface{}{
-				"token": tokenString,
-				"valid": false,
-				"error": err.Error(),
-			})
-			return
-		}
-
-		response.SuccessWithMeta(c, map[string]interface{}{
-			"valid":    true,
-			"user_id":  claims["user_id"],
-			"username": claims["username"],
-			"exp":      claims["exp"],
-		}, map[string]interface{}{
-			"token": tokenString,
-		})
-	})
-
 	// protected routes
 	auth := r.Group("/auth")
 	auth.Use(jwtpkg.TokenMiddleware())

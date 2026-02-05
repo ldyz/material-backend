@@ -77,6 +77,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="specification" label="规格型号" width="120" show-overflow-tooltip />
+        <el-table-column label="材质" width="100" show-overflow-tooltip>
+          <template #default="scope">
+            {{ scope.row.material || '-' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="unit" label="单位" width="80" />
         <el-table-column prop="quantity" label="库存数量" width="120" align="right">
           <template #default="scope">

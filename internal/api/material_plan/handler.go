@@ -46,6 +46,18 @@ func getUserInfo(c *gin.Context) (uint, string, error) {
 	return userID, userNameStr, nil
 }
 
+// calculateProgressCapped calculates progress percentage (capped at 100)
+func calculateProgressCapped(current, total float64) float64 {
+	if total == 0 {
+		return 0
+	}
+	progress := current / total * 100
+	if progress > 100 {
+		return 100
+	}
+	return progress
+}
+
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	g := rg.Group("/material-plan")
 	g.Use(jwtpkg.TokenMiddleware())
@@ -256,17 +268,14 @@ func listPlans(db *gorm.DB) gin.HandlerFunc {
 			}
 
 			// Calculate progress percentages
-			receiveProgress := 0.0
-			issueProgress := 0.0
-			if totalPlanned > 0 {
-				receiveProgress = totalReceived / totalPlanned * 100
-				issueProgress = totalIssued / totalPlanned * 100
-			}
+			receiveProgress := calculateProgressCapped(totalReceived, totalPlanned)
+			issueProgress := calculateProgressCapped(totalIssued, totalPlanned)
+			overallProgress := (receiveProgress + issueProgress) / 2
 
 			dto["progress"] = map[string]float64{
 				"receive_progress":  receiveProgress,
 				"issue_progress":    issueProgress,
-				"overall_progress":  issueProgress, // Use issue progress as overall
+				"overall_progress":  overallProgress,
 			}
 			dto["total_planned"] = totalPlanned
 			dto["total_received"] = totalReceived
@@ -302,8 +311,8 @@ func createPlan(service *Service) gin.HandlerFunc {
 		fmt.Printf("[DEBUG] CreatePlan request: project_id=%d, plan_name=%s, items_count=%d\n",
 			req.ProjectID, req.PlanName, len(req.Items))
 		for i, item := range req.Items {
-			fmt.Printf("[DEBUG] Item %d: material_id=%d, material_name=%q, material_code=%q, planned_quantity=%f\n",
-				i, item.MaterialID, item.MaterialName, item.MaterialCode, item.PlannedQuantity)
+			fmt.Printf("[DEBUG] Item %d: material_id=%d, material_name=%q, material_code=%q, material=%q, specification=%q, planned_quantity=%f\n",
+				i, item.MaterialID, item.MaterialName, item.MaterialCode, item.Material, item.Specification, item.PlannedQuantity)
 		}
 
 		// Get user info from JWT
@@ -388,17 +397,14 @@ func getPlanDetail(db *gorm.DB) gin.HandlerFunc {
 			}
 		}
 
-		receiveProgress := 0.0
-		issueProgress := 0.0
-		if totalPlanned > 0 {
-			receiveProgress = totalReceived / totalPlanned * 100
-			issueProgress = totalIssued / totalPlanned * 100
-		}
+		receiveProgress := calculateProgressCapped(totalReceived, totalPlanned)
+		issueProgress := calculateProgressCapped(totalIssued, totalPlanned)
+		overallProgress := (receiveProgress + issueProgress) / 2
 
 		dto["progress"] = map[string]float64{
 			"receive_progress":  receiveProgress,
 			"issue_progress":    issueProgress,
-			"overall_progress":  issueProgress,
+			"overall_progress":  overallProgress,
 		}
 		dto["total_planned"] = totalPlanned
 		dto["total_received"] = totalReceived

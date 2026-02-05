@@ -140,10 +140,10 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		var requisitions []Requisition
 		query.Offset((page-1)*pageSize).Limit(pageSize).Order("created_at DESC").Preload("Items").Find(&requisitions)
 
-		// Enrich with project names
+		// Enrich with project names and material details
 		out := make([]map[string]any, 0, len(requisitions))
 		for _, req := range requisitions {
-			dto := req.ToDTO()
+			dto := req.ToDTOWithEnrichment(db)
 			if req.ProjectID > 0 {
 				var project struct {
 					ID   uint
@@ -316,7 +316,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			)
 		}()
 
-		dto := createdReq.ToDTO()
+		dto := createdReq.ToDTOWithEnrichment(db)
 
 		// Enrich with project name
 		if createdReq.ProjectID > 0 {
@@ -350,7 +350,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			return
 		}
 
-		dto := requisition.ToDTO()
+		dto := requisition.ToDTOWithEnrichment(db)
 
 		// Enrich with project name
 		if requisition.ProjectID > 0 {
@@ -417,7 +417,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		var updatedReq Requisition
 		db.Preload("Items").First(&updatedReq, requisition.ID)
 
-		dto := updatedReq.ToDTO()
+		dto := updatedReq.ToDTOWithEnrichment(db)
 
 		// Enrich with project name
 		if updatedReq.ProjectID > 0 {

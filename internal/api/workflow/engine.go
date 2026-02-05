@@ -81,7 +81,14 @@ func (e *Engine) ProcessApproval(instanceID uint, approverID uint, approverName 
 	// 2. 获取当前待办任务
 	var task WorkflowPendingTask
 	if err := e.db.Where("instance_id = ? AND approver_id = ? AND status = ?", instanceID, approverID, TaskStatusPending).First(&task).Error; err != nil {
-		return errors.New("待办任务不存在或已处理")
+		// 检查是否有其他待办任务（说明该用户没有审批权限）
+		var taskCount int64
+		e.db.Model(&WorkflowPendingTask{}).Where("instance_id = ? AND status = ?", instanceID, TaskStatusPending).Count(&taskCount)
+		if taskCount > 0 {
+			return errors.New("您没有审批权限，该任务的审批人是其他角色")
+		}
+		// 没有待办任务，可能已处理
+		return errors.New("该任务已处理或不存在")
 	}
 
 	// 3. 获取节点信息

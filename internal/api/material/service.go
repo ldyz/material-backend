@@ -43,6 +43,7 @@ type PlanMaterialItem struct {
 	MaterialCode     string   `json:"material_code"`
 	MaterialName     string   `json:"material_name"`
 	Specification    string   `json:"specification"`
+	Material         string   `json:"material"`
 	Unit             string   `json:"unit"`
 	Category         string   `json:"category"`
 	PlannedQuantity  float64  `json:"planned_quantity"`
@@ -134,6 +135,7 @@ func (s *Service) ListMaterials(params ListQueryParams) ([]PlanMaterialItem, int
 			mm.code as material_code,
 			mm.name as material_name,
 			mm.specification,
+			mm.material,
 			mm.unit,
 			mm.category,
 			mpi.planned_quantity,
@@ -162,6 +164,7 @@ func (s *Service) ListMaterials(params ListQueryParams) ([]PlanMaterialItem, int
 		var item PlanMaterialItem
 		var requiredDate sql.NullString
 		var unitPrice sql.NullFloat64
+		var material sql.NullString
 
 		err := rows.Scan(
 			&item.ID,
@@ -174,6 +177,7 @@ func (s *Service) ListMaterials(params ListQueryParams) ([]PlanMaterialItem, int
 			&item.MaterialCode,
 			&item.MaterialName,
 			&item.Specification,
+			&material,
 			&item.Unit,
 			&item.Category,
 			&item.PlannedQuantity,
@@ -192,6 +196,9 @@ func (s *Service) ListMaterials(params ListQueryParams) ([]PlanMaterialItem, int
 		}
 		if requiredDate.Valid {
 			item.RequiredDate = &requiredDate.String
+		}
+		if material.Valid {
+			item.Material = material.String
 		}
 
 		// Calculate arrived quantity from inbound_items

@@ -62,7 +62,12 @@ func (s *Service) LogCreate(userID *uint, username, module, resourceType string,
 		RequestParams: paramsJSON,
 		Status:        LogStatusSuccess,
 	}
-	return s.Log(log)
+
+	err := s.Log(log)
+	if err != nil {
+		fmt.Printf("创建操作日志失败: module=%s, resource=%s/%s, error=%v\n", module, resourceType, resourceNo, err)
+	}
+	return err
 }
 
 // LogUpdate 记录更新操作
@@ -206,7 +211,9 @@ func (s *Service) List(filter OperationLogFilter) (*OperationLogListResponse, er
 		query = query.Where("created_at >= ?", *filter.StartDate)
 	}
 	if filter.EndDate != nil {
-		query = query.Where("created_at <= ?", *filter.EndDate)
+		// Include the entire end date day by setting time to 23:59:59
+		endDate := filter.EndDate.Add(time.Hour*23 + time.Minute*59 + time.Second*59)
+		query = query.Where("created_at <= ?", endDate)
 	}
 	if filter.Keyword != "" {
 		query = query.Where("resource_no LIKE ? OR username LIKE ?",
@@ -364,7 +371,9 @@ func (s *Service) ExportLogs(filter OperationLogFilter) ([]OperationLog, error) 
 		query = query.Where("created_at >= ?", *filter.StartDate)
 	}
 	if filter.EndDate != nil {
-		query = query.Where("created_at <= ?", *filter.EndDate)
+		// Include the entire end date day by setting time to 23:59:59
+		endDate := filter.EndDate.Add(time.Hour*23 + time.Minute*59 + time.Second*59)
+		query = query.Where("created_at <= ?", endDate)
 	}
 
 	err := query.Order("created_at DESC").Find(&logs).Error
@@ -378,15 +387,22 @@ var auditService *Service
 func InitAuditService(database *gorm.DB) {
 	if auditService == nil {
 		auditService = NewService(database)
+		fmt.Println("[审计服务] 审计服务已初始化")
+	} else {
+		fmt.Println("[审计服务] 审计服务已存在，跳过初始化")
 	}
 }
 
 // 便捷函数（需要在应用启动时初始化）
 func LogCreate(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string, data interface{}) error {
+	fmt.Printf("[审计服务] LogCreate 被调用: module=%s, resourceType=%s, resourceNo=%s\n", module, resourceType, resourceNo)
 	if auditService == nil {
 		// 记录错误日志便于调试
-		return fmt.Errorf("audit service not initialized")
+		err := fmt.Errorf("audit service not initialized")
+		fmt.Printf("[审计服务] 记录创建操作日志失败: %v\n", err)
+		return err
 	}
+	fmt.Printf("[审计服务] 调用 auditService.LogCreate...\n")
 	return auditService.LogCreate(userID, username, module, resourceType, resourceID, resourceNo, data)
 }
 

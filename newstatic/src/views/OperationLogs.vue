@@ -337,8 +337,8 @@ import {
 } from '@element-plus/icons-vue'
 import request from '@/api/request'
 
-// 筛选面板展开状态
-const activeFilterPanels = ref(['filters'])
+// 筛选面板展开状态（默认折叠）
+const activeFilterPanels = ref([])
 
 // 加载状态
 const loading = ref(false)
@@ -460,8 +460,8 @@ const fetchLogs = async () => {
     }
 
     const response = await request.get('/audit/operation-logs', { params })
-    if (response.data?.success) {
-      const result = response.data.data
+    if (response?.success) {
+      const result = response.data
       logs.value = result.data || []
       pagination.total = result.total || 0
     }
@@ -479,8 +479,8 @@ const fetchStatistics = async () => {
     const response = await request.get('/audit/operation-logs/statistics', {
       params: { days: 7 }
     })
-    if (response.data?.success) {
-      statistics.value = response.data.data
+    if (response?.success) {
+      statistics.value = response.data
     }
   } catch (error) {
     console.error('获取统计数据失败:', error)
@@ -593,8 +593,8 @@ const handleSizeChange = (size) => {
 const handleViewDetail = async (row) => {
   try {
     const response = await request.get(`/audit/operation-logs/${row.id}`)
-    if (response.data?.success) {
-      currentLog.value = response.data.data
+    if (response?.success) {
+      currentLog.value = response.data
       detailDialogVisible.value = true
     }
   } catch (error) {

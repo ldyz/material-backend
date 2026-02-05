@@ -107,6 +107,7 @@ type CreateMaterialPlanItemRequest struct {
 	MaterialName    string  `json:"material_name"`
 	MaterialCode    string  `json:"material_code"`
 	Specification   string  `json:"specification"`
+	Material        string  `json:"material"`
 	Category        string  `json:"category"`
 	Unit            string  `json:"unit"`
 	PlannedQuantity float64 `json:"planned_quantity" binding:"required,gt=0"`
@@ -193,13 +194,15 @@ func (p *MaterialPlan) ToDTOWithEnrichment(db *gorm.DB) map[string]any {
 			Code          string
 			Name          string
 			Specification string
+			Material      string
 			Unit          string
 		}
 		if err := db.Table("material_master").Where("id = ?", item.MaterialID).
-			Select("code, name, specification, unit").First(&material).Error; err == nil {
+			Select("code, name, specification, material, unit").First(&material).Error; err == nil {
 			itemDTO["material_code"] = material.Code
 			itemDTO["material_name"] = material.Name
 			itemDTO["specification"] = material.Specification
+			itemDTO["material"] = material.Material
 			itemDTO["unit"] = material.Unit
 		}
 
@@ -256,12 +259,16 @@ func (i *MaterialPlanItem) ToDTO() map[string]any {
 	}
 }
 
-// calculateProgress calculates progress percentage
+// calculateProgress calculates progress percentage (capped at 100)
 func calculateProgress(current, total float64) float64 {
 	if total == 0 {
 		return 0
 	}
-	return current / total * 100
+	progress := current / total * 100
+	if progress > 100 {
+		return 100
+	}
+	return progress
 }
 
 // CalculateTotalBudget calculates total budget from items

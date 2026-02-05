@@ -51,6 +51,11 @@
         <el-table-column prop="material_code" label="物资编码" width="120" />
         <el-table-column prop="material_name" label="物资名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="specification" label="规格型号" width="120" show-overflow-tooltip />
+        <el-table-column label="材质" width="100" show-overflow-tooltip>
+          <template #default="scope">
+            {{ scope.row.material || '-' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="category" label="分类" width="100">
           <template #default="scope">
             <el-tag size="small">{{ scope.row.category || '-' }}</el-tag>

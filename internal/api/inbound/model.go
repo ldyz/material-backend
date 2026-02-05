@@ -74,6 +74,7 @@ func (o *InboundOrder) ToDTOWithEnrichment(db *gorm.DB) map[string]any {
 			Name          string
 			Specification string
 			Unit          string
+			Material      string
 		}
 		var materials []MaterialMaster
 		db.Table("material_master").Where("id IN ?", materialIDs).Find(&materials)
@@ -83,6 +84,7 @@ func (o *InboundOrder) ToDTOWithEnrichment(db *gorm.DB) map[string]any {
 				"name":          m.Name,
 				"specification": m.Specification,
 				"unit":          m.Unit,
+				"material":      m.Material,
 			}
 		}
 	}
@@ -97,6 +99,7 @@ func (o *InboundOrder) ToDTOWithEnrichment(db *gorm.DB) map[string]any {
 			itemDTO["material_name"] = mat["name"]
 			itemDTO["specification"] = mat["specification"]
 			itemDTO["unit"] = mat["unit"]
+			itemDTO["material"] = mat["material"]
 		}
 		items = append(items, itemDTO)
 	}

@@ -998,8 +998,8 @@ const handlePrint = () => {
           ${formData.items.map((item, index) => `
             <tr>
               <td>${item.material_name || '-'}</td>
-              <td>${item.spec || '-'}</td>
-              <td>${item.material || '-'}</td>
+              <td>${item.specification || item.spec || '-'}</td>
+              <td>${item.material || item.material_code || '-'}</td>
               <td>${item.unit || '-'}</td>
               <td style="text-align: right;">${Number(item.quantity || 0).toLocaleString('zh-CN')}</td>
               <td style="text-align: right;">${item.unit_price ? Number(item.unit_price).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '-'}</td>

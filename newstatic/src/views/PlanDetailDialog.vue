@@ -111,6 +111,11 @@
           <el-table-column prop="material_name" label="物资名称" min-width="150" show-overflow-tooltip />
           <el-table-column prop="material_code" label="物资编码" width="120" />
           <el-table-column prop="specification" label="规格型号" width="120" show-overflow-tooltip />
+          <el-table-column label="材质" width="100" show-overflow-tooltip>
+            <template #default="scope">
+              {{ scope.row.material || '-' }}
+            </template>
+          </el-table-column>
           <el-table-column prop="category" label="分类" width="100" />
           <el-table-column prop="unit" label="单位" width="70" />
           <el-table-column prop="planned_quantity" label="计划数量" width="90" align="right" />
@@ -129,7 +134,7 @@
               {{ scope.row.remaining_quantity || 0 }}
             </template>
           </el-table-column>
-          <el-table-column label="进度" width="150" align="center">
+          <el-table-column label="到货进度" width="150" align="center">
             <template #default="scope">
               <el-progress
                 :percentage="Math.round(scope.row.receive_progress || 0)"

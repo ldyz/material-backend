@@ -64,7 +64,7 @@
         ref="uploadRef"
         :auto-upload="false"
         :limit="1"
-        accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.xlsx,.xls"
+        accept=".xlsx,.xls"
         drag
         :before-upload="handleBeforeUpload"
         :on-change="handleFileChange"
@@ -805,6 +805,7 @@ const calculateSimilarity = (fieldKey, fieldLabel, excelColumn) => {
     'name': ['名称', '品名', 'name', 'title'],
     'category': ['分类', '类别', 'category', 'type'],
     'specification': ['规格', '型号', 'specification', 'spec', 'model'],
+    'material': ['材质', '材料', 'material'],
     'unit': ['单位', '计量单位', 'unit'],
     'price': ['单价', '价格', 'price', '金额'],
     'stock': ['库存', '数量', 'stock', 'quantity', 'qty'],

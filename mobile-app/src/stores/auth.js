@@ -1,64 +1,49 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { login as loginApi, logout as logoutApi, getCurrentUser } from '@/api/auth'
 import { storage } from '@/utils/storage'
+import { login as loginApi, logout as logoutApi } from '@/api/auth'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(storage.getToken())
-  const isAuthenticated = ref(!!storage.getToken())
+  const isAuthenticated = ref(!!token.value)
 
-  /**
-   * 登录
-   * @param {string} username - 用户名
-   * @param {string} password - 密码
-   * @returns {Promise}
-   */
+  function setToken(newToken) {
+    token.value = newToken
+    isAuthenticated.value = true
+    storage.setToken(newToken)
+  }
+
+  function clearAuth() {
+    token.value = null
+    isAuthenticated.value = false
+    storage.clear()
+  }
+
   async function login(username, password) {
     try {
-      const response = await loginApi(username, password)
-      // 登录接口特殊格式：{ success: true, token: "...", data: {...} }
-      token.value = response.token
-      isAuthenticated.value = true
-      storage.setToken(response.token)
+      const response = await loginApi({ username, password })
+      const newToken = response.meta?.token || response.token
+      setToken(newToken)
       return response
     } catch (error) {
       throw error
     }
   }
 
-  /**
-   * 登出
-   * @returns {Promise}
-   */
   async function logout() {
     try {
       await logoutApi()
     } finally {
-      token.value = ''
-      isAuthenticated.value = false
-      storage.clear()
-    }
-  }
-
-  /**
-   * 获取当前用户信息
-   * @returns {Promise}
-   */
-  async function fetchCurrentUser() {
-    try {
-      const response = await getCurrentUser()
-      // 后端返回标准格式：{ success: true, data: {...} }
-      return response.data
-    } catch (error) {
-      throw error
+      clearAuth()
     }
   }
 
   return {
     token,
     isAuthenticated,
+    setToken,
+    clearAuth,
     login,
-    logout,
-    fetchCurrentUser,
+    logout
   }
 })

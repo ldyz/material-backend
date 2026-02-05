@@ -223,6 +223,10 @@ func (s *Service) CreatePlan(req *CreateMaterialPlanRequest, creatorID uint, cre
 func (s *Service) CreatePlanItem(tx *gorm.DB, planID uint, req *CreateMaterialPlanItemRequest) (*MaterialPlanItem, error) {
 	var materialID uint
 
+	// Debug log
+	fmt.Printf("[DEBUG] CreatePlanItem: material_name=%q, material=%q, specification=%q, material_id=%d\n",
+		req.MaterialName, req.Material, req.Specification, req.MaterialID)
+
 	// Strategy 1: If material_id is provided, use it directly
 	if req.MaterialID > 0 {
 		// Validate material exists in material_master
@@ -234,9 +238,10 @@ func (s *Service) CreatePlanItem(tx *gorm.DB, planID uint, req *CreateMaterialPl
 		}
 		materialID = req.MaterialID
 	} else if req.MaterialName != "" {
-		// Strategy 2: Try to find material by name and specification
+		// Strategy 2: Try to find material by name, specification AND material
 		var material struct {
-			ID uint
+			ID       uint
+			Material string
 		}
 		query := tx.Table("material_master").Where("name = ?", req.MaterialName)
 
@@ -245,10 +250,28 @@ func (s *Service) CreatePlanItem(tx *gorm.DB, planID uint, req *CreateMaterialPl
 			query = query.Where("specification = ?", req.Specification)
 		}
 
-		if err := query.First(&material).Error; err == nil {
-			// Found existing material
-			materialID = material.ID
+		// Also match by material - only exact match on all three fields
+		if req.Material != "" {
+			query = query.Where("material = ?", req.Material)
 		} else {
+			// If material is empty, only match records where material is also empty
+			query = query.Where("(material = '' OR material IS NULL)")
+		}
+
+		if err := query.First(&material).Error; err == nil {
+			// Found exact match (name + specification + material all match)
+			materialID = material.ID
+			fmt.Printf("[DEBUG] Found exact match material_master ID=%d (name=%q, spec=%q, material=%q)\n",
+				materialID, req.MaterialName, req.Specification, req.Material)
+		} else {
+			// No exact match found - create new record
+			fmt.Printf("[DEBUG] No exact match found (name=%q, spec=%q, material=%q). Creating new record.\n",
+				req.MaterialName, req.Specification, req.Material)
+			materialID = 0
+		}
+
+		// If no exact match, create new record
+		if materialID == 0 {
 			// Strategy 3: Auto-create material_master record
 			// Generate a unique code if not provided
 			code := req.MaterialCode
@@ -266,19 +289,26 @@ func (s *Service) CreatePlanItem(tx *gorm.DB, planID uint, req *CreateMaterialPl
 				Code          string
 				Name          string
 				Specification string
+				Material      string
 				Category      string
 				Unit          string
 			}{
 				Code:          code,
 				Name:          req.MaterialName,
 				Specification: req.Specification,
+				Material:      req.Material,
 				Category:      req.Category,
 				Unit:          req.Unit,
 			}
 
+			fmt.Printf("[DEBUG] Auto-creating material_master: code=%q, name=%q, material=%q, specification=%q\n",
+				newMaterial.Code, newMaterial.Name, newMaterial.Material, newMaterial.Specification)
+
 			if err := tx.Table("material_master").Create(&newMaterial).Error; err != nil {
 				return nil, fmt.Errorf("failed to auto-create material_master: %w", err)
 			}
+
+			fmt.Printf("[DEBUG] Created material_master with ID=%d, material=%q\n", newMaterial.ID, newMaterial.Material)
 
 			// Use the ID from the newly created material directly
 			materialID = newMaterial.ID

@@ -109,7 +109,7 @@ const currentStep = computed(() => {
     pending: 1,
     approved: 2,
     rejected: 1,
-    issued: 3,
+    issued: 2,
     completed: 2
   }
   return stepMap[props.status] || 0
@@ -131,13 +131,8 @@ const workflowSteps = computed(() => {
       },
       {
         status: 'approved',
-        title: '已审核',
-        description: '审核通过，准备发货'
-      },
-      {
-        status: 'issued',
-        title: '已发货',
-        description: '物资已出库发货'
+        title: '已完成',
+        description: '审核通过，物资已自动发放'
       }
     ]
   } else if (props.workflowType === 'inbound') {
@@ -179,13 +174,6 @@ const actions = computed(() => {
       icon: 'CircleClose',
       handler: () => emit('action', 'reject')
     })
-  } else if (props.status === 'approved' && props.workflowType === 'requisition') {
-    actionList.push({
-      label: '发货',
-      type: 'warning',
-      icon: 'Box',
-      handler: () => emit('action', 'issue')
-    })
   }
 
   return actionList
@@ -218,7 +206,7 @@ const getStatusText = (status) => {
     pending: '待审核',
     approved: '已审核',
     rejected: '已拒绝',
-    issued: '已发货',
+    issued: '已发放',
     completed: '已完成'
   }
   return texts[status] || status

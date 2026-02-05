@@ -64,6 +64,8 @@ func (h *Handler) GetLogs(c *gin.Context) {
 		return
 	}
 
+	fmt.Printf("[审计API] 返回日志数据: total=%d, page=%d, data_len=%d\n", result.Total, result.Page, len(result.Data))
+
 	response.Success(c, gin.H{
 		"data":         result.Data,
 		"total":        result.Total,

@@ -475,25 +475,6 @@ export const materialApi = {
   },
 
   /**
-   * 批量导入物资数据
-   *
-   * 直接传入 JSON 数据数组批量创建物资记录
-   * 用于智能导入映射组件
-   *
-   * @param {Object} data - 导入数据
-   * @param {Array} data.materials - 物资数据数组
-   * @param {number} data.project_id - 关联的项目ID
-   * @returns {Promise} 返回导入结果
-   */
-  batchImport(data) {
-    return request({
-      url: '/material/materials/batch',
-      method: 'POST',
-      data
-    })
-  },
-
-  /**
    * 批量创建物资
    *
    * @param {Object} data - 导入数据

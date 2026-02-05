@@ -32,7 +32,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	r.GET("/materials/:id/logs", auth.PermissionMiddleware(db, "material_view"), getMaterialLogs(service))
 
 	// Batch operations
-	r.POST("/materials/batch", auth.PermissionMiddleware(db, "material_import"), batchMaterials(service))
 	r.POST("/materials/batch-create", auth.PermissionMiddleware(db, "material_import"), batchCreateMaterials(service))
 }
 
@@ -400,111 +399,6 @@ func getMaterialLogs(service *Service) gin.HandlerFunc {
 			"logs":  logs,
 			"total": len(logs),
 		})
-	}
-}
-
-// batchMaterials creates materials in batch
-func batchMaterials(service *Service) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var req struct {
-			Materials []struct {
-				Code            string   `json:"code"`
-				Name            string   `json:"name" binding:"required"`
-				Category        string   `json:"category"`
-				Specification   string   `json:"specification"`
-				Unit            string   `json:"unit" binding:"required"`
-				Price           *float64 `json:"price"`
-				Quantity        *float64 `json:"quantity"`
-				QualityStandard string   `json:"quality_standard"`
-				Remark          string   `json:"remark"`
-				ProjectID       uint     `json:"project_id" binding:"required"`
-			} `json:"materials" binding:"required"`
-		}
-
-		if err := c.ShouldBindJSON(&req); err != nil {
-			response.BadRequest(c, err.Error())
-			return
-		}
-
-		tx := service.db.Begin()
-		defer func() {
-			if r := recover(); r != nil {
-				tx.Rollback()
-			}
-		}()
-
-		var failedItems []map[string]any
-		successCount := 0
-
-		for _, mat := range req.Materials {
-			description := mat.QualityStandard
-			if mat.Remark != "" {
-				if description != "" {
-					description += "; " + mat.Remark
-				} else {
-					description = mat.Remark
-				}
-			}
-
-			price := 0.0
-			if mat.Price != nil {
-				price = *mat.Price
-			}
-
-			quantity := 0
-			if mat.Quantity != nil {
-				quantity = int(*mat.Quantity)
-			}
-
-			var codePtr *string
-			if mat.Code != "" {
-				codePtr = &mat.Code
-			}
-
-			material := Material{
-				Code:          codePtr,
-				Name:          mat.Name,
-				Category:      mat.Category,
-				Specification: mat.Specification,
-				Unit:          mat.Unit,
-				Price:         price,
-				Quantity:      quantity,
-				Description:   description,
-				ProjectID:     &mat.ProjectID,
-			}
-
-			if err := tx.Create(&material).Error; err != nil {
-				failedItems = append(failedItems, map[string]any{
-					"name":  mat.Name,
-					"error": err.Error(),
-				})
-				continue
-			}
-
-			successCount++
-		}
-
-		if len(failedItems) > 0 {
-			tx.Rollback()
-			c.JSON(http.StatusOK, gin.H{
-				"success":      false,
-				"successCount": successCount,
-				"failCount":    len(failedItems),
-				"failedItems":  failedItems,
-			})
-			return
-		}
-
-		if err := tx.Commit().Error; err != nil {
-			response.InternalError(c, "保存失败")
-			return
-		}
-
-		response.SuccessWithMeta(c, map[string]any{
-			"total":   successCount,
-			"success": successCount,
-			"failed":  0,
-		}, nil)
 	}
 }
 

@@ -232,10 +232,32 @@ const menuConfig = [
     title: '系统管理',
     icon: Setting,
     permissions: [
-      'system_log',        // 系统日志
-      'system_backup',     // 系统备份
-      'system_config',     // 系统配置
-      'system_report'      // 系统报告
+      'user_view',
+      'role_view',
+      'system_log',
+      'system_backup',
+      'system_config',
+      'system_report'
+    ],
+    children: [
+      {
+        path: '/system/users',
+        title: '用户管理',
+        icon: UserFilled,
+        permissions: ['user_view']
+      },
+      {
+        path: '/system/roles',
+        title: '角色管理',
+        icon: Management,
+        permissions: ['role_view']
+      },
+      {
+        path: '/system',
+        title: '系统设置',
+        icon: Setting,
+        permissions: ['system_log', 'system_backup', 'system_config', 'system_report']
+      }
     ]
   }
 ]

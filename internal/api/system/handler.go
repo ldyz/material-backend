@@ -937,23 +937,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		response.SuccessWithMessage(c, nil, message)
 	})
 
-	// 传统方式：下载备份文件 (使用查询参数)
-	r.GET("/backup/download", auth.PermissionMiddleware(db, "system_backup"), func(c *gin.Context) {
-		backupName := c.Query("name")
-		if backupName == "" {
-			response.BadRequest(c, "备份文件名不能为空")
-			return
-		}
-
-		backupPath := filepath.Join(".", backupName)
-		if _, err := os.Stat(backupPath); os.IsNotExist(err) {
-			response.NotFound(c, "备份文件不存在")
-			return
-		}
-
-		c.FileAttachment(backupPath, backupName)
-	})
-
 	// 传统方式：删除备份文件 (使用POST body)
 	r.POST("/backup/delete", auth.PermissionMiddleware(db, "system_backup"), func(c *gin.Context) {
 		var req struct {

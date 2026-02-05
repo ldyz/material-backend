@@ -380,46 +380,100 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 				Key  string
 				Name string
 			}{
+				// 用户管理 (4)
 				{"user_view", "查看用户"},
 				{"user_create", "创建用户"},
 				{"user_edit", "编辑用户"},
 				{"user_delete", "删除用户"},
+				// 角色管理 (5)
 				{"role_view", "查看角色"},
 				{"role_create", "创建角色"},
 				{"role_edit", "编辑角色"},
 				{"role_delete", "删除角色"},
+				{"role_assign_permissions", "分配权限"},
+				// 项目管理 (4)
 				{"project_view", "查看项目"},
 				{"project_create", "创建项目"},
 				{"project_edit", "编辑项目"},
 				{"project_delete", "删除项目"},
+				// 物资管理 (5)
 				{"material_view", "查看物资"},
 				{"material_create", "创建物资"},
 				{"material_edit", "编辑物资"},
 				{"material_delete", "删除物资"},
+				{"material_import", "导入物资"},
+				// 物资计划 (5)
+				{"material_plan_view", "查看物资计划"},
+				{"material_plan_create", "创建物资计划"},
+				{"material_plan_edit", "编辑物资计划"},
+				{"material_plan_delete", "删除物资计划"},
+				{"material_plan_approve", "审核物资计划"},
+				// 库存管理 (8)
 				{"stock_view", "查看库存"},
 				{"stock_create", "创建库存"},
 				{"stock_edit", "编辑库存"},
 				{"stock_delete", "删除库存"},
 				{"stock_in", "库存入库"},
 				{"stock_out", "库存出库"},
+				{"stock_export", "导出库存"},
+				{"stock_alerts", "库存预警"},
+				// 库存日志 (2)
 				{"stocklog_view", "查看库存日志"},
 				{"stocklog_delete", "删除库存日志"},
-				{"stock_export", "导出库存"},
+				// 入库管理 (6)
 				{"inbound_view", "查看入库单"},
 				{"inbound_create", "创建入库单"},
 				{"inbound_edit", "编辑入库单"},
 				{"inbound_delete", "删除入库单"},
 				{"inbound_approve", "审核入库单"},
+				{"inbound_export", "导出入库单"},
+				// 出库管理 (7)
 				{"requisition_view", "查看出库单"},
 				{"requisition_create", "创建出库单"},
 				{"requisition_edit", "编辑出库单"},
 				{"requisition_delete", "删除出库单"},
 				{"requisition_approve", "审核出库单"},
+				{"requisition_issue", "发货"},
+				{"requisition_export", "导出出库单"},
+				// 施工日志 (5)
+				{"construction_log_view", "查看日志"},
+				{"construction_log_create", "创建日志"},
+				{"construction_log_edit", "编辑日志"},
+				{"construction_log_delete", "删除日志"},
+				{"construction_log_export", "导出日志"},
+				// 进度管理 (5)
 				{"progress_view", "查看进度"},
 				{"progress_create", "创建进度"},
 				{"progress_edit", "编辑进度"},
 				{"progress_delete", "删除进度"},
+				{"progress_export", "导出进度"},
+				// 审计日志 (1)
+				{"audit_view", "查看审计日志"},
+				// AI 智能体 (5)
+				{"ai_agent_view", "查看 AI"},
+				{"ai_agent_query", "AI 查询"},
+				{"ai_agent_operate", "AI 操作"},
+				{"ai_agent_workflow", "AI 工作流"},
+				{"ai_agent_logs", "AI 日志"},
+				// 系统管理 (5)
 				{"system_log", "查看系统日志"},
+				{"system_backup", "数据备份"},
+				{"system_config", "系统配置"},
+				{"system_statistics", "系统统计"},
+				{"system_activities", "系统动态"},
+				// 工作流管理 (12)
+				{"workflow_view", "查看工作流"},
+				{"workflow_create", "创建工作流"},
+				{"workflow_edit", "编辑工作流"},
+				{"workflow_delete", "删除工作流"},
+				{"workflow_activate", "激活工作流"},
+				{"workflow_instance_view", "查看实例"},
+				{"workflow_instance_resubmit", "重新提交"},
+				{"workflow_task_view", "查看任务"},
+				{"workflow_task_approve", "审批任务"},
+				{"workflow_task_reject", "拒绝任务"},
+				{"workflow_task_delegate", "委派任务"},
+				{"workflow_log_view", "查看流程日志"},
 			}
 
 			// Group permissions by module
@@ -458,6 +512,14 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 					moduleName = "出库管理"
 				case "progress":
 					moduleName = "进度管理"
+				case "construction_log":
+					moduleName = "施工日志"
+				case "audit":
+					moduleName = "审计日志"
+				case "ai_agent":
+					moduleName = "AI 智能体"
+				case "workflow":
+					moduleName = "工作流管理"
 				case "system":
 					moduleName = "系统管理"
 				default:

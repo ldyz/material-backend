@@ -1,193 +1,238 @@
-# 前端权限配置说明
+# 系统权限配置说明
 
 ## 更新时间
-2026-02-01
+2026-02-05
 
-## 前后端权限对照表
+## 权限模块概览
 
-### 1. 物资计划模块
+系统共包含 **16 个模块**，**77 个权限点**：
 
-| 前端功能 | 后端权限 | 说明 |
-|---------|---------|------|
-| 查看物资计划列表 | `material_plan_view` | 基础查看权限 |
-| 创建物资计划 | `material_plan_create` | 创建新计划 |
-| 编辑物资计划 | `material_plan_edit` | 修改计划内容 |
-| 删除物资计划 | `material_plan_delete` | 删除计划 |
-| 提交审核 | `material_plan_edit` | 编辑权限即可提交 |
-| 审核计划 | `material_plan_approve` | 审核通过/拒绝 |
-| 添加计划项 | `material_plan_edit` | 编辑权限即可添加 |
-
-**路由配置：**
-- 路径：`/material-plans`
-- 组件：`MaterialPlans.vue`
-- 所需权限：`['material_plan_view']`
-
-**菜单配置：**
-```javascript
-{
-  path: '/material-plans',
-  title: '物资计划',
-  permissions: ['material_plan_view']
-}
-```
+| 序号 | 模块 | 权限数量 |
+|------|------|----------|
+| 1 | 用户管理 | 4 |
+| 2 | 角色管理 | 5 |
+| 3 | 项目管理 | 4 |
+| 4 | 物资管理 | 5 |
+| 5 | 物资计划 | 5 |
+| 6 | 库存管理 | 8 |
+| 7 | 库存日志 | 2 |
+| 8 | 入库管理 | 6 |
+| 9 | 出库管理 | 7 |
+| 10 | 施工日志 | 4 |
+| 11 | 进度管理 | 4 |
+| 12 | 审计日志 | 1 |
+| 13 | AI 智能体 | 5 |
+| 14 | 系统日志 | 1 |
+| 15 | 系统备份 | 1 |
+| 16 | 系统配置 | 1 |
+| 17 | 工作流管理 | 20 |
 
 ---
 
-### 2. 物资管理模块
+## 完整权限列表
 
-| 前端功能 | 后端权限 | 说明 |
+### 1. 用户管理模块 (4个权限)
+
+| 权限代码 | 权限名称 | 说明 |
 |---------|---------|------|
-| 查看物资列表 | `material_view` | 基础查看权限 |
-| 创建物资 | `material_create` | 添加新物资 |
-| 编辑物资 | `material_edit` | 修改物资信息 |
-| 删除物资 | `material_delete` | 删除物资 |
-| 导入物资 | `material_import` | 批量导入 |
-| 导出物资 | `material_export` | 导出数据 |
-| 物资入库 | `material_in` | 入库操作 |
-
-**路由配置：**
-- 路径：`/materials`
-- 组件：`Materials.vue`
-- 所需权限：`['material_view', 'material_create', 'material_edit', 'material_delete', 'material_import', 'material_export', 'material_in']`
-
-**菜单配置：**
-```javascript
-{
-  path: '/materials',
-  title: '物资管理',
-  permissions: ['material_view']
-}
-```
+| `user_view` | 查看用户 | 查看用户列表和详情 |
+| `user_create` | 创建用户 | 创建新用户 |
+| `user_edit` | 编辑用户 | 修改用户信息 |
+| `user_delete` | 删除用户 | 删除用户 |
 
 ---
 
-### 3. 库存管理模块
+### 2. 角色管理模块 (5个权限)
 
-| 前端功能 | 后端权限 | 说明 |
+| 权限代码 | 权限名称 | 说明 |
 |---------|---------|------|
-| 查看库存 | `stock_view` | 查看库存列表 |
-| 库存入库 | `stock_in` | 入库操作 |
-| 库存出库 | `stock_out` | 出库操作 |
-| 编辑库存 | `stock_edit` | 修改库存信息 |
-| 删除库存 | `stock_delete` | 删除库存记录 |
-| 查看库存日志 | `stocklog_view` | 查看操作日志 |
-| 删除库存日志 | `stocklog_delete` | 删除日志 |
-| 导出库存 | `stock_export` | 导出数据 |
-
-**路由配置：**
-- 路径：`/stock`
-- 组件：`Stock.vue`
-- 所需权限：`['stock_view', 'stock_in', 'stock_out', 'stock_edit', 'stock_delete', 'stocklog_view', 'stocklog_delete', 'stock_export']`
-
-**菜单配置：**
-```javascript
-{
-  path: '/stock',
-  title: '库存管理',
-  permissions: ['stock_view']
-}
-```
+| `role_view` | 查看角色 | 查看角色列表和详情 |
+| `role_create` | 创建角色 | 创建新角色 |
+| `role_edit` | 编辑角色 | 修改角色信息 |
+| `role_delete` | 删除角色 | 删除角色 |
+| `role_assign_permissions` | 分配权限 | 为角色分配权限 |
 
 ---
 
-### 4. 出库管理模块
+### 3. 项目管理模块 (4个权限)
 
-| 前端功能 | 后端权限 | 说明 |
+| 权限代码 | 权限名称 | 说明 |
 |---------|---------|------|
-| 查看出库单 | `requisition_view` | 查看出库单列表 |
-| 创建出库单 | `requisition_create` | 创建新出库单 |
-| 编辑出库单 | `requisition_edit` | 修改出库单 |
-| 删除出库单 | `requisition_delete` | 删除出库单 |
-| 审核出库单 | `requisition_approve` | 审核通过/拒绝 |
-| 发货 | `requisition_issue` | 标记为已发货 |
-| 导出出库单 | `requisition_export` | 导出数据 |
-
-**路由配置：**
-- 路径：`/requisitions`
-- 组件：`Requisitions.vue`
-- 所需权限：`['requisition_view']`
-
-**菜单配置：**
-```javascript
-{
-  path: '/requisitions',
-  title: '出库管理',
-  permissions: ['requisition_view']
-}
-```
+| `project_view` | 查看项目 | 查看项目列表和详情 |
+| `project_create` | 创建项目 | 创建新项目 |
+| `project_edit` | 编辑项目 | 修改项目信息 |
+| `project_delete` | 删除项目 | 删除项目 |
 
 ---
 
-### 5. 入库管理模块
+### 4. 物资管理模块 (5个权限)
 
-| 前端功能 | 后端权限 | 说明 |
+| 权限代码 | 权限名称 | 说明 |
 |---------|---------|------|
-| 查看入库单 | `inbound_view` | 查看入库单列表 |
-| 创建入库单 | `inbound_create` | 创建新入库单 |
-| 编辑入库单 | `inbound_edit` | 修改入库单 |
-| 删除入库单 | `inbound_delete` | 删除入库单 |
-| 审核入库单 | `inbound_approve` | 审核通过/拒绝 |
-| 导出入库单 | `inbound_export` | 导出数据 |
-
-**路由配置：**
-- 路径：`/inbound`
-- 组件：`Inbound.vue`
-- 所需权限：`['inbound_view']`
-
-**菜单配置：**
-```javascript
-{
-  path: '/inbound',
-  title: '入库管理',
-  permissions: ['inbound_view']
-}
-```
+| `material_view` | 查看物资 | 查看物资列表和详情 |
+| `material_create` | 创建物资 | 创建新物资 |
+| `material_edit` | 编辑物资 | 修改物资信息 |
+| `material_delete` | 删除物资 | 删除物资 |
+| `material_import` | 导入物资 | 批量导入物资数据 |
 
 ---
 
-### 6. 项目管理模块
+### 5. 物资计划模块 (5个权限)
 
-| 前端功能 | 后端权限 | 说明 |
+| 权限代码 | 权限名称 | 说明 |
 |---------|---------|------|
-| 查看项目 | `project_view` | 查看项目列表 |
-| 创建项目 | `project_create` | 创建新项目 |
-| 编辑项目 | `project_edit` | 修改项目信息 |
-| 删除项目 | `project_delete` | 删除项目 |
-| 管理项目成员 | `project_member_manage` | 管理成员权限 |
+| `material_plan_view` | 查看物资计划 | 查看物资计划列表和详情 |
+| `material_plan_create` | 创建物资计划 | 创建新物资计划 |
+| `material_plan_edit` | 编辑物资计划 | 修改计划内容和添加计划项 |
+| `material_plan_delete` | 删除物资计划 | 删除物资计划 |
+| `material_plan_approve` | 审核物资计划 | 审核通过/拒绝/激活/取消计划 |
 
 ---
 
-### 7. 进度管理模块
+### 6. 库存管理模块 (8个权限)
 
-| 前端功能 | 后端权限 | 说明 |
+| 权限代码 | 权限名称 | 说明 |
 |---------|---------|------|
-| 查看进度 | `progress_view` | 查看进度计划 |
-| 创建进度 | `progress_create` | 创建新进度 |
-| 编辑进度 | `progress_edit` | 修改进度 |
-| 删除进度 | `progress_delete` | 删除进度 |
+| `stock_view` | 查看库存 | 查看库存列表和详情 |
+| `stock_create` | 创建库存 | 创建库存记录 |
+| `stock_edit` | 编辑库存 | 修改库存信息 |
+| `stock_delete` | 删除库存 | 删除库存记录 |
+| `stock_in` | 库存入库 | 入库操作 |
+| `stock_out` | 库存出库 | 出库操作 |
+| `stock_export` | 导出库存 | 导出库存数据 |
+| `stock_alerts` | 库存预警 | 查看库存预警信息 |
 
 ---
 
-### 8. 施工日志模块
+### 7. 库存日志模块 (2个权限)
 
-| 前端功能 | 后端权限 | 说明 |
+| 权限代码 | 权限名称 | 说明 |
 |---------|---------|------|
-| 查看日志 | `construction_log_view` | 查看施工日志 |
-| 添加日志 | `constructionlog_add` | 添加新日志 |
-| 编辑日志 | `construction_log_edit` | 修改日志内容 |
-| 删除日志 | `construction_log_delete` | 删除日志 |
+| `stocklog_view` | 查看库存日志 | 查看库存操作日志 |
+| `stocklog_delete` | 删除库存日志 | 删除库存日志 |
 
 ---
 
-### 9. 系统管理模块
+### 8. 入库管理模块 (6个权限)
 
-| 前端功能 | 后端权限 | 说明 |
+| 权限代码 | 权限名称 | 说明 |
 |---------|---------|------|
-| 查看日志 | `system_log` | 查看系统日志 |
-| 数据备份 | `system_backup` | 备份数据 |
-| 系统配置 | `system_config` | 系统配置 |
-| 数据报告 | `system_report` | 生成报告 |
-| 统计分析 | `system_statistics` | 查看统计 |
+| `inbound_view` | 查看入库单 | 查看入库单列表和详情 |
+| `inbound_create` | 创建入库单 | 创建新入库单 |
+| `inbound_edit` | 编辑入库单 | 修改入库单信息 |
+| `inbound_delete` | 删除入库单 | 删除入库单 |
+| `inbound_approve` | 审核入库单 | 审核通过/拒绝入库单 |
+| `inbound_export` | 导出入库单 | 导出入库单数据 |
+
+---
+
+### 9. 出库管理模块 (7个权限)
+
+| 权限代码 | 权限名称 | 说明 |
+|---------|---------|------|
+| `requisition_view` | 查看出库单 | 查看出库单列表和详情 |
+| `requisition_create` | 创建出库单 | 创建新出库单 |
+| `requisition_edit` | 编辑出库单 | 修改出库单信息 |
+| `requisition_delete` | 删除出库单 | 删除出库单 |
+| `requisition_approve` | 审核出库单 | 审核通过/拒绝出库单 |
+| `requisition_issue` | 发货 | 标记为已发货 |
+| `requisition_export` | 导出出库单 | 导出出库单数据 |
+
+---
+
+### 10. 施工日志模块 (5个权限)
+
+| 权限代码 | 权限名称 | 说明 |
+|---------|---------|------|
+| `construction_log_view` | 查看日志 | 查看施工日志 |
+| `construction_log_create` | 创建日志 | 添加新日志 |
+| `construction_log_edit` | 编辑日志 | 修改日志内容 |
+| `construction_log_delete` | 删除日志 | 删除日志 |
+| `construction_log_export` | 导出日志 | 导出施工日志数据 |
+
+---
+
+### 11. 进度管理模块 (4个权限)
+
+| 权限代码 | 权限名称 | 说明 |
+|---------|---------|------|
+| `progress_view` | 查看进度 | 查看进度计划 |
+| `progress_create` | 创建进度 | 创建新进度任务 |
+| `progress_edit` | 编辑进度 | 修改进度 |
+| `progress_delete` | 删除进度 | 删除进度 |
+| `progress_export` | 导出进度 | 导出进度数据 |
+
+---
+
+### 12. 审计日志模块 (1个权限)
+
+| 权限代码 | 权限名称 | 说明 |
+|---------|---------|------|
+| `audit_view` | 查看审计日志 | 查看操作审计日志、统计、导出等 |
+
+---
+
+### 13. AI 智能体模块 (5个权限)
+
+| 权限代码 | 权限名称 | 说明 |
+|---------|---------|------|
+| `ai_agent_view` | 查看 AI | 查看 AI Agent 能力和配置 |
+| `ai_agent_query` | AI 查询 | 使用 AI 查询和分析功能 |
+| `ai_agent_operate` | AI 操作 | 执行 AI 操作（创建计划、更新库存等） |
+| `ai_agent_workflow` | AI 工作流 | AI 工作流操作（审批/拒绝任务） |
+| `ai_agent_logs` | AI 日志 | 查看 AI Agent 操作日志 |
+
+---
+
+### 14. 系统日志模块 (1个权限)
+
+| 权限代码 | 权限名称 | 说明 |
+|---------|---------|------|
+| `system_log` | 查看系统日志 | 查看和清除系统日志 |
+
+---
+
+### 15. 系统备份模块 (1个权限)
+
+| 权限代码 | 权限名称 | 说明 |
+|---------|---------|------|
+| `system_backup` | 数据备份 | 创建、下载、删除、恢复数据备份 |
+
+---
+
+### 16. 系统配置模块 (1个权限)
+
+| 权限代码 | 权限名称 | 说明 |
+|---------|---------|------|
+| `system_config` | 系统配置 | 修改系统配置和 AI 分析配置 |
+
+---
+
+### 17. 工作流管理模块 (20个权限)
+
+| 权限代码 | 权限名称 | 说明 |
+|---------|---------|------|
+| `workflow_view` | 查看工作流 | 查看工作流列表和详情 |
+| `workflow_create` | 创建工作流 | 创建新工作流 |
+| `workflow_edit` | 编辑工作流 | 修改工作流配置 |
+| `workflow_delete` | 删除工作流 | 删除工作流 |
+| `workflow_activate` | 激活工作流 | 激活/停用工作流 |
+| `workflow_instance_view` | 查看实例 | 查看工作流实例 |
+| `workflow_instance_resubmit` | 重新提交 | 重新提交工作流实例 |
+| `workflow_task_view` | 查看任务 | 查看待办任务 |
+| `workflow_task_approve` | 审批任务 | 审批通过任务 |
+| `workflow_task_reject` | 拒绝任务 | 拒绝任务 |
+| `workflow_task_delegate` | 委派任务 | 委派任务给其他人 |
+| `workflow_log_view` | 查看流程日志 | 查看工作流操作日志 |
+
+---
+
+### 18. 系统统计分析模块 (1个权限)
+
+| 权限代码 | 权限名称 | 说明 |
+|---------|---------|------|
+| `system_statistics` | 系统统计 | 查看系统统计、报告生成、AI 分析等 |
+| `system_activities` | 系统动态 | 查看系统动态和活动 |
 
 ---
 

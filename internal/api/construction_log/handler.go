@@ -53,7 +53,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	}
 
 	// ================== 日志列表接口 ==================
-	r.GET("/logs", auth.PermissionMiddleware(db, "constructionlog_view"), func(c *gin.Context) {
+	r.GET("/logs", auth.PermissionMiddleware(db, "construction_log_view"), func(c *gin.Context) {
 		var req request.PaginationRequest
 		if err := request.BindQuery(c, &req); err != nil {
 			response.BadRequest(c, err.Error())
@@ -142,7 +142,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	})
 
 	// ================== 日志详情接口 ==================
-	r.GET("/:log_id", auth.PermissionMiddleware(db, "constructionlog_view"), func(c *gin.Context) {
+	r.GET("/:log_id", auth.PermissionMiddleware(db, "construction_log_view"), func(c *gin.Context) {
 		var uriReq struct {
 			LogID int `uri:"log_id" binding:"required,min=1"`
 		}
@@ -173,7 +173,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	})
 
 	// ================== 创建日志接口 ==================
-	r.POST("/", auth.PermissionMiddleware(db, "constructionlog_create"), func(c *gin.Context) {
+	r.POST("/", auth.PermissionMiddleware(db, "construction_log_create"), func(c *gin.Context) {
 		// 获取当前用户
 		currentUser, err := auth.GetCurrentUser(c, db)
 		if err != nil || currentUser == nil {
@@ -232,7 +232,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	})
 
 	// ================== 编辑日志接口 ==================
-	r.PUT("/:log_id", auth.PermissionMiddleware(db, "constructionlog_edit"), func(c *gin.Context) {
+	r.PUT("/:log_id", auth.PermissionMiddleware(db, "construction_log_edit"), func(c *gin.Context) {
 		var uriReq struct {
 			LogID int `uri:"log_id" binding:"required,min=1"`
 		}
@@ -318,7 +318,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	})
 
 	// ================== 删除日志接口 ==================
-	r.DELETE("/:log_id", auth.PermissionMiddleware(db, "constructionlog_delete"), func(c *gin.Context) {
+	r.DELETE("/:log_id", auth.PermissionMiddleware(db, "construction_log_delete"), func(c *gin.Context) {
 		var uriReq struct {
 			LogID int `uri:"log_id" binding:"required,min=1"`
 		}
@@ -355,7 +355,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	})
 
 	// ================== 图片上传接口 ==================
-	r.POST("/upload_image", auth.PermissionMiddleware(db, "constructionlog_create"), func(c *gin.Context) {
+	r.POST("/upload_image", auth.PermissionMiddleware(db, "construction_log_create"), func(c *gin.Context) {
 		// 获取上传文件
 		file, header, err := c.Request.FormFile("file")
 		if err != nil {

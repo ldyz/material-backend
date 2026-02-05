@@ -647,6 +647,37 @@ const treeProps = {
 
 const permissionTree = [
   {
+    id: 'user',
+    label: '用户管理',
+    children: [
+      { id: 'user_view', label: '查看用户' },
+      { id: 'user_create', label: '创建用户' },
+      { id: 'user_edit', label: '编辑用户' },
+      { id: 'user_delete', label: '删除用户' }
+    ]
+  },
+  {
+    id: 'role',
+    label: '角色管理',
+    children: [
+      { id: 'role_view', label: '查看角色' },
+      { id: 'role_create', label: '创建角色' },
+      { id: 'role_edit', label: '编辑角色' },
+      { id: 'role_delete', label: '删除角色' },
+      { id: 'role_assign_permissions', label: '分配权限' }
+    ]
+  },
+  {
+    id: 'project',
+    label: '项目管理',
+    children: [
+      { id: 'project_view', label: '查看项目' },
+      { id: 'project_create', label: '创建项目' },
+      { id: 'project_edit', label: '编辑项目' },
+      { id: 'project_delete', label: '删除项目' }
+    ]
+  },
+  {
     id: 'material',
     label: '物资管理',
     children: [
@@ -654,8 +685,18 @@ const permissionTree = [
       { id: 'material_create', label: '创建物资' },
       { id: 'material_edit', label: '编辑物资' },
       { id: 'material_delete', label: '删除物资' },
-      { id: 'material_import', label: '导入物资' },
-      { id: 'material_export', label: '导出物资' }
+      { id: 'material_import', label: '导入物资' }
+    ]
+  },
+  {
+    id: 'material_plan',
+    label: '物资计划',
+    children: [
+      { id: 'material_plan_view', label: '查看物资计划' },
+      { id: 'material_plan_create', label: '创建物资计划' },
+      { id: 'material_plan_edit', label: '编辑物资计划' },
+      { id: 'material_plan_delete', label: '删除物资计划' },
+      { id: 'material_plan_approve', label: '审核物资计划' }
     ]
   },
   {
@@ -663,12 +704,33 @@ const permissionTree = [
     label: '库存管理',
     children: [
       { id: 'stock_view', label: '查看库存' },
-      { id: 'stock_in', label: '入库' },
-      { id: 'stock_out', label: '出库' },
+      { id: 'stock_create', label: '创建库存' },
       { id: 'stock_edit', label: '编辑' },
       { id: 'stock_delete', label: '删除' },
+      { id: 'stock_in', label: '入库' },
+      { id: 'stock_out', label: '出库' },
+      { id: 'stock_export', label: '导出' },
+      { id: 'stock_alerts', label: '库存预警' }
+    ]
+  },
+  {
+    id: 'stocklog',
+    label: '库存日志',
+    children: [
       { id: 'stocklog_view', label: '查看日志' },
-      { id: 'stock_export', label: '导出' }
+      { id: 'stocklog_delete', label: '删除日志' }
+    ]
+  },
+  {
+    id: 'inbound',
+    label: '入库单管理',
+    children: [
+      { id: 'inbound_view', label: '查看入库单' },
+      { id: 'inbound_create', label: '创建入库单' },
+      { id: 'inbound_edit', label: '编辑入库单' },
+      { id: 'inbound_delete', label: '删除入库单' },
+      { id: 'inbound_approve', label: '审核入库单' },
+      { id: 'inbound_export', label: '导出' }
     ]
   },
   {
@@ -685,29 +747,6 @@ const permissionTree = [
     ]
   },
   {
-    id: 'inbound',
-    label: '入库单管理',
-    children: [
-      { id: 'inbound_view', label: '查收入库单' },
-      { id: 'inbound_create', label: '创建入库单' },
-      { id: 'inbound_edit', label: '编辑入库单' },
-      { id: 'inbound_delete', label: '删除入库单' },
-      { id: 'inbound_approve', label: '审核入库单' },
-      { id: 'inbound_export', label: '导出' }
-    ]
-  },
-  {
-    id: 'project',
-    label: '项目管理',
-    children: [
-      { id: 'project_view', label: '查看项目' },
-      { id: 'project_create', label: '创建项目' },
-      { id: 'project_edit', label: '编辑项目' },
-      { id: 'project_delete', label: '删除项目' },
-      { id: 'project_export', label: '导出' }
-    ]
-  },
-  {
     id: 'construction_log',
     label: '施工日志',
     children: [
@@ -715,7 +754,7 @@ const permissionTree = [
       { id: 'construction_log_create', label: '创建日志' },
       { id: 'construction_log_edit', label: '编辑日志' },
       { id: 'construction_log_delete', label: '删除日志' },
-      { id: 'construction_log_export', label: '导出' }
+      { id: 'construction_log_export', label: '导出日志' }
     ]
   },
   {
@@ -730,23 +769,50 @@ const permissionTree = [
     ]
   },
   {
+    id: 'audit',
+    label: '审计日志',
+    children: [
+      { id: 'audit_view', label: '查看审计日志' }
+    ]
+  },
+  {
+    id: 'ai_agent',
+    label: 'AI 智能体',
+    children: [
+      { id: 'ai_agent_view', label: '查看 AI' },
+      { id: 'ai_agent_query', label: 'AI 查询' },
+      { id: 'ai_agent_operate', label: 'AI 操作' },
+      { id: 'ai_agent_workflow', label: 'AI 工作流' },
+      { id: 'ai_agent_logs', label: 'AI 日志' }
+    ]
+  },
+  {
     id: 'system',
     label: '系统管理',
     children: [
-      { id: 'user_view', label: '查看用户' },
-      { id: 'user_create', label: '创建用户' },
-      { id: 'user_edit', label: '编辑用户' },
-      { id: 'user_delete', label: '删除用户' },
-      { id: 'user_reset_password', label: '重置密码' },
-      { id: 'role_view', label: '查看角色' },
-      { id: 'role_create', label: '创建角色' },
-      { id: 'role_edit', label: '编辑角色' },
-      { id: 'role_delete', label: '删除角色' },
-      { id: 'role_assign_permissions', label: '分配权限' },
-      { id: 'log_view', label: '查看日志' },
-      { id: 'backup_create', label: '创建备份' },
-      { id: 'backup_delete', label: '删除备份' },
-      { id: 'settings_edit', label: '系统设置' }
+      { id: 'system_log', label: '查看系统日志' },
+      { id: 'system_backup', label: '数据备份' },
+      { id: 'system_config', label: '系统配置' },
+      { id: 'system_statistics', label: '系统统计' },
+      { id: 'system_activities', label: '系统动态' }
+    ]
+  },
+  {
+    id: 'workflow',
+    label: '工作流管理',
+    children: [
+      { id: 'workflow_view', label: '查看工作流' },
+      { id: 'workflow_create', label: '创建工作流' },
+      { id: 'workflow_edit', label: '编辑工作流' },
+      { id: 'workflow_delete', label: '删除工作流' },
+      { id: 'workflow_activate', label: '激活工作流' },
+      { id: 'workflow_instance_view', label: '查看实例' },
+      { id: 'workflow_instance_resubmit', label: '重新提交' },
+      { id: 'workflow_task_view', label: '查看任务' },
+      { id: 'workflow_task_approve', label: '审批任务' },
+      { id: 'workflow_task_reject', label: '拒绝任务' },
+      { id: 'workflow_task_delegate', label: '委派任务' },
+      { id: 'workflow_log_view', label: '查看流程日志' }
     ]
   }
 ]

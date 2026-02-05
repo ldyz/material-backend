@@ -170,84 +170,6 @@
           </el-table>
         </el-tab-pane>
 
-        <!-- 操作日志 -->
-        <el-tab-pane label="操作日志" name="logs">
-          <TableToolbar>
-            <template #left>
-              <el-input
-                v-model="logSearch.keyword"
-                placeholder="搜索操作内容"
-                clearable
-                style="width: 250px"
-                @keyup.enter="fetchLogs"
-              >
-                <template #prefix>
-                  <el-icon><Search /></el-icon>
-                </template>
-              </el-input>
-              <el-select
-                v-model="logSearch.module"
-                placeholder="模块"
-                clearable
-                style="width: 150px"
-                @change="fetchLogs"
-              >
-                <el-option label="全部" value="" />
-                <el-option label="物资管理" value="material" />
-                <el-option label="库存管理" value="stock" />
-                <el-option label="出库单" value="requisition" />
-                <el-option label="入库单" value="inbound" />
-                <el-option label="项目管理" value="project" />
-                <el-option label="系统管理" value="system" />
-              </el-select>
-              <el-date-picker
-                v-model="logSearch.date_range"
-                type="daterange"
-                range-separator="至"
-                start-placeholder="开始日期"
-                end-placeholder="结束日期"
-                value-format="YYYY-MM-DD"
-                style="width: 240px"
-                @change="fetchLogs"
-              />
-              <el-button type="primary" :icon="Search" @click="fetchLogs">
-                搜索
-              </el-button>
-              <el-button :icon="Refresh" @click="handleResetLogSearch">重置</el-button>
-            </template>
-          </TableToolbar>
-
-          <el-table
-            v-loading="logLoading"
-            :data="logList"
-            border
-            stripe
-            style="width: 100%; margin-top: 20px"
-          >
-            <!-- 序号列已移除 -->
-            <el-table-column prop="user" label="操作人" width="120" />
-            <el-table-column prop="module" label="模块" width="120">
-              <template #default="scope">
-                {{ getModuleText(scope.row.module) }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="message" label="操作" width="120" show-overflow-tooltip />
-            <el-table-column prop="ip_address" label="IP地址" width="130" />
-            <el-table-column prop="created_at" label="操作时间" width="160" />
-          </el-table>
-
-          <el-pagination
-            v-model:current-page="logPagination.page"
-            v-model:page-size="logPagination.pageSize"
-            :page-sizes="[10, 20, 50, 100]"
-            :total="logPagination.total"
-            layout="total, sizes, prev, pager, next, jumper"
-            @size-change="handleLogSizeChange"
-            @current-change="handleLogPageChange"
-            style="margin-top: 20px; display: flex; justify-content: flex-end"
-          />
-        </el-tab-pane>
-
         <!-- 数据备份 -->
         <el-tab-pane label="数据备份" name="backup">
           <div class="backup-section">
@@ -817,20 +739,6 @@ const permissionTree = [
   }
 ]
 
-// ============ 操作日志 ============
-const logLoading = ref(false)
-const logList = ref([])
-const logPagination = reactive({
-  page: 1,
-  pageSize: 20,
-  total: 0
-})
-const logSearch = reactive({
-  keyword: '',
-  module: '',
-  date_range: []
-})
-
 // ============ 数据备份 ============
 const backupLoading = ref(false)
 const backupListLoading = ref(false)
@@ -1114,60 +1022,6 @@ const resetRoleForm = () => {
   }
 }
 
-// ============ 操作日志方法 ============
-// 适配统一响应格式
-const fetchLogs = async () => {
-  logLoading.value = true
-  try {
-    const params = {
-      page: logPagination.page,
-      page_size: logPagination.pageSize,
-      keyword: logSearch.keyword || undefined,
-      module: logSearch.module || undefined,
-      start_date: logSearch.date_range?.[0] || undefined,
-      end_date: logSearch.date_range?.[1] || undefined
-    }
-    const { data, pagination: pag } = await systemApi.getLogs(params)
-    logList.value = data || []
-    logPagination.total = pag?.total || 0
-  } catch (error) {
-    console.error('获取操作日志失败:', error)
-  } finally {
-    logLoading.value = false
-  }
-}
-
-// 操作日志分页处理
-const handleLogPageChange = (page) => {
-  logPagination.page = page
-  fetchLogs()
-}
-
-const handleLogSizeChange = (size) => {
-  logPagination.pageSize = size
-  logPagination.page = 1
-  fetchLogs()
-}
-
-const handleResetLogSearch = () => {
-  logSearch.keyword = ''
-  logSearch.module = ''
-  logSearch.date_range = []
-  fetchLogs()
-}
-
-const getModuleText = (module) => {
-  const texts = {
-    material: '物资管理',
-    stock: '库存管理',
-    requisition: '出库单',
-    inbound: '入库单',
-    project: '项目管理',
-    system: '系统管理'
-  }
-  return texts[module] || module
-}
-
 // ============ 数据备份方法 ============
 // 适配统一响应格式
 const fetchBackups = async () => {
@@ -1294,7 +1148,6 @@ const handleSaveSettings = async () => {
 onMounted(() => {
   fetchUsers()
   fetchRoles()
-  fetchLogs()
   fetchBackups()
   fetchSystemSettings()
 })

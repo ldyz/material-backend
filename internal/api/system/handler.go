@@ -937,48 +937,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		response.SuccessWithMessage(c, nil, message)
 	})
 
-	// 传统方式：删除备份文件 (使用POST body)
-	r.POST("/backup/delete", auth.PermissionMiddleware(db, "system_backup"), func(c *gin.Context) {
-		var req struct {
-			Name string `json:"name"`
-		}
-		if err := c.ShouldBindJSON(&req); err != nil {
-			response.BadRequest(c, "请求参数错误")
-			return
-		}
-
-		if req.Name == "" {
-			response.BadRequest(c, "备份文件名不能为空")
-			return
-		}
-
-		backupPath := filepath.Join(".", req.Name)
-
-		// 检查文件是否存在
-		fileExists := true
-		if _, err := os.Stat(backupPath); os.IsNotExist(err) {
-			fileExists = false
-		}
-
-		// 如果文件存在，删除文件
-		if fileExists {
-			if err := os.Remove(backupPath); err != nil {
-				response.InternalError(c, fmt.Sprintf("删除文件失败: %v", err))
-				return
-			}
-		}
-
-		// 从数据库中删除记录
-		db.Where("filename = ?", req.Name).Delete(&SystemBackup{})
-
-		message := "备份文件删除成功"
-		if !fileExists {
-			message = "备份记录已删除（文件不存在）"
-		}
-
-		response.SuccessWithMessage(c, nil, message)
-	})
-
 	// 恢复备份 - 危险操作，会清空当前数据库
 	r.POST("/backup/restore", auth.PermissionMiddleware(db, "system_backup"), func(c *gin.Context) {
 		var req struct {

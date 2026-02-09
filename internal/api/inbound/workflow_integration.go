@@ -181,21 +181,38 @@ func (wi *WorkflowIntegration) executeInboundApproval(order *InboundOrder, appro
 		// 记录库存操作日志
 		detail := fmt.Sprintf("入库 %.2f %s，备注：入库单 %s", float64(approvedQty), materialInfo.Unit, order.OrderNo)
 
-		// 创建库存日志
+		// 创建库存日志（使用正确的字段名）
 		stockLog := map[string]interface{}{
 			"stock_id":        stockID,
 			"type":            "in",
 			"quantity":        float64(approvedQty),
 			"quantity_before": quantityBefore,
 			"quantity_after":   quantityBefore + float64(approvedQty),
-			"time":            time.Now(),
-			"remark":          detail,
+			"source_type":     "inbound",
+			"source_id":       order.ID,
+			"source_no":       order.OrderNo,
 			"project_id":      order.ProjectID,
+			"material_id":     item.MaterialID,
 			"user_id":         approverID,
-			"requisition_id":  nil,
-			"inbound_code":    order.OrderNo,
+			"remark":          detail,
+			"created_at":      time.Now(),
 		}
-		wi.db.Table("stock_logs").Create(&stockLog)
+		if err := wi.db.Table("stock_logs").Create(&stockLog).Error; err != nil {
+			return fmt.Errorf("创建库存日志失败: %w", err)
+		}
+
+		// 创建库存操作日志
+		opLog := map[string]interface{}{
+			"stock_id": stockID,
+			"op_type":  "in",
+			"log_id":   order.ID,
+			"detail":   detail,
+			"user_id":  approverID,
+			"time":     time.Now(),
+		}
+		if err := wi.db.Table("stock_op_logs").Create(&opLog).Error; err != nil {
+			return fmt.Errorf("创建库存操作日志失败: %w", err)
+		}
 	}
 
 

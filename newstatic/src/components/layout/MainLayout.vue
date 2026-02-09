@@ -59,6 +59,9 @@
           </el-breadcrumb>
         </div>
         <div class="header-right">
+          <!-- Notification Bell -->
+          <NotificationBell class="header-notification" />
+
           <el-dropdown @command="handleCommand">
             <div class="user-info">
               <el-avatar :size="32" :icon="UserFilled" />
@@ -97,6 +100,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
+import { useNotificationStore } from '@/stores/notificationStore'
 import { createVisibleMenus } from '@/utils/permissions'
 import {
   Box,
@@ -120,11 +124,13 @@ import {
   Clock
 } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
+import NotificationBell from '@/components/Notification/NotificationBell.vue'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+const notificationStore = useNotificationStore()
 
 // 当前激活的菜单
 const activeMenu = computed(() => route.path)
@@ -276,11 +282,19 @@ onMounted(() => {
   initMenus()
   handleResize()
   window.addEventListener('resize', handleResize)
+
+  // 初始化通知 WebSocket
+  if (authStore.isAuthenticated) {
+    notificationStore.fetchUnreadCount()
+    notificationStore.initWebSocket()
+  }
 })
 
 // 组件卸载时清理
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  // 关闭通知 WebSocket
+  notificationStore.closeWebSocket()
 })
 
 // 处理用户下拉菜单命令
@@ -381,6 +395,11 @@ const handleResize = () => {
   display: flex;
   align-items: center;
   gap: 20px;
+}
+
+.header-notification {
+  display: flex;
+  align-items: center;
 }
 
 .user-info {

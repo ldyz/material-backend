@@ -12,8 +12,8 @@
         <van-cell title="入库日期" :value="formatDate(order.inbound_date)" />
         <van-cell title="状态">
           <template #value>
-            <van-tag :type="getStatusType(order.workflow_status)">
-              {{ getStatusText(order.workflow_status) }}
+            <van-tag :type="getStatusType(order.status)">
+              {{ getStatusText(order.status) }}
             </van-tag>
           </template>
         </van-cell>
@@ -29,9 +29,20 @@
         />
       </van-cell-group>
 
-      <div v-if="order.workflow_status === 'pending_approval'" class="footer-actions">
+      <div v-if="order.status === 'pending'" class="footer-actions">
         <van-button block type="primary" @click="router.push(`/inbound/${order.id}/approve`)">
           去审批
+        </van-button>
+      </div>
+
+      <div v-if="order.status === 'rejected'" class="footer-actions">
+        <van-button
+          block
+          type="primary"
+          :loading="resubmitting"
+          @click="handleResubmit"
+        >
+          重新提交
         </van-button>
       </div>
     </div>
@@ -41,18 +52,20 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { getInboundDetail } from '@/api/inbound'
+import { showToast, showConfirmDialog } from 'vant'
+import { getInboundDetail, resubmitInbound } from '@/api/inbound'
 
 const router = useRouter()
 const route = useRoute()
 
 const loading = ref(true)
+const resubmitting = ref(false)
 const order = ref(null)
 
 function getStatusType(status) {
   const map = {
     draft: 'default',
-    pending_approval: 'warning',
+    pending: 'warning',
     approved: 'success',
     rejected: 'danger',
     completed: 'primary'
@@ -63,7 +76,7 @@ function getStatusType(status) {
 function getStatusText(status) {
   const map = {
     draft: '草稿',
-    pending_approval: '待审批',
+    pending: '待审批',
     approved: '已批准',
     rejected: '已拒绝',
     completed: '已完成'
@@ -85,6 +98,37 @@ async function loadData() {
     console.error('加载失败:', error)
   } finally {
     loading.value = false
+  }
+}
+
+async function handleResubmit() {
+  try {
+    await showConfirmDialog({
+      title: '确认重新提交',
+      message: '确认重新提交该入库单进行审批？',
+      teleport: '#app',
+      confirmButtonColor: '#1989fa'
+    })
+
+    resubmitting.value = true
+    try {
+      await resubmitInbound(order.value.id, {})
+      showToast({ type: 'success', message: '已重新提交' })
+      setTimeout(() => {
+        loadData()
+        router.back()
+      }, 1500)
+    } catch (error) {
+      const errorMsg = error.error || error.message || '操作失败'
+      showToast({ type: 'fail', message: errorMsg })
+      throw error
+    } finally {
+      resubmitting.value = false
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('重新提交失败:', error)
+    }
   }
 }
 

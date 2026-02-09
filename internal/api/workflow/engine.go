@@ -74,27 +74,65 @@ func (e *Engine) ProcessApproval(instanceID uint, approverID uint, approverName 
 		return fmt.Errorf("工作流实例不存在: %w", err)
 	}
 
+	// 检查工作流状态
 	if instance.Status != InstanceStatusPending {
-		return errors.New("工作流已结束")
+		statusText := ""
+		switch instance.Status {
+		case InstanceStatusApproved:
+			statusText = "已通过"
+		case InstanceStatusRejected:
+			statusText = "已拒绝"
+		case InstanceStatusCancelled:
+			statusText = "已取消"
+		default:
+			statusText = string(instance.Status)
+		}
+		return fmt.Errorf("该审批任务%s，无法再次操作 (业务编号: %s)", statusText, instance.BusinessNo)
 	}
 
 	// 2. 获取当前待办任务
 	var task WorkflowPendingTask
 	if err := e.db.Where("instance_id = ? AND approver_id = ? AND status = ?", instanceID, approverID, TaskStatusPending).First(&task).Error; err != nil {
-		// 检查是否有其他待办任务（说明该用户没有审批权限）
-		var taskCount int64
-		e.db.Model(&WorkflowPendingTask{}).Where("instance_id = ? AND status = ?", instanceID, TaskStatusPending).Count(&taskCount)
-		if taskCount > 0 {
-			return errors.New("您没有审批权限，该任务的审批人是其他角色")
+		// 检查该用户是否有已处理的任务
+		var processedTask WorkflowPendingTask
+		if err := e.db.Where("instance_id = ? AND approver_id = ? AND status IN (?)",
+			instanceID, approverID, []string{TaskStatusApproved, TaskStatusRejected}).
+			First(&processedTask).Error; err == nil {
+			// 用户已经处理过这个任务
+			return fmt.Errorf("您已经处理过此审批任务，不能重复操作 (业务编号: %s)", instance.BusinessNo)
 		}
-		// 没有待办任务，可能已处理
-		return errors.New("该任务已处理或不存在")
+
+		// 检查是否有其他待办任务（说明该用户没有审批权限）
+		var pendingTasks []WorkflowPendingTask
+		if err := e.db.Where("instance_id = ? AND status = ?", instanceID, TaskStatusPending).
+			Find(&pendingTasks).Error; err == nil && len(pendingTasks) > 0 {
+			// 构建更详细的权限提示信息
+			var approvers []string
+			for _, t := range pendingTasks {
+				approvers = append(approvers, t.ApproverName)
+			}
+
+			// 获取节点信息以查找审批角色
+			var node WorkflowNode
+			if err := e.db.Preload("Approvers").First(&node, pendingTasks[0].NodeID).Error; err == nil {
+				// 构建友好的提示信息
+				if len(pendingTasks) == 1 {
+					return fmt.Errorf("您没有审批权限。当前审批人: %s，需要 %s 审批", pendingTasks[0].ApproverName, node.NodeName)
+				} else {
+					return fmt.Errorf("您没有审批权限。当前审批人: %s (共%d人)，需要 %s 审批", joinStrings(approvers, "、"), len(approvers), node.NodeName)
+				}
+			}
+			return fmt.Errorf("您没有审批权限。当前审批人: %s", joinStrings(approvers, "、"))
+		}
+
+		// 没有任何待办任务，可能工作流已经结束或被取消
+		return fmt.Errorf("找不到待审批的任务，该任务可能已被其他人处理或工作流已结束 (业务编号: %s)", instance.BusinessNo)
 	}
 
 	// 3. 获取节点信息
 	var node WorkflowNode
 	if err := e.db.Preload("Approvers").First(&node, task.NodeID).Error; err != nil {
-		return fmt.Errorf("节点不存在: %w", err)
+		return fmt.Errorf("审批节点不存在: %w", err)
 	}
 
 	// 4. 根据操作类型处理
@@ -108,8 +146,30 @@ func (e *Engine) ProcessApproval(instanceID uint, approverID uint, approverName 
 	case ActionComment:
 		return e.processComment(&instance, &node, approverID, approverName, remark)
 	default:
-		return errors.New("无效的操作类型")
+		return errors.New("无效的操作类型: " + action)
 	}
+}
+
+// contains 检查字符串切片是否包含某个字符串
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+// joinStrings 连接字符串切片
+func joinStrings(slice []string, sep string) string {
+	if len(slice) == 0 {
+		return ""
+	}
+	result := slice[0]
+	for i := 1; i < len(slice); i++ {
+		result += sep + slice[i]
+	}
+	return result
 }
 
 // processApprove 处理通过
@@ -142,13 +202,36 @@ func (e *Engine) processApprove(instance *WorkflowInstance, node *WorkflowNode, 
 		"remark": remark,
 	})
 
-	// 4. 检查是否所有人都已审批（根据审批类型）
+	// 4. 检查审批类型并处理
 	allApproved, err := e.checkAllApproved(instance, node)
 	if err != nil {
 		return err
 	}
 
 	if !allApproved {
+		// 如果是任一审批类型，一人通过后取消其他人的任务
+		if node.ApprovalType == ApprovalTypeAny {
+			// 取消该节点的其他待办任务
+			e.db.Model(&WorkflowPendingTask{}).
+				Where("instance_id = ? AND node_id = ? AND status = ? AND id != ?",
+					instance.ID, node.ID, TaskStatusPending, task.ID).
+				Updates(map[string]any{
+					"status":       TaskStatusCancelled,
+					"processed_at": now,
+				})
+
+			// 记录取消日志
+			var otherTasks []WorkflowPendingTask
+			e.db.Where("instance_id = ? AND node_id = ? AND status = ? AND id != ?",
+				instance.ID, node.ID, TaskStatusCancelled, task.ID).
+				Find(&otherTasks)
+			for _, ot := range otherTasks {
+				e.log(instance.ID, node.NodeKey, "cancel_auto", approverID, approverName, map[string]any{
+					"reason":        fmt.Sprintf("审批人 %s 已审批通过，无需其他人审批", approverName),
+					"cancelled_for": ot.ApproverName,
+				})
+			}
+		}
 		// 还需要其他人审批，不推进流程
 		return nil
 	}
@@ -197,6 +280,26 @@ func (e *Engine) processReject(instance *WorkflowInstance, node *WorkflowNode, a
 	e.log(instance.ID, node.NodeKey, ActionReject, approverID, approverName, map[string]any{
 		"remark": remark,
 	})
+
+	// 5. 将实例回退到开始节点，允许申请人重新提交
+	instance.CurrentNode = NodeTypeStart
+	if err := e.db.Save(instance).Error; err != nil {
+		return err
+	}
+
+	// 6. 为申请人创建待办任务，提示其重新提交
+	task := &WorkflowPendingTask{
+		InstanceID:   instance.ID,
+		NodeID:       0, // start节点没有对应的WorkflowNode记录
+		NodeKey:      NodeTypeStart,
+		NodeName:     "开始节点",
+		ApproverID:   instance.InitiatorID,
+		ApproverName: instance.InitiatorName,
+		Status:       TaskStatusPending,
+	}
+	if err := e.db.Create(task).Error; err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -536,11 +639,84 @@ func (e *Engine) GetPendingTasks(approverID uint) ([]WorkflowPendingTask, error)
 	return tasks, err
 }
 
+// GetPendingTasksEnriched 获取用户的待办任务（增强版，包含审批人信息）
+func (e *Engine) GetPendingTasksEnriched(approverID uint) ([]map[string]any, error) {
+	var tasks []WorkflowPendingTask
+	if err := e.db.Preload("Instance").Where("approver_id = ? AND status = ?", approverID, TaskStatusPending).Find(&tasks).Error; err != nil {
+		return nil, err
+	}
+
+	result := make([]map[string]any, 0, len(tasks))
+	for _, task := range tasks {
+		dto := task.ToDTO()
+
+		// 获取节点信息
+		var node WorkflowNode
+		if err := e.db.Preload("Approvers").First(&node, task.NodeID).Error; err == nil {
+			// 添加审批类型信息
+			dto["approval_type"] = node.ApprovalType
+			dto["approval_type_name"] = getApprovalTypeName(node.ApprovalType)
+
+			// 获取当前节点的所有待办任务（包括其他审批人的）
+			var allTasks []WorkflowPendingTask
+			if err := e.db.Where("instance_id = ? AND node_id = ?", task.InstanceID, task.NodeID).Find(&allTasks).Error; err == nil {
+				// 构建其他审批人信息
+				var otherApprovers []map[string]any
+				var approvedApprovers []map[string]any
+
+				for _, t := range allTasks {
+					approverInfo := map[string]any{
+						"approver_id":   t.ApproverID,
+						"approver_name": t.ApproverName,
+						"status":        t.Status,
+					}
+					if t.Status == TaskStatusApproved {
+						approvedApprovers = append(approvedApprovers, approverInfo)
+					} else if t.Status == TaskStatusPending {
+						otherApprovers = append(otherApprovers, approverInfo)
+					}
+				}
+
+				dto["other_approvers"] = otherApprovers
+				dto["approved_approvers"] = approvedApprovers
+				dto["total_approvers"] = len(allTasks)
+				dto["pending_count"] = len(otherApprovers)
+				dto["approved_count"] = len(approvedApprovers)
+
+				// 判断是否需要等待其他人
+				if node.ApprovalType == ApprovalTypeSequential || node.ApprovalType == ApprovalTypeParallel {
+					dto["requires_all"] = true
+				} else if node.ApprovalType == ApprovalTypeAny {
+					dto["requires_all"] = false
+				}
+			}
+		}
+
+		result = append(result, dto)
+	}
+
+	return result, nil
+}
+
 // GetPendingTasksByBusiness 根据业务类型获取待办任务
 func (e *Engine) GetPendingTasksByBusiness(approverID uint, businessType string) ([]WorkflowPendingTask, error) {
 	var tasks []WorkflowPendingTask
 	err := e.db.Preload("Instance").Where("approver_id = ? AND business_type = ? AND status = ?", approverID, businessType, TaskStatusPending).Find(&tasks).Error
 	return tasks, err
+}
+
+// getApprovalTypeName 获取审批类型显示名称
+func getApprovalTypeName(approvalType string) string {
+	switch approvalType {
+	case ApprovalTypeSequential:
+		return "顺序审批"
+	case ApprovalTypeParallel:
+		return "会签（需全部通过）"
+	case ApprovalTypeAny:
+		return "或签（任一通过）"
+	default:
+		return "未知类型"
+	}
 }
 
 // GetInstanceApprovals 获取实例的所有审批记录
@@ -595,6 +771,8 @@ func (e *Engine) sendApprovalNotifications(instance *WorkflowInstance, node *Wor
 			notificationType = notification.TypeInboundApprove
 		} else if instance.BusinessType == "requisition" {
 			notificationType = notification.TypeRequisitionApprove
+		} else if instance.BusinessType == "material_plan" {
+			notificationType = notification.TypeMaterialPlanApprove
 		} else {
 			notificationType = notification.TypeSystem
 		}
@@ -683,6 +861,7 @@ func getBusinessTypeName(businessType string) string {
 	names := map[string]string{
 		"inbound_order": "入库单",
 		"requisition":   "领料单",
+		"material_plan": "物资计划",
 	}
 	if name, ok := names[businessType]; ok {
 		return name

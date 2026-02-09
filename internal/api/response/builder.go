@@ -23,11 +23,19 @@ type SuccessResponse struct {
 	Meta       interface{} `json:"meta,omitempty"`
 }
 
+// ErrorDetail 错误详情
+type ErrorDetail struct {
+	Field   string `json:"field,omitempty"`
+	Message string `json:"message"`
+}
+
 // ErrorResponse 错误响应
 type ErrorResponse struct {
-	Success bool   `json:"success"`
-	Error   string `json:"error,omitempty"`
-	Code    string `json:"code,omitempty"`
+	Success bool         `json:"success"`
+	Error   string       `json:"error,omitempty"`
+	Code    string       `json:"code,omitempty"`
+	Details []ErrorDetail `json:"details,omitempty"`
+	Context interface{}  `json:"context,omitempty"`
 }
 
 // ==================== 成功响应 ====================
@@ -138,6 +146,26 @@ func Error(c *gin.Context, statusCode int, err string, code ...string) {
 		resp.Code = code[0]
 	}
 	c.JSON(statusCode, resp)
+}
+
+// ErrorWithDetails 错误响应（带详情）
+func ErrorWithDetails(c *gin.Context, statusCode int, err string, code string, details []ErrorDetail) {
+	c.JSON(statusCode, ErrorResponse{
+		Success: false,
+		Error:   err,
+		Code:    code,
+		Details: details,
+	})
+}
+
+// ErrorWithContext 错误响应（带上下文）
+func ErrorWithContext(c *gin.Context, statusCode int, err string, code string, context interface{}) {
+	c.JSON(statusCode, ErrorResponse{
+		Success: false,
+		Error:   err,
+		Code:    code,
+		Context: context,
+	})
 }
 
 // ErrorWithCode 带错误码的错误响应

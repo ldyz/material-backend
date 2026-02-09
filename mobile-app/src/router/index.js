@@ -72,11 +72,6 @@ const routes = [
         component: () => import('@/views/Requisition/Approve.vue')
       },
       {
-        path: 'requisition/:id/issue',
-        name: 'RequisitionIssue',
-        component: () => import('@/views/Requisition/Issue.vue')
-      },
-      {
         path: 'requisition/create',
         name: 'RequisitionCreate',
         component: () => import('@/views/Requisition/Create.vue')
@@ -86,6 +81,11 @@ const routes = [
         name: 'Profile',
         component: () => import('@/views/Profile/index.vue'),
         meta: { keepAlive: true }
+      },
+      {
+        path: 'notifications',
+        name: 'NotificationList',
+        component: () => import('@/views/Notification/List.vue')
       }
     ]
   },
@@ -95,8 +95,12 @@ const routes = [
   }
 ]
 
+// 检测是否在 Capacitor 原生环境
+const isCapacitor = typeof window !== 'undefined' && window.Capacitor
+const base = isCapacitor ? '/' : '/mobile/'
+
 const router = createRouter({
-  history: createWebHistory('/mobile/'),
+  history: createWebHistory(base),
   routes,
   scrollBehavior() {
     return { top: 0 }
@@ -106,23 +110,28 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   document.title = to.meta.title ? `${to.meta.title} - 材料管理` : '材料管理'
 
-  const authStore = useAuthStore()
+  try {
+    const authStore = useAuthStore()
 
-  if (to.meta.noAuth) {
-    if (authStore.isAuthenticated) {
-      next('/')
-    } else {
-      next()
+    if (to.meta.noAuth) {
+      if (authStore.isAuthenticated) {
+        next('/')
+      } else {
+        next()
+      }
+      return
     }
-    return
-  }
 
-  if (!authStore.isAuthenticated) {
-    next({ path: '/login', query: { redirect: to.fullPath } })
-    return
-  }
+    if (!authStore.isAuthenticated) {
+      next({ path: '/login', query: { redirect: to.fullPath } })
+      return
+    }
 
-  next()
+    next()
+  } catch (error) {
+    console.error('Router guard error:', error)
+    next()
+  }
 })
 
 export default router

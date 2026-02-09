@@ -140,6 +140,7 @@ func main() {
 		&workflow.WorkflowPendingTask{}, &workflow.WorkflowLog{},
 		&agent.AgentOperationLog{},
 		&audit2.OperationLog{}, // 操作日志表
+		&notification.DeviceToken{}, // 设备推送令牌表
 	)
 
 	// create default admin role/user if not exists
@@ -166,6 +167,10 @@ func main() {
 
 	// 初始化操作日志服务
 	audit2.InitAuditService(dbConn)
+
+	// 初始化 WebSocket Hub
+	notification.InitHub()
+	log.Println("WebSocket Hub initialized")
 
 	r := gin.Default()
 

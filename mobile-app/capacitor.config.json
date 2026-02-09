@@ -1,0 +1,15 @@
+{
+  "appId": "com.material.management",
+  "appName": "Material Management",
+  "webDir": "dist",
+  "server": {
+    "cleartext": true,
+    "androidScheme": "https"
+  },
+  "android": {
+    "buildOptions": {
+      "keystorePath": "",
+      "keystoreAlias": ""
+    }
+  }
+}

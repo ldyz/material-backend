@@ -6,13 +6,13 @@
 
     <div v-else-if="plan">
       <van-cell-group inset title="基本信息">
-        <van-cell title="计划单号" :value="plan.plan_number" />
+        <van-cell title="计划单号" :value="plan.plan_no" />
         <van-cell title="项目名称" :value="plan.project_name || '-'" />
-        <van-cell title="计划日期" :value="formatDate(plan.plan_date)" />
+        <van-cell title="计划日期" :value="formatDate(plan.planned_start_date)" />
         <van-cell title="状态">
           <template #value>
-            <van-tag :type="getStatusType(plan.workflow_status)">
-              {{ getStatusText(plan.workflow_status) }}
+            <van-tag :type="getStatusType(plan.status)">
+              {{ getStatusText(plan.status) }}
             </van-tag>
           </template>
         </van-cell>
@@ -24,13 +24,29 @@
           v-for="item in plan.items"
           :key="item.id"
           :title="item.material_name"
-          :label="`数量：${item.quantity || 0}`"
-        />
+        >
+          <template #label>
+            <div>规格型号：{{ item.specification || '-' }}</div>
+            <div>材质：{{ item.material || '-' }}</div>
+            <div>数量：{{ item.planned_quantity || 0 }} {{ item.unit || '' }}</div>
+          </template>
+        </van-cell>
       </van-cell-group>
 
-      <div v-if="plan.workflow_status === 'pending_approval'" class="footer-actions">
+      <div v-if="plan.status === 'pending'" class="footer-actions">
         <van-button block type="primary" @click="router.push(`/plans/${plan.id}/approve`)">
           去审批
+        </van-button>
+      </div>
+
+      <div v-if="plan.status === 'rejected'" class="footer-actions">
+        <van-button
+          block
+          type="primary"
+          :loading="resubmitting"
+          @click="handleResubmit"
+        >
+          重新提交
         </van-button>
       </div>
     </div>
@@ -40,20 +56,25 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { getPlanDetail } from '@/api/material_plan'
+import { showToast, showConfirmDialog } from 'vant'
+import { getPlanDetail, resubmitPlan } from '@/api/material_plan'
 
 const router = useRouter()
 const route = useRoute()
 
 const loading = ref(true)
+const resubmitting = ref(false)
 const plan = ref(null)
 
 function getStatusType(status) {
   const map = {
     draft: 'default',
-    pending_approval: 'warning',
+    pending: 'warning',
     approved: 'success',
-    rejected: 'danger'
+    rejected: 'danger',
+    active: 'primary',
+    completed: 'success',
+    cancelled: 'info'
   }
   return map[status] || 'default'
 }
@@ -61,9 +82,12 @@ function getStatusType(status) {
 function getStatusText(status) {
   const map = {
     draft: '草稿',
-    pending_approval: '待审批',
+    pending: '待审批',
     approved: '已批准',
-    rejected: '已拒绝'
+    rejected: '已拒绝',
+    active: '进行中',
+    completed: '已完成',
+    cancelled: '已取消'
   }
   return map[status] || status
 }
@@ -82,6 +106,37 @@ async function loadData() {
     console.error('加载失败:', error)
   } finally {
     loading.value = false
+  }
+}
+
+async function handleResubmit() {
+  try {
+    await showConfirmDialog({
+      title: '确认重新提交',
+      message: '确认重新提交该计划进行审批？',
+      teleport: '#app',
+      confirmButtonColor: '#1989fa'
+    })
+
+    resubmitting.value = true
+    try {
+      await resubmitPlan(plan.value.id, {})
+      showToast({ type: 'success', message: '已重新提交' })
+      setTimeout(() => {
+        loadData()
+        router.back()
+      }, 1500)
+    } catch (error) {
+      const errorMsg = error.error || error.message || '操作失败'
+      showToast({ type: 'fail', message: errorMsg })
+      throw error
+    } finally {
+      resubmitting.value = false
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('重新提交失败:', error)
+    }
   }
 }
 

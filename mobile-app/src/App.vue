@@ -12,7 +12,8 @@
   box-sizing: border-box;
 }
 
-body {
+html, body {
+  height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -21,5 +22,6 @@ body {
 #app {
   min-height: 100vh;
   background-color: #f7f8fa;
+  position: relative;
 }
 </style>

@@ -12,8 +12,8 @@
         <van-cell title="申请日期" :value="formatDate(requisition.requisition_date)" />
         <van-cell title="状态">
           <template #value>
-            <van-tag :type="getStatusType(requisition.workflow_status)">
-              {{ getStatusText(requisition.workflow_status) }}
+            <van-tag :type="getStatusType(requisition.status)">
+              {{ getStatusText(requisition.status) }}
             </van-tag>
           </template>
         </van-cell>
@@ -31,7 +31,7 @@
 
       <div class="footer-actions">
         <van-button
-          v-if="requisition.workflow_status === 'pending_approval'"
+          v-if="requisition.status === 'pending'"
           block
           type="primary"
           @click="router.push(`/requisition/${requisition.id}/approve`)"
@@ -39,12 +39,13 @@
           去审批
         </van-button>
         <van-button
-          v-if="requisition.workflow_status === 'approved'"
+          v-if="requisition.status === 'rejected'"
           block
-          type="success"
-          @click="router.push(`/requisition/${requisition.id}/issue`)"
+          type="primary"
+          :loading="resubmitting"
+          @click="handleResubmit"
         >
-          去发放
+          重新提交
         </van-button>
       </div>
     </div>
@@ -54,18 +55,20 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { getRequisitionDetail } from '@/api/requisition'
+import { showToast, showConfirmDialog } from 'vant'
+import { getRequisitionDetail, resubmitRequisition } from '@/api/requisition'
 
 const router = useRouter()
 const route = useRoute()
 
 const loading = ref(true)
+const resubmitting = ref(false)
 const requisition = ref(null)
 
 function getStatusType(status) {
   const map = {
     draft: 'default',
-    pending_approval: 'warning',
+    pending: 'warning',
     approved: 'primary',
     rejected: 'danger',
     issued: 'success'
@@ -76,7 +79,7 @@ function getStatusType(status) {
 function getStatusText(status) {
   const map = {
     draft: '草稿',
-    pending_approval: '待审批',
+    pending: '待审批',
     approved: '已批准',
     rejected: '已拒绝',
     issued: '已发放'
@@ -98,6 +101,37 @@ async function loadData() {
     console.error('加载失败:', error)
   } finally {
     loading.value = false
+  }
+}
+
+async function handleResubmit() {
+  try {
+    await showConfirmDialog({
+      title: '确认重新提交',
+      message: '确认重新提交该出库单进行审批？',
+      teleport: '#app',
+      confirmButtonColor: '#1989fa'
+    })
+
+    resubmitting.value = true
+    try {
+      await resubmitRequisition(requisition.value.id, {})
+      showToast({ type: 'success', message: '已重新提交' })
+      setTimeout(() => {
+        loadData()
+        router.back()
+      }, 1500)
+    } catch (error) {
+      const errorMsg = error.error || error.message || '操作失败'
+      showToast({ type: 'fail', message: errorMsg })
+      throw error
+    } finally {
+      resubmitting.value = false
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('重新提交失败:', error)
+    }
   }
 }
 

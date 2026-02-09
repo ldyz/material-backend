@@ -506,16 +506,17 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			}
 
 			// 使用工作流引擎处理审批
+			// 注意：ProcessRequisitionApproval 内部会在工作流完全通过时自动执行发放操作
 			wfErr := wfIntegration.ProcessRequisitionApproval(requisition.ID, uid, name, workflow.ActionApprove, notes, items)
 			if wfErr == nil {
-				// 工作流审批成功
+				// 工作流审批成功，重新加载出库单
 				db.Preload("Items").First(&requisition, id)
 
 				// 记录操作日志
 				audit.LogApprove(&uid, name, audit.ModuleRequisition, audit.ResourceRequisition,
 					requisition.ID, requisition.RequisitionNo, notes)
 
-				response.SuccessWithMessage(c, requisition.ToDTO(), "审批通过")
+				response.SuccessWithMessage(c, requisition.ToDTO(), "审批通过并已自动发放")
 				return
 			}
 			// 工作流审批失败（如无待办任务），回退到简单审批逻辑
@@ -542,53 +543,22 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			}
 		}
 
-		// Begin transaction
-		tx := db.Begin()
-		defer func() {
-			if r := recover(); r != nil {
-				tx.Rollback()
-			}
-		}()
+		// 转换为审批项格式
+		items := make([]RequisitionApprovalItem, 0)
+		for _, item := range req.Items {
+			items = append(items, RequisitionApprovalItem{
+				ID:               item.ID,
+				ApprovedQuantity: int(item.ApprovedQuantity),
+			})
+		}
 
-		// Update requisition status
-		now := time.Now()
-		requisition.Status = "approved"
-		requisition.ApprovedAt = &now
-		requisition.ApprovedBy = name
-
-		if err := tx.Save(&requisition).Error; err != nil {
-			tx.Rollback()
-			response.InternalError(c, "审核申请单失败")
+		// 自动执行发放操作（审核通过后直接发放）
+		if err := executeRequisitionIssue(db, &requisition, uid, name, items); err != nil {
+			response.InternalError(c, fmt.Sprintf("自动发放失败: %v", err))
 			return
 		}
 
-		// Update items with approved quantities
-		for _, itemReq := range req.Items {
-			var item RequisitionItem
-			if err := tx.Where("id = ? AND requisition_id = ?", itemReq.ID, requisition.ID).First(&item).Error; err != nil {
-				tx.Rollback()
-				response.BadRequest(c, "申请单项不存在")
-				return
-			}
-
-			item.Status = "approved"
-			item.ApprovedQuantity = itemReq.ApprovedQuantity
-
-			if err := tx.Save(&item).Error; err != nil {
-				tx.Rollback()
-				response.InternalError(c, "更新申请单项失败")
-				return
-			}
-		}
-
-		// Commit transaction
-		if err := tx.Commit().Error; err != nil {
-			tx.Rollback()
-			response.InternalError(c, "提交审核失败")
-			return
-		}
-
-		// Reload the requisition with updated items
+		// 重新加载出库单以获取最新状态
 		db.Preload("Items").First(&requisition, id)
 		dto := requisition.ToDTO()
 
@@ -612,7 +582,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		audit.LogApprove(&uid, name, audit.ModuleRequisition, audit.ResourceRequisition,
 			requisition.ID, requisition.RequisitionNo, notes)
 
-		response.SuccessWithMessage(c, dto, "申请单审核成功")
+		response.SuccessWithMessage(c, dto, "申请单审核通过并已自动发放")
 	})
 
 	// issue requisition
@@ -1002,6 +972,67 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		response.SuccessWithMessage(c, dto, "申请单已拒绝")
 	})
 
+	// Resubmit requisition
+	r.POST("/requisitions/:id/resubmit", auth.PermissionMiddleware(db, "requisition_create"), func(c *gin.Context) {
+		id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+		var requisition Requisition
+		if err := db.First(&requisition, id).Error; err != nil {
+			response.NotFound(c, "申请单不存在")
+			return
+		}
+
+		// Get user info from JWT middleware
+		userIDInt64, _ := c.Get("current_user_id")
+		var submitterID uint
+		if userIDInt64 != nil {
+			if id, ok := userIDInt64.(int64); ok {
+				submitterID = uint(id)
+			}
+		}
+		username, _ := c.Get("current_username")
+		var submitterName string
+		if username != nil {
+			if name, ok := username.(string); ok {
+				submitterName = name
+			}
+		}
+
+		// Use workflow integration to resubmit
+		wfIntegration := NewWorkflowIntegration(db)
+		if err := wfIntegration.ResubmitRequisition(requisition.ID, submitterID, submitterName); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+
+		// Reload requisition
+		db.Preload("Items").First(&requisition, id)
+		dto := requisition.ToDTO()
+
+		// Enrich with project name
+		if requisition.ProjectID > 0 {
+			var project struct {
+				ID   uint
+				Name string
+			}
+			if err := db.Model(&struct{}{}).Table("projects").Where("id = ?", requisition.ProjectID).
+				Select("id, name").Scan(&project).Error; err == nil && project.ID > 0 {
+				dto["project_name"] = project.Name
+			} else {
+				dto["project_name"] = "未知项目"
+			}
+		} else {
+			dto["project_name"] = nil
+		}
+
+		// 记录操作日志
+		if err := audit.LogCreate(&submitterID, submitterName, audit.ModuleRequisition, audit.ResourceRequisition,
+			requisition.ID, requisition.RequisitionNo, map[string]any{"action": "resubmit"}); err != nil {
+			fmt.Printf("记录操作日志失败: %v\n", err)
+		}
+
+		response.SuccessWithMessage(c, dto, "申请单已重新提交")
+	})
+
 	// get requisition items
 	r.GET("/requisition-items", auth.PermissionMiddleware(db, "requisition_view"), func(c *gin.Context) {
 		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -1094,4 +1125,168 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// executeRequisitionIssue 执行出库单的实际发放逻辑（扣减库存、创建日志）
+// 审批通过后自动调用此函数完成发放
+func executeRequisitionIssue(db *gorm.DB, requisition *Requisition, approverID uint, approverName string, approverItems []RequisitionApprovalItem) error {
+	// 构建批准数量映射
+	approvedQtyMap := make(map[uint]float64)
+	if len(approverItems) > 0 {
+		for _, item := range approverItems {
+			approvedQtyMap[item.ID] = float64(item.ApprovedQuantity)
+		}
+	} else {
+		// 默认使用申请数量
+		for _, reqItem := range requisition.Items {
+			approvedQtyMap[reqItem.ID] = reqItem.RequestedQuantity
+		}
+	}
+
+	// Begin transaction
+	tx := db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Update requisition status to issued
+	now := time.Now()
+	requisition.Status = "issued"
+	requisition.ApprovedAt = &now
+	requisition.ApprovedBy = approverName
+	requisition.IssuedAt = &now
+	requisition.IssuedBy = approverName
+
+	if err := tx.Save(&requisition).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("更新出库单状态失败: %w", err)
+	}
+
+	// Update items status and reduce stock
+	for _, item := range requisition.Items {
+		// Get approved quantity
+		approvedQty := approvedQtyMap[item.ID]
+		if approvedQty == 0 {
+			approvedQty = item.RequestedQuantity
+		}
+
+		// Find stock record
+		var stockRecord stock.Stock
+		var err error
+
+		// Try to find by StockID first
+		if item.StockID > 0 {
+			err = tx.Where("id = ?", item.StockID).First(&stockRecord).Error
+		} else {
+			// If no StockID, find by material_id and project
+			err = tx.Where("material_id = ? AND project_id = ?",
+				item.MaterialID,
+				requisition.ProjectID).
+				First(&stockRecord).Error
+		}
+
+		if err != nil {
+			tx.Rollback()
+			return fmt.Errorf("找不到材料ID %d 的库存记录: %w", item.MaterialID, err)
+		}
+
+		// Check if stock is sufficient
+		if stockRecord.Quantity < approvedQty {
+			tx.Rollback()
+			return fmt.Errorf("材料ID %d 库存不足，当前库存：%.2f，需要：%.2f",
+				item.MaterialID, stockRecord.Quantity, approvedQty)
+		}
+
+		// 记录操作前后的数量
+		quantityBefore := stockRecord.Quantity
+		stockRecord.Quantity -= approvedQty
+		quantityAfter := stockRecord.Quantity
+
+		// Reduce stock quantity
+		if err := tx.Save(&stockRecord).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("更新库存失败: %w", err)
+		}
+
+		// Update item status
+		item.Status = "issued"
+		item.ApprovedQuantity = approvedQty
+		item.ActualQuantity = approvedQty
+		if err := tx.Save(&item).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("更新申请单项状态失败: %w", err)
+		}
+
+		// Log stock operation
+		detail := fmt.Sprintf("出库单发放：%s，出库 %.2f", requisition.RequisitionNo, approvedQty)
+
+		// Use requisition's project ID
+		projectID := requisition.ProjectID
+
+		// Create StockLog entry with full details
+		stockLog := stock.StockLog{
+			StockID:        stockRecord.ID,
+			Type:           "out",
+			Quantity:       approvedQty,
+			QuantityBefore: quantityBefore,
+			QuantityAfter:  quantityAfter,
+			SourceType:     "requisition",
+			SourceID:       &requisition.ID,
+			SourceNo:       requisition.RequisitionNo,
+			ProjectID:      projectID,
+			MaterialID:     item.MaterialID,
+			UserID:         &approverID,
+			Remark:         detail,
+			CreatedAt:      time.Now(),
+		}
+		if err := tx.Create(&stockLog).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("创建库存日志失败: %w", err)
+		}
+
+		// Create StockOpLog entry
+		opLog := stock.StockOpLog{
+			StockID: stockRecord.ID,
+			OpType:  "out",
+			LogID:   requisition.ID,
+			Detail:  detail,
+			UserID:  approverID,
+			Time:    time.Now(),
+		}
+		if err := tx.Create(&opLog).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("创建库存操作日志失败: %w", err)
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("提交发放失败: %w", err)
+	}
+
+	// Update material plan issued quantities if linked to a plan
+	if requisition.PlanID != nil {
+		for _, item := range requisition.Items {
+			// Get actual quantity
+			actualQty := item.ActualQuantity
+			if actualQty == 0 {
+				actualQty = item.ApprovedQuantity
+			}
+
+			// Update issued_quantity in material_plan_items
+			result := db.Table("material_plan_items").
+				Where("plan_id = ? AND material_id = ?", *requisition.PlanID, item.MaterialID).
+				Update("issued_quantity", gorm.Expr("issued_quantity + ?", actualQty))
+
+			if result.Error != nil {
+				// Log error but don't fail
+				fmt.Printf("Warning: Failed to update issued_quantity for plan_id=%d, material_id=%d: %v\n",
+					*requisition.PlanID, item.MaterialID, result.Error)
+			}
+		}
+	}
+
+	return nil
 }

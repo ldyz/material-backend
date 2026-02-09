@@ -52,11 +52,12 @@ watch(
   { immediate: true }
 )
 
-watch(activeTab, (name) => {
-  if (name === 'dashboard') {
-    router.push('/')
-  } else {
-    router.push(`/${name}`)
+watch(activeTab, (name, oldName) => {
+  if (name === oldName) return
+
+  const targetPath = name === 'dashboard' ? '/' : `/${name}`
+  if (route.path !== targetPath) {
+    router.push(targetPath)
   }
 })
 </script>
@@ -66,5 +67,18 @@ watch(activeTab, (name) => {
   min-height: 100vh;
   background-color: #f7f8fa;
   padding-bottom: 50px;
+  padding-top: var(--capacitor-status-bar-height, 0px);
+}
+
+/* Capacitor 状态栏高度变量 */
+:global(html) {
+  --capacitor-status-bar-height: 0px;
+}
+
+/* 在 Android 原生环境中添加状态栏高度 */
+@supports (padding: max(0px)) {
+  .tabbar-layout {
+    padding-top: max(var(--capacitor-status-bar-height), env(safe-area-inset-top));
+  }
 }
 </style>

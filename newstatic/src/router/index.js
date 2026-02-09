@@ -226,6 +226,12 @@ const routes = [
         name: 'ResetPassword',
         component: () => import('@/views/ResetPassword.vue'),
         meta: { requiresAuth: true, title: '修改密码' }
+      },
+      {
+        path: 'notifications',
+        name: 'Notifications',
+        component: () => import('@/views/Notifications.vue'),
+        meta: { requiresAuth: true, title: '通知中心' }
       }
     ]
   },

@@ -6,7 +6,7 @@
 
     <van-form v-else-if="plan" @submit="handleApprove">
       <van-cell-group inset title="计划信息">
-        <van-cell title="计划单号" :value="plan.plan_number" />
+        <van-cell title="计划单号" :value="plan.plan_no" />
         <van-cell title="项目名称" :value="plan.project_name || '-'" />
         <van-cell title="物料数量" :value="`${plan.items?.length || 0} 项`" />
       </van-cell-group>
@@ -27,6 +27,7 @@
           block
           type="danger"
           plain
+          :loading="rejecting"
           @click="handleReject"
         >
           拒绝
@@ -36,6 +37,7 @@
           block
           type="primary"
           native-type="submit"
+          :loading="approving"
         >
           批准
         </van-button>
@@ -54,6 +56,8 @@ const router = useRouter()
 const route = useRoute()
 
 const loading = ref(true)
+const approving = ref(false)
+const rejecting = ref(false)
 const plan = ref(null)
 const formData = ref({ remark: '' })
 
@@ -63,19 +67,32 @@ async function loadData() {
     const response = await getPlanDetail(route.params.id)
     plan.value = response.data
   } catch (error) {
-    showToast({ type: 'fail', message: '加载失败' })
+    const errorMsg = error.error || error.message || '加载失败'
+    showToast({ type: 'fail', message: errorMsg })
   } finally {
     loading.value = false
   }
 }
 
 async function handleApprove() {
+  approving.value = true
   try {
     await approvePlan(plan.value.id, { remark: formData.value.remark })
     showToast({ type: 'success', message: '已批准' })
-    setTimeout(() => router.back(), 1000)
+    setTimeout(() => router.back(), 1500)
   } catch (error) {
-    showToast({ type: 'fail', message: error.message || '操作失败' })
+    const errorMsg = error.error || error.message || '操作失败'
+    // 使用对话框显示权限错误
+    await showConfirmDialog({
+      title: '审批失败',
+      message: errorMsg,
+      showCancelButton: false,
+      confirmButtonText: '我知道了',
+      teleport: '#app',
+      confirmButtonColor: '#1989fa'
+    }).catch(() => {})
+  } finally {
+    approving.value = false
   }
 }
 
@@ -83,7 +100,9 @@ async function handleReject() {
   try {
     await showConfirmDialog({
       title: '拒绝确认',
-      message: '确定要拒绝该计划吗？'
+      message: '确定要拒绝该计划吗？',
+      teleport: '#app',
+      confirmButtonColor: '#ee0a24'
     })
 
     if (!formData.value.remark.trim()) {
@@ -91,12 +110,29 @@ async function handleReject() {
       return
     }
 
-    await rejectPlan(plan.value.id, { remark: formData.value.remark })
-    showToast({ type: 'success', message: '已拒绝' })
-    setTimeout(() => router.back(), 1000)
+    rejecting.value = true
+    try {
+      await rejectPlan(plan.value.id, { remark: formData.value.remark })
+      showToast({ type: 'success', message: '已拒绝' })
+      setTimeout(() => router.back(), 1500)
+    } catch (error) {
+      const errorMsg = error.error || error.message || '操作失败'
+      // 使用对话框显示权限错误
+      await showConfirmDialog({
+        title: '审批失败',
+        message: errorMsg,
+        showCancelButton: false,
+        confirmButtonText: '我知道了',
+        teleport: '#app',
+        confirmButtonColor: '#1989fa'
+      }).catch(() => {})
+      throw error
+    } finally {
+      rejecting.value = false
+    }
   } catch (error) {
     if (error !== 'cancel') {
-      showToast({ type: 'fail', message: error.message || '操作失败' })
+      console.error('拒绝失败:', error)
     }
   }
 }

@@ -39,6 +39,14 @@ export function rejectRequisition(id, data) {
   })
 }
 
+export function resubmitRequisition(id, data) {
+  return request({
+    url: `/requisition/requisitions/${id}/resubmit`,
+    method: 'POST',
+    data
+  })
+}
+
 export function issueRequisition(id, data) {
   return request({
     url: `/requisition/requisitions/${id}/issue`,

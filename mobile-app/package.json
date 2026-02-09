@@ -5,10 +5,21 @@
   "description": "Material Management Mobile App",
   "scripts": {
     "dev": "vite",
+    "dev:host": "vite --host",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "npm run dev",
+    "cap:sync": "npx cap sync",
+    "cap:android": "npx cap open android",
+    "android:build": "CAPACITOR_BUILD=true npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
+    "android:release": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease"
   },
   "dependencies": {
+    "@capacitor/android": "^8.0.2",
+    "@capacitor/core": "^8.0.2",
+    "@capacitor/local-notifications": "^8.0.0",
+    "@capacitor/push-notifications": "^8.0.0",
+    "@capacitor/status-bar": "^8.0.0",
     "axios": "^1.6.0",
     "pinia": "^2.1.7",
     "vant": "^4.8.0",
@@ -16,6 +27,7 @@
     "vue-router": "^4.2.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.4.5",
     "@vant/auto-import-resolver": "^1.2.1",
     "@vitejs/plugin-vue": "^5.0.0",
     "unplugin-vue-components": "^0.26.0",

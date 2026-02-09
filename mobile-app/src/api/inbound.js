@@ -39,6 +39,14 @@ export function rejectInbound(id, data) {
   })
 }
 
+export function resubmitInbound(id, data) {
+  return request({
+    url: `/inbound/inbound-orders/${id}/resubmit`,
+    method: 'POST',
+    data
+  })
+}
+
 // 获取已批准的计划列表（用于创建入库单）
 export function getApprovedPlans(params) {
   return request({

@@ -21,6 +21,7 @@ type Notification struct {
 const (
 	TypeRequisitionApprove = "requisition_approve"
 	TypeInboundApprove     = "inbound_approve"
+	TypeMaterialPlanApprove = "material_plan_approve"
 	TypeStockAlert         = "stock_alert"
 	TypeSystem             = "system"
 )
@@ -42,4 +43,21 @@ func (n *Notification) ToDTO() map[string]any {
 		"created_at": n.CreatedAt.Format("2006-01-02 15:04:05"),
 		"read_at":    readAtStr,
 	}
+}
+
+// DeviceToken model for storing push notification tokens
+type DeviceToken struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UserID    uint      `gorm:"index" json:"user_id"`
+	Token     string    `gorm:"size:500;index" json:"token"`
+	Platform  string    `gorm:"size:20" json:"platform"` // ios, android, web
+	DeviceID  string    `gorm:"size:200" json:"device_id,omitempty"`
+	IsActive  bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TableName specifies the table name for DeviceToken
+func (DeviceToken) TableName() string {
+	return "device_tokens"
 }

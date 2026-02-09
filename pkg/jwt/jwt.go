@@ -71,11 +71,20 @@ func extractBearer(authHeader string) (string, error) {
 // TokenMiddleware validates token and aborts on invalid token
 func TokenMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		var tokenStr string
+		var err error
+
+		// Try Authorization header first
 		authHeader := c.GetHeader("Authorization")
-		tokenStr, err := extractBearer(authHeader)
+		tokenStr, err = extractBearer(authHeader)
+
+		// If no valid token in header, try query parameter (for WebSocket connections)
 		if err != nil {
-			c.AbortWithStatusJSON(401, gin.H{"error": "Token格式错误"})
-			return
+			tokenStr = c.Query("token")
+			if tokenStr == "" {
+				c.AbortWithStatusJSON(401, gin.H{"error": "Token格式错误"})
+				return
+			}
 		}
 		claims, err := ParseToken(tokenStr)
 		if err != nil {
@@ -100,11 +109,20 @@ func TokenMiddleware() gin.HandlerFunc {
 // TokenOnlyMiddleware validates token but does not enforce DB checks; useful for operations that only require a valid token
 func TokenOnlyMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		var tokenStr string
+		var err error
+
+		// Try Authorization header first
 		authHeader := c.GetHeader("Authorization")
-		tokenStr, err := extractBearer(authHeader)
+		tokenStr, err = extractBearer(authHeader)
+
+		// If no valid token in header, try query parameter (for WebSocket connections)
 		if err != nil {
-			c.AbortWithStatusJSON(401, gin.H{"error": "Token格式错误"})
-			return
+			tokenStr = c.Query("token")
+			if tokenStr == "" {
+				c.AbortWithStatusJSON(401, gin.H{"error": "Token格式错误"})
+				return
+			}
 		}
 		claims, err := ParseToken(tokenStr)
 		if err != nil {

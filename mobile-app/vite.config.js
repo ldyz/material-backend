@@ -4,8 +4,12 @@ import Components from 'unplugin-vue-components/vite'
 import { VantResolver } from '@vant/auto-import-resolver'
 import { fileURLToPath, URL } from 'node:url'
 
+// 检测是否在 Capacitor 原生环境
+const isCapacitor = process.env.CAPACITOR_BUILD === 'true'
+
 export default defineConfig({
-  base: '/mobile/',
+  // Capacitor 环境使用相对路径，Web环境使用 /mobile/ 前缀
+  base: isCapacitor ? '' : '/mobile/',
   plugins: [
     vue(),
     Components({
@@ -18,10 +22,11 @@ export default defineConfig({
     }
   },
   server: {
+    host: '0.0.0.0',
     port: 5173,
     proxy: {
       '/api': {
-        target: 'https://home.mbed.org.cn:9090',
+        target: 'http://localhost:8088',
         changeOrigin: true,
         secure: false,
       }

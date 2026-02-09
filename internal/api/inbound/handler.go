@@ -961,6 +961,50 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "入库单已拒绝")
 	})
 
+	// Resubmit inbound order
+	g.POST("/inbound-orders/:id/resubmit", auth.PermissionMiddleware(db, "inbound_create"), func(c *gin.Context) {
+		id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+		var order InboundOrder
+		if err := db.First(&order, id).Error; err != nil {
+			response.NotFound(c, "入库单不存在")
+			return
+		}
+
+		// Get user info from JWT middleware
+		userIDInt64, _ := c.Get("current_user_id")
+		var submitterID uint
+		if userIDInt64 != nil {
+			if id, ok := userIDInt64.(int64); ok {
+				submitterID = uint(id)
+			}
+		}
+		username, _ := c.Get("current_username")
+		var submitterName string
+		if username != nil {
+			if name, ok := username.(string); ok {
+				submitterName = name
+			}
+		}
+
+		// Use workflow integration to resubmit
+		wfIntegration := NewWorkflowIntegration(db)
+		if err := wfIntegration.ResubmitInboundOrder(order.ID, submitterID, submitterName); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+
+		// Reload order
+		db.Preload("Items").First(&order, id)
+
+		// 记录操作日志
+		if err := audit.LogCreate(&submitterID, submitterName, audit.ModuleInbound, audit.ResourceInboundOrder,
+			order.ID, order.OrderNo, map[string]any{"action": "resubmit"}); err != nil {
+			fmt.Printf("记录操作日志失败: %v\n", err)
+		}
+
+		response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "入库单已重新提交")
+	})
+
 	// Get workflow history for inbound order
 	g.GET("/inbound-orders/:id/workflow-history", auth.PermissionMiddleware(db, "inbound_view"), func(c *gin.Context) {
 		id, _ := strconv.ParseUint(c.Param("id"), 10, 32)

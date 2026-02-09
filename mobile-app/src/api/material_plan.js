@@ -30,3 +30,11 @@ export function rejectPlan(id, data) {
     data
   })
 }
+
+export function resubmitPlan(id, data) {
+  return request({
+    url: `/material-plan/plans/${id}/resubmit`,
+    method: 'POST',
+    data
+  })
+}

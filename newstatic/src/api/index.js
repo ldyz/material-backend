@@ -3720,3 +3720,580 @@ export const agentApi = {
   }
 }
 
+// ==================== 施工预约管理 API ====================
+
+/**
+ * 施工预约管理 API 接口
+ *
+ * 提供施工预约单的增删改查功能，支持日历排期、作业人员分配、工作流审批等
+ *
+ * @namespace appointmentApi
+ */
+export const appointmentApi = {
+  /**
+   * 获取预约单列表
+   *
+   * 支持分页、搜索、排序和状态过滤
+   *
+   * @param {Object} params - 查询参数
+   * @param {number} params.page - 页码（从 1 开始）
+   * @param {number} params.page_size - 每页数量
+   * @param {string} params.status - 状态过滤
+   * @param {boolean} params.is_urgent - 是否加急
+   * @param {string} params.start_date - 开始日期
+   * @param {string} params.end_date - 结束日期
+   * @param {number} params.applicant_id - 申请人ID
+   * @param {number} params.worker_id - 作业人员ID
+   * @param {string} params.work_type - 作业类型
+   * @returns {Promise} 返回预约单列表和分页信息
+   */
+  getList(params) {
+    return request({
+      url: '/appointments',
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 获取我的预约列表
+   *
+   * @param {Object} params - 查询参数
+   * @returns {Promise} 返回我的预约列表
+   */
+  getMyList(params) {
+    return request({
+      url: '/appointments/my',
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 获取待审批列表
+   *
+   * @param {Object} params - 查询参数
+   * @returns {Promise} 返回待审批列表
+   */
+  getPendingApprovals(params) {
+    return request({
+      url: '/appointments/pending',
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 获取预约单详情
+   *
+   * @param {number} id - 预约单ID
+   * @returns {Promise} 返回预约单详情
+   */
+  getDetail(id) {
+    return request({
+      url: `/appointments/${id}`,
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 创建预约单
+   *
+   * @param {Object} data - 预约单信息
+   * @param {number} data.project_id - 项目ID
+   * @param {string} data.contact_phone - 联系电话
+   * @param {string} data.contact_person - 联系人
+   * @param {string} data.work_date - 作业日期
+   * @param {string} data.time_slot - 时间段 (morning/afternoon/evening/full_day)
+   * @param {string} data.work_location - 作业地点
+   * @param {string} data.work_content - 作业内容
+   * @param {string} data.work_type - 作业类型
+   * @param {boolean} data.is_urgent - 是否加急
+   * @param {number} data.priority - 优先级 (0-10)
+   * @param {string} data.urgent_reason - 加急原因
+   * @param {number} data.assigned_worker_id - 指派的作业人员ID
+   * @returns {Promise} 返回创建的预约单信息
+   */
+  create(data) {
+    return request({
+      url: '/appointments',
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 批量创建预约单
+   *
+   * @param {Object} data - 批量创建数据
+   * @param {Array} data.appointments - 预约单数组
+   * @returns {Promise} 返回批量创建结果
+   */
+  batchCreate(data) {
+    return request({
+      url: '/appointments/batch',
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 更新预约单
+   *
+   * 只能更新草稿状态的预约单
+   *
+   * @param {number} id - 预约单ID
+   * @param {Object} data - 更新的预约单信息
+   * @returns {Promise} 返回更新后的预约单信息
+   */
+  update(id, data) {
+    return request({
+      url: `/appointments/${id}`,
+      method: 'PUT',
+      data
+    })
+  },
+
+  /**
+   * 删除预约单
+   *
+   * 只能删除草稿状态的预约单
+   *
+   * @param {number} id - 预约单ID
+   * @returns {Promise} 返回删除结果
+   */
+  delete(id) {
+    return request({
+      url: `/appointments/${id}`,
+      method: 'DELETE'
+    })
+  },
+
+  /**
+   * 提交审批
+   *
+   * @param {number} id - 预约单ID
+   * @returns {Promise} 返回提交结果
+   */
+  submit(id) {
+    return request({
+      url: `/appointments/${id}/submit`,
+      method: 'POST'
+    })
+  },
+
+  /**
+   * 启动工作流
+   *
+   * @param {number} id - 预约单ID
+   * @param {Object} data - 工作流信息
+   * @param {number} data.workflow_id - 工作流ID
+   * @returns {Promise} 返回启动结果
+   */
+  startWorkflow(id, data) {
+    return request({
+      url: `/appointments/${id}/workflow/start`,
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 审批预约单
+   *
+   * @param {number} id - 预约单ID
+   * @param {Object} data - 审批信息
+   * @param {string} data.action - 操作 (approve/reject)
+   * @param {string} data.comment - 审批意见
+   * @param {boolean} data.assign_now - 是否立即分配作业人员
+   * @param {number} data.worker_id - 指定的作业人员ID
+   * @returns {Promise} 返回审批结果
+   */
+  approve(id, data) {
+    return request({
+      url: `/appointments/${id}/approve`,
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 撤回预约单
+   *
+   * @param {number} id - 预约单ID
+   * @returns {Promise} 返回撤回结果
+   */
+  recall(id) {
+    return request({
+      url: `/appointments/${id}/recall`,
+      method: 'POST'
+    })
+  },
+
+  /**
+   * 分配作业人员
+   *
+   * @param {number} id - 预约单ID
+   * @param {Object} data - 分配信息
+   * @param {number} data.worker_id - 作业人员ID
+   * @returns {Promise} 返回分配结果
+   */
+  assignWorker(id, data) {
+    return request({
+      url: `/appointments/${id}/assign`,
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 开始作业
+   *
+   * @param {number} id - 预约单ID
+   * @returns {Promise} 返回操作结果
+   */
+  startWork(id) {
+    return request({
+      url: `/appointments/${id}/start`,
+      method: 'POST'
+    })
+  },
+
+  /**
+   * 完成作业
+   *
+   * @param {number} id - 预约单ID
+   * @param {Object} data - 完成信息
+   * @param {string} data.completion_note - 完成备注
+   * @param {Array} data.photos - 完成照片URL列表
+   * @returns {Promise} 返回完成结果
+   */
+  complete(id, data) {
+    return request({
+      url: `/appointments/${id}/complete`,
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 取消预约
+   *
+   * @param {number} id - 预约单ID
+   * @param {Object} data - 取消信息
+   * @param {string} data.reason - 取消原因
+   * @returns {Promise} 返回取消结果
+   */
+  cancel(id, data) {
+    return request({
+      url: `/appointments/${id}/cancel`,
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 获取审批历史
+   *
+   * @param {number} id - 预约单ID
+   * @returns {Promise} 返回审批历史记录
+   */
+  getApprovalHistory(id) {
+    return request({
+      url: `/appointments/${id}/approval-history`,
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 获取工作流进度
+   *
+   * @param {number} id - 预约单ID
+   * @returns {Promise} 返回工作流进度信息
+   */
+  getWorkflowProgress(id) {
+    return request({
+      url: `/appointments/${id}/workflow-progress`,
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 获取当前审批节点
+   *
+   * @param {number} id - 预约单ID
+   * @returns {Promise} 返回当前审批节点信息
+   */
+  getCurrentApproval(id) {
+    return request({
+      url: `/appointments/${id}/current-approval`,
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 批量审批
+   *
+   * @param {Object} data - 批量审批数据
+   * @param {Array} data.instance_ids - 工作流实例ID数组
+   * @param {string} data.action - 操作 (approve/reject)
+   * @param {string} data.comment - 审批意见
+   * @returns {Promise} 返回批量审批结果
+   */
+  batchApprove(data) {
+    return request({
+      url: '/appointments/batch-approve',
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 获取统计数据
+   *
+   * @param {Object} params - 查询参数
+   * @param {string} params.date - 统计日期
+   * @param {number} params.applicant_id - 申请人ID
+   * @returns {Promise} 返回统计数据
+   */
+  getStats(params) {
+    return request({
+      url: '/appointments/stats',
+      method: 'GET',
+      params
+    })
+  },
+
+  // ========== 日历相关API ==========
+
+  /**
+   * 获取作业人员日历
+   *
+   * @param {number} workerId - 作业人员ID
+   * @param {Object} params - 查询参数
+   * @param {string} params.start_date - 开始日期
+   * @param {string} params.end_date - 结束日期
+   * @returns {Promise} 返回日历数据
+   */
+  getWorkerCalendar(workerId, params) {
+    return request({
+      url: `/appointments/calendar/worker/${workerId}`,
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 检查可用性
+   *
+   * @param {Object} data - 检查数据
+   * @param {number} data.worker_id - 作业人员ID
+   * @param {string} data.work_date - 作业日期
+   * @param {string} data.time_slot - 时间段
+   * @returns {Promise} 返回可用性检查结果
+   */
+  checkAvailability(data) {
+    return request({
+      url: '/appointments/calendar/check-availability',
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 批量锁定日历
+   *
+   * @param {Object} data - 锁定数据
+   * @param {number} data.worker_id - 作业人员ID
+   * @param {string} data.start_date - 开始日期
+   * @param {string} data.end_date - 结束日期
+   * @param {Array} data.time_slots - 时间段数组
+   * @param {string} data.blocked_reason - 锁定原因
+   * @returns {Promise} 返回锁定结果
+   */
+  batchBlockCalendar(data) {
+    return request({
+      url: '/appointments/calendar/batch-block',
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 获取可用作业人员
+   *
+   * @param {Object} params - 查询参数
+   * @param {string} params.work_date - 作业日期
+   * @param {string} params.time_slot - 时间段
+   * @returns {Promise} 返回可用作业人员列表
+   */
+  getAvailableWorkers(params) {
+    return request({
+      url: '/appointments/calendar/available-workers',
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 获取日历视图数据
+   *
+   * @param {Object} params - 查询参数
+   * @param {string} params.start_date - 开始日期
+   * @param {string} params.end_date - 结束日期
+   * @param {number} params.worker_id - 作业人员ID（可选）
+   * @returns {Promise} 返回日历视图数据
+   */
+  getCalendarView(params) {
+    return request({
+      url: '/appointments/calendar/view',
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 搜索预约单
+   *
+   * @param {Object} params - 查询参数
+   * @param {string} params.keyword - 搜索关键词
+   * @param {number} params.page - 页码
+   * @param {number} params.page_size - 每页数量
+   * @returns {Promise} 返回搜索结果
+   */
+  search(params) {
+    return request({
+      url: '/appointments/search',
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 获取作业人员的预约列表
+   *
+   * @param {number} workerId - 作业人员ID
+   * @param {Object} params - 查询参数
+   * @returns {Promise} 返回预约列表
+   */
+  getWorkerAppointments(workerId, params) {
+    return request({
+      url: `/appointments/worker/${workerId}`,
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 导出预约单
+   *
+   * @param {Object} params - 查询参数
+   * @param {string} params.ids - 预约单ID列表（逗号分隔）
+   * @returns {Promise} 返回Excel文件Blob
+   */
+  export(params) {
+    return request({
+      url: '/appointments/export',
+      method: 'GET',
+      params,
+      responseType: 'blob'
+    })
+  },
+
+  // ========== 工具函数 ==========
+
+  /**
+   * 获取时间段标签
+   *
+   * @param {string} timeSlot - 时间段代码
+   * @returns {string} 时间段标签
+   */
+  getTimeSlotLabel(timeSlot) {
+    const labels = {
+      morning: '上午',
+      afternoon: '下午',
+      evening: '晚上',
+      full_day: '全天'
+    }
+    return labels[timeSlot] || timeSlot
+  },
+
+  /**
+   * 获取状态标签
+   *
+   * @param {string} status - 状态代码
+   * @returns {string} 状态标签
+   */
+  getStatusLabel(status) {
+    const labels = {
+      draft: '草稿',
+      pending: '待审批',
+      scheduled: '已排期',
+      in_progress: '进行中',
+      completed: '已完成',
+      cancelled: '已取消',
+      rejected: '已拒绝'
+    }
+    return labels[status] || status
+  },
+
+  /**
+   * 获取状态颜色类型
+   *
+   * @param {string} status - 状态代码
+   * @returns {string} Element Plus Tag类型
+   */
+  getStatusType(status) {
+    const types = {
+      draft: '',
+      pending: 'warning',
+      scheduled: 'primary',
+      in_progress: 'info',
+      completed: 'success',
+      cancelled: 'info',
+      rejected: 'danger'
+    }
+    return types[status] || ''
+  },
+
+  /**
+   * 判断是否可编辑
+   *
+   * @param {string} status - 状态代码
+   * @returns {boolean} 是否可编辑
+   */
+  isEditable(status) {
+    return status === 'draft'
+  },
+
+  /**
+   * 判断是否可取消
+   *
+   * @param {string} status - 状态代码
+   * @returns {boolean} 是否可取消
+   */
+  isCancellable(status) {
+    return ['draft', 'pending', 'scheduled'].includes(status)
+  },
+
+  /**
+   * 判断是否可完成
+   *
+   * @param {string} status - 状态代码
+   * @returns {boolean} 是否可完成
+   */
+  canComplete(status) {
+    return ['in_progress', 'scheduled'].includes(status)
+  },
+
+  /**
+   * 判断是否可开始
+   *
+   * @param {string} status - 状态代码
+   * @returns {boolean} 是否可开始
+   */
+  canStart(status) {
+    return status === 'scheduled'
+  }
+}
+

@@ -121,7 +121,8 @@ import {
   DataAnalysis,
   Grid,
   Connection,
-  Clock
+  Clock,
+  Calendar
 } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import NotificationBell from '@/components/Notification/NotificationBell.vue'
@@ -220,6 +221,12 @@ const menuConfig = [
         permissions: ['requisition_view'] // 出库单查看权限
       }
     ]
+  },
+  {
+    path: '/appointments',
+    title: '施工预约',
+    icon: Calendar,
+    permissions: ['appointment_view'] // 预约查看权限
   },
   {
     path: '/workflows',

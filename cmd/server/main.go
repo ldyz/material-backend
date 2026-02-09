@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/yourorg/material-backend/backend/internal/api/agent"
+	"github.com/yourorg/material-backend/backend/internal/api/appointment"
 	"github.com/yourorg/material-backend/backend/internal/api/auth"
 	"github.com/yourorg/material-backend/backend/internal/api/construction_log"
 	"github.com/yourorg/material-backend/backend/internal/api/inbound"
@@ -141,6 +142,8 @@ func main() {
 		&agent.AgentOperationLog{},
 		&audit2.OperationLog{}, // 操作日志表
 		&notification.DeviceToken{}, // 设备推送令牌表
+		&appointment.ConstructionAppointment{}, // 施工预约单表
+		&appointment.WorkerCalendar{}, // 作业人员日历表
 	)
 
 	// create default admin role/user if not exists
@@ -248,6 +251,7 @@ func main() {
 		workflow.RegisterRoutes(api, dbConn)
 		agent.RegisterRoutes(api, dbConn)
 		audit2.RegisterRoutes(api, dbConn) // 操作日志路由
+		appointment.RegisterRoutes(api, dbConn) // 施工预约路由
 	}
 
 	// SPA路由回退 - 所有非API和非静态文件请求都返回对应的前端入口

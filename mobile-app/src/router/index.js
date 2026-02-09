@@ -77,6 +77,27 @@ const routes = [
         component: () => import('@/views/Requisition/Create.vue')
       },
       {
+        path: 'appointments',
+        name: 'AppointmentList',
+        component: () => import('@/views/Appointment/List.vue'),
+        meta: { keepAlive: true }
+      },
+      {
+        path: 'appointment/:id',
+        name: 'AppointmentDetail',
+        component: () => import('@/views/Appointment/Detail.vue')
+      },
+      {
+        path: 'appointment/create',
+        name: 'AppointmentCreate',
+        component: () => import('@/views/Appointment/Create.vue')
+      },
+      {
+        path: 'appointment/:id/approve',
+        name: 'AppointmentApprove',
+        component: () => import('@/views/Appointment/Approve.vue')
+      },
+      {
         path: 'profile',
         name: 'Profile',
         component: () => import('@/views/Profile/index.vue'),

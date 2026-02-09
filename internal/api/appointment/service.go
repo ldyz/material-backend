@@ -1,0 +1,603 @@
+package appointment
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"gorm.io/gorm"
+)
+
+// AppointmentService 预约服务
+type AppointmentService struct {
+	db              *gorm.DB
+	calendarService *CalendarService
+}
+
+// NewAppointmentService 创建预约服务
+func NewAppointmentService(db *gorm.DB) *AppointmentService {
+	calendarService := NewCalendarService(db)
+	return &AppointmentService{
+		db:              db,
+		calendarService: calendarService,
+	}
+}
+
+// Create 创建预约单
+func (s *AppointmentService) Create(req CreateAppointmentRequest, applicantID uint, applicantName string) (*ConstructionAppointment, error) {
+	// 解析日期
+	workDate, err := time.Parse("2006-01-02", req.WorkDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid work_date: %w", err)
+	}
+
+	// 验证日期不能是过去的日期
+	if workDate.Before(time.Now().Truncate(24 * time.Hour)) {
+		return nil, errors.New("作业日期不能早于今天")
+	}
+
+	// 验证时间段
+	if err := s.calendarService.ValidateTimeSlot(req.TimeSlot); err != nil {
+		return nil, err
+	}
+
+	// 验证加急原因
+	if req.IsUrgent && req.Priority >= 7 && req.UrgentReason == "" {
+		return nil, errors.New("高优先级加急预约必须提供加急原因")
+	}
+
+	// 创建预约单
+	appointment := &ConstructionAppointment{
+		ProjectID:         req.ProjectID,
+		ApplicantID:       applicantID,
+		ApplicantName:     applicantName,
+		ContactPhone:      req.ContactPhone,
+		ContactPerson:     req.ContactPerson,
+		WorkDate:          workDate,
+		TimeSlot:          req.TimeSlot,
+		WorkLocation:      req.WorkLocation,
+		WorkContent:       req.WorkContent,
+		WorkType:          req.WorkType,
+		IsUrgent:          req.IsUrgent,
+		Priority:          req.Priority,
+		UrgentReason:      req.UrgentReason,
+		AssignedWorkerID:  req.AssignedWorkerID,
+		Status:            StatusDraft,
+	}
+
+	// 如果指定了作业人员，检查可用性
+	if req.AssignedWorkerID != nil {
+		available, reason, err := s.calendarService.CheckAvailability(*req.AssignedWorkerID, workDate, req.TimeSlot)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check availability: %w", err)
+		}
+		if !available {
+			return nil, fmt.Errorf("作业人员在指定时间段不可用: %s", reason)
+		}
+	}
+
+	// 保存到数据库
+	if err := s.db.Create(appointment).Error; err != nil {
+		return nil, fmt.Errorf("failed to create appointment: %w", err)
+	}
+
+	return appointment, nil
+}
+
+// Update 更新预约单
+func (s *AppointmentService) Update(id uint, req UpdateAppointmentRequest) (*ConstructionAppointment, error) {
+	var appointment ConstructionAppointment
+	if err := s.db.First(&appointment, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("预约单不存在")
+		}
+		return nil, err
+	}
+
+	// 检查是否可编辑
+	if !appointment.IsEditable() {
+		return nil, errors.New("只有草稿状态的预约单可以编辑")
+	}
+
+	// 解析日期
+	if req.WorkDate != "" {
+		workDate, err := time.Parse("2006-01-02", req.WorkDate)
+		if err != nil {
+			return nil, fmt.Errorf("invalid work_date: %w", err)
+		}
+		appointment.WorkDate = workDate
+	}
+
+	if req.TimeSlot != "" {
+		if err := s.calendarService.ValidateTimeSlot(req.TimeSlot); err != nil {
+			return nil, err
+		}
+		appointment.TimeSlot = req.TimeSlot
+	}
+
+	// 验证加急原因
+	if req.IsUrgent && req.Priority >= 7 && req.UrgentReason == "" {
+		return nil, errors.New("高优先级加急预约必须提供加急原因")
+	}
+
+	// 如果指定了作业人员，检查可用性
+	if req.AssignedWorkerID != nil {
+		available, reason, err := s.calendarService.CheckAvailability(*req.AssignedWorkerID, appointment.WorkDate, appointment.TimeSlot)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check availability: %w", err)
+		}
+		if !available {
+			return nil, fmt.Errorf("作业人员在指定时间段不可用: %s", reason)
+		}
+		appointment.AssignedWorkerID = req.AssignedWorkerID
+	}
+
+	// 更新字段
+	if req.ProjectID != nil {
+		appointment.ProjectID = req.ProjectID
+	}
+	if req.ContactPhone != "" {
+		appointment.ContactPhone = req.ContactPhone
+	}
+	if req.ContactPerson != "" {
+		appointment.ContactPerson = req.ContactPerson
+	}
+	if req.WorkLocation != "" {
+		appointment.WorkLocation = req.WorkLocation
+	}
+	if req.WorkContent != "" {
+		appointment.WorkContent = req.WorkContent
+	}
+	if req.WorkType != "" {
+		appointment.WorkType = req.WorkType
+	}
+	appointment.IsUrgent = req.IsUrgent
+	appointment.Priority = req.Priority
+	appointment.UrgentReason = req.UrgentReason
+
+	// 保存
+	if err := s.db.Save(&appointment).Error; err != nil {
+		return nil, fmt.Errorf("failed to update appointment: %w", err)
+	}
+
+	return &appointment, nil
+}
+
+// GetByID 根据ID获取预约单
+func (s *AppointmentService) GetByID(id uint) (*ConstructionAppointment, error) {
+	var appointment ConstructionAppointment
+	if err := s.db.First(&appointment, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("预约单不存在")
+		}
+		return nil, err
+	}
+	return &appointment, nil
+}
+
+// GetByNo 根据预约单号获取预约单
+func (s *AppointmentService) GetByNo(appointmentNo string) (*ConstructionAppointment, error) {
+	var appointment ConstructionAppointment
+	if err := s.db.Where("appointment_no = ?", appointmentNo).First(&appointment).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("预约单不存在")
+		}
+		return nil, err
+	}
+	return &appointment, nil
+}
+
+// List 查询预约单列表
+func (s *AppointmentService) List(req AppointmentListRequest) ([]ConstructionAppointment, int64, error) {
+	var appointments []ConstructionAppointment
+	var total int64
+
+	query := s.db.Model(&ConstructionAppointment{})
+
+	// 状态过滤
+	if req.Status != "" {
+		query = query.Where("status = ?", req.Status)
+	}
+
+	// 加急过滤
+	if req.IsUrgent != nil {
+		query = query.Where("is_urgent = ?", *req.IsUrgent)
+	}
+
+	// 日期范围过滤
+	if req.StartDate != "" {
+		if startDate, err := time.Parse("2006-01-02", req.StartDate); err == nil {
+			query = query.Where("work_date >= ?", startDate.Format("2006-01-02"))
+		}
+	}
+	if req.EndDate != "" {
+		if endDate, err := time.Parse("2006-01-02", req.EndDate); err == nil {
+			query = query.Where("work_date <= ?", endDate.Format("2006-01-02"))
+		}
+	}
+
+	// 申请人过滤
+	if req.ApplicantID != nil {
+		query = query.Where("applicant_id = ?", *req.ApplicantID)
+	}
+
+	// 作业人员过滤
+	if req.WorkerID != nil {
+		query = query.Where("assigned_worker_id = ?", *req.WorkerID)
+	}
+
+	// 作业类型过滤
+	if req.WorkType != "" {
+		query = query.Where("work_type = ?", req.WorkType)
+	}
+
+	// 统计总数
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// 分页查询
+	offset := (req.Page - 1) * req.PageSize
+	if err := query.Order("created_at DESC").
+		Offset(offset).
+		Limit(req.PageSize).
+		Find(&appointments).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return appointments, total, nil
+}
+
+// Delete 删除预约单（仅草稿状态）
+func (s *AppointmentService) Delete(id uint) error {
+	var appointment ConstructionAppointment
+	if err := s.db.First(&appointment, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("预约单不存在")
+		}
+		return err
+	}
+
+	if !appointment.IsEditable() {
+		return errors.New("只有草稿状态的预约单可以删除")
+	}
+
+	return s.db.Delete(&appointment).Error
+}
+
+// Submit 提交预约单审批
+func (s *AppointmentService) Submit(id uint) (*ConstructionAppointment, error) {
+	var appointment ConstructionAppointment
+	if err := s.db.First(&appointment, id).Error; err != nil {
+		return nil, err
+	}
+
+	if appointment.Status != StatusDraft {
+		return nil, errors.New("只有草稿状态的预约单可以提交")
+	}
+
+	now := time.Now()
+	appointment.Status = StatusPending
+	appointment.SubmittedAt = &now
+
+	if err := s.db.Save(&appointment).Error; err != nil {
+		return nil, err
+	}
+
+	return &appointment, nil
+}
+
+// AssignWorker 分配作业人员
+func (s *AppointmentService) AssignWorker(id uint, workerID uint, workerName string) (*ConstructionAppointment, error) {
+	var appointment ConstructionAppointment
+	if err := s.db.First(&appointment, id).Error; err != nil {
+		return nil, err
+	}
+
+	// 检查作业人员可用性
+	available, reason, err := s.calendarService.CheckAvailability(workerID, appointment.WorkDate, appointment.TimeSlot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check availability: %w", err)
+	}
+	if !available {
+		return nil, fmt.Errorf("作业人员在指定时间段不可用: %s", reason)
+	}
+
+	// 如果已有作业人员，先释放其日历
+	if appointment.AssignedWorkerID != nil {
+		if err := s.calendarService.CancelAppointmentForWorker(&appointment); err != nil {
+			return nil, fmt.Errorf("failed to release previous worker: %w", err)
+		}
+	}
+
+	// 分配新作业人员
+	appointment.AssignedWorkerID = &workerID
+	appointment.AssignedWorkerName = workerName
+
+	// 如果状态是待审批或已排期，更新为已排期
+	if appointment.Status == StatusPending {
+		appointment.Status = StatusScheduled
+	}
+
+	if err := s.db.Save(&appointment).Error; err != nil {
+		return nil, err
+	}
+
+	// 预约日历
+	if err := s.calendarService.BookAppointmentForWorker(&appointment); err != nil {
+		return nil, fmt.Errorf("failed to book calendar: %w", err)
+	}
+
+	return &appointment, nil
+}
+
+// StartWork 开始作业
+func (s *AppointmentService) StartWork(id uint) (*ConstructionAppointment, error) {
+	var appointment ConstructionAppointment
+	if err := s.db.First(&appointment, id).Error; err != nil {
+		return nil, err
+	}
+
+	if appointment.Status != StatusScheduled {
+		return nil, errors.New("只有已排期状态的预约单可以开始作业")
+	}
+
+	appointment.Status = StatusInProgress
+	if err := s.db.Save(&appointment).Error; err != nil {
+		return nil, err
+	}
+
+	return &appointment, nil
+}
+
+// Complete 完成预约单
+func (s *AppointmentService) Complete(id uint, req CompleteAppointmentRequest) (*ConstructionAppointment, error) {
+	var appointment ConstructionAppointment
+	if err := s.db.First(&appointment, id).Error; err != nil {
+		return nil, err
+	}
+
+	if !appointment.CanComplete() {
+		return nil, errors.New("当前状态不允许完成")
+	}
+
+	now := time.Now()
+	appointment.Status = StatusCompleted
+	appointment.CompletedAt = &now
+
+	if err := s.db.Save(&appointment).Error; err != nil {
+		return nil, err
+	}
+
+	// 释放日历
+	if err := s.calendarService.CancelAppointmentForWorker(&appointment); err != nil {
+		// 日历释放失败不影响完成操作
+		fmt.Printf("Warning: failed to release calendar: %v\n", err)
+	}
+
+	return &appointment, nil
+}
+
+// Cancel 取消预约单
+func (s *AppointmentService) Cancel(id uint, reason string) (*ConstructionAppointment, error) {
+	var appointment ConstructionAppointment
+	if err := s.db.First(&appointment, id).Error; err != nil {
+		return nil, err
+	}
+
+	if !appointment.IsCancellable() && !appointment.IsEditable() {
+		return nil, errors.New("当前状态不允许取消")
+	}
+
+	appointment.Status = StatusCancelled
+
+	if err := s.db.Save(&appointment).Error; err != nil {
+		return nil, err
+	}
+
+	// 释放日历
+	if err := s.calendarService.CancelAppointmentForWorker(&appointment); err != nil {
+		fmt.Printf("Warning: failed to release calendar: %v\n", err)
+	}
+
+	return &appointment, nil
+}
+
+// GetStats 获取统计数据
+func (s *AppointmentService) GetStats(filterDate *time.Time, applicantID *uint) (*StatsResponse, error) {
+	var stats StatsResponse
+
+	query := s.db.Model(&ConstructionAppointment{})
+
+	// 日期过滤
+	if filterDate != nil {
+		startOfMonth := time.Date(filterDate.Year(), filterDate.Month(), 1, 0, 0, 0, 0, filterDate.Location())
+		endOfMonth := startOfMonth.AddDate(0, 1, -1)
+		query = query.Where("work_date >= ? AND work_date <= ?", startOfMonth.Format("2006-01-02"), endOfMonth.Format("2006-01-02"))
+	}
+
+	// 申请人过滤
+	if applicantID != nil {
+		query = query.Where("applicant_id = ?", *applicantID)
+	}
+
+	// 总数
+	query.Count(&stats.Total)
+
+	// 各状态计数
+	s.db.Model(&ConstructionAppointment{}).Where("status = ?", StatusDraft).Count(&stats.Draft)
+	s.db.Model(&ConstructionAppointment{}).Where("status = ?", StatusPending).Count(&stats.Pending)
+	s.db.Model(&ConstructionAppointment{}).Where("status = ?", StatusScheduled).Count(&stats.Scheduled)
+	s.db.Model(&ConstructionAppointment{}).Where("status = ?", StatusInProgress).Count(&stats.InProgress)
+	s.db.Model(&ConstructionAppointment{}).Where("status = ?", StatusCompleted).Count(&stats.Completed)
+	s.db.Model(&ConstructionAppointment{}).Where("status = ?", StatusCancelled).Count(&stats.Cancelled)
+	s.db.Model(&ConstructionAppointment{}).Where("status = ?", StatusRejected).Count(&stats.Rejected)
+
+	// 加急计数
+	s.db.Model(&ConstructionAppointment{}).Where("is_urgent = ?", true).Count(&stats.Urgent)
+
+	// 今日计数
+	today := time.Now().Format("2006-01-02")
+	s.db.Model(&ConstructionAppointment{}).Where("work_date = ?", today).Count(&stats.TodayCount)
+
+	// 本周计数
+	startOfWeek := time.Now().AddDate(0, 0, -int(time.Now().Weekday()))
+	endOfWeek := startOfWeek.AddDate(0, 0, 6)
+	s.db.Model(&ConstructionAppointment{}).
+		Where("work_date >= ? AND work_date <= ?", startOfWeek.Format("2006-01-02"), endOfWeek.Format("2006-01-02")).
+		Count(&stats.WeekCount)
+
+	// 本月计数
+	startOfMonth := time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.Now.Location())
+	endOfMonth := startOfMonth.AddDate(0, 1, -1)
+	s.db.Model(&ConstructionAppointment{}).
+		Where("work_date >= ? AND work_date <= ?", startOfMonth.Format("2006-01-02"), endOfMonth.Format("2006-01-02")).
+		Count(&stats.MonthCount)
+
+	return &stats, nil
+}
+
+// BatchCreate 批量创建预约单
+func (s *AppointmentService) BatchCreate(req BatchCreateAppointmentRequest, applicantID uint, applicantName string) ([]ConstructionAppointment, []error) {
+	appointments := make([]ConstructionAppointment, 0, len(req.Appointments))
+	errs := make([]error, len(req.Appointments))
+
+	for i, apptReq := range req.Appointments {
+		appt, err := s.Create(apptReq, applicantID, applicantName)
+		if err != nil {
+			errs[i] = err
+			continue
+		}
+		appointments = append(appointments, *appt)
+	}
+
+	// 过滤掉 nil 错误
+	cleanErrs := make([]error, 0, len(errs))
+	for _, err := range errs {
+		if err != nil {
+			cleanErrs = append(cleanErrs, err)
+		}
+	}
+
+	return appointments, cleanErrs
+}
+
+// GetPendingApprovals 获取待审批的预约单
+func (s *AppointmentService) GetPendingApprovals(page, pageSize int) ([]ConstructionAppointment, int64, error) {
+	var appointments []ConstructionAppointment
+	var total int64
+
+	query := s.db.Model(&ConstructionAppointment{}).Where("status = ?", StatusPending)
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+	if err := query.Order("is_urgent DESC, priority DESC, created_at ASC").
+		Offset(offset).
+		Limit(pageSize).
+		Find(&appointments).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return appointments, total, nil
+}
+
+// GetWorkerAppointments 获取作业人员的预约列表
+func (s *AppointmentService) GetWorkerAppointments(workerID uint, startDate, endDate time.Time) ([]ConstructionAppointment, error) {
+	var appointments []ConstructionAppointment
+
+	err := s.db.Where("assigned_worker_id = ? AND work_date >= ? AND work_date <= ?",
+		workerID, startDate.Format("2006-01-02"), endDate.Format("2006-01-02")).
+		Where("status IN ?", []string{StatusScheduled, StatusInProgress}).
+		Order("work_date ASC, time_slot ASC").
+		Find(&appointments).Error
+
+	return appointments, err
+}
+
+// SearchByKeyword 根据关键词搜索预约单
+func (s *AppointmentService) SearchByKeyword(keyword string, page, pageSize int) ([]ConstructionAppointment, int64, error) {
+	var appointments []ConstructionAppointment
+	var total int64
+
+	query := s.db.Model(&ConstructionAppointment{}).
+		Where("appointment_no LIKE ? OR work_location LIKE ? OR work_content LIKE ? OR applicant_name LIKE ?",
+			"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+	if err := query.Order("created_at DESC").
+		Offset(offset).
+		Limit(pageSize).
+		Find(&appointments).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return appointments, total, nil
+}
+
+// UpdateStatus 更新状态
+func (s *AppointmentService) UpdateStatus(id uint, status string) (*ConstructionAppointment, error) {
+	var appointment ConstructionAppointment
+	if err := s.db.First(&appointment, id).Error; err != nil {
+		return nil, err
+	}
+
+	// 状态流转验证
+	validTransitions := map[string][]string{
+		StatusDraft:     {StatusPending, StatusCancelled},
+		StatusPending:   {StatusScheduled, StatusRejected, StatusCancelled},
+		StatusScheduled: {StatusInProgress, StatusCancelled},
+		StatusInProgress: {StatusCompleted},
+	}
+
+	if allowedStates, ok := validTransitions[appointment.Status]; ok {
+		allowed := false
+		for _, s := range allowedStates {
+			if s == status {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return nil, fmt.Errorf("不能从状态 %s 转换到 %s", appointment.Status, status)
+		}
+	} else {
+		return nil, fmt.Errorf("未知的状态: %s", appointment.Status)
+	}
+
+	appointment.Status = status
+
+	// 更新时间戳
+	now := time.Now()
+	if status == StatusScheduled {
+		appointment.ApprovedAt = &now
+	}
+
+	if err := s.db.Save(&appointment).Error; err != nil {
+		return nil, err
+	}
+
+	return &appointment, nil
+}
+
+// ExportToJSON 导出为JSON
+func (s *AppointmentService) ExportToJSON(ids []uint) ([]byte, error) {
+	var appointments []ConstructionAppointment
+	if err := s.db.Where("id IN ?", ids).Find(&appointments).Error; err != nil {
+		return nil, err
+	}
+
+	data := make([]map[string]interface{}, len(appointments))
+	for i, a := range appointments {
+		data[i] = a.ToDTO()
+	}
+
+	return json.MarshalIndent(data, "", "  ")
+}

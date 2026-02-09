@@ -162,6 +162,16 @@ const routes = [
         }
       },
       {
+        path: 'appointments',
+        name: 'Appointments',
+        component: () => import('@/views/Appointments.vue'),
+        meta: {
+          requiresAuth: true,
+          title: '施工预约',
+          permissions: ['appointment_view']
+        }
+      },
+      {
         path: 'warehouse',
         name: 'Warehouse',
         component: () => import('@/views/Warehouse.vue'),

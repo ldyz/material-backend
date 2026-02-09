@@ -18,8 +18,8 @@
     <van-tabbar v-model="activeTab" :safe-area-inset-bottom="true">
       <van-tabbar-item name="dashboard" icon="wap-home-o">首页</van-tabbar-item>
       <van-tabbar-item name="plans" icon="orders-o">计划</van-tabbar-item>
+      <van-tabbar-item name="appointments" icon="calendar-o">预约</van-tabbar-item>
       <van-tabbar-item name="inbound" icon="logistics">入库</van-tabbar-item>
-      <van-tabbar-item name="requisition" icon="send-gift-o">出库</van-tabbar-item>
       <van-tabbar-item name="profile" icon="user-o">我的</van-tabbar-item>
     </van-tabbar>
   </div>
@@ -41,6 +41,8 @@ watch(
       activeTab.value = 'dashboard'
     } else if (path.startsWith('/plans')) {
       activeTab.value = 'plans'
+    } else if (path.startsWith('/appointment')) {
+      activeTab.value = 'appointments'
     } else if (path.startsWith('/inbound')) {
       activeTab.value = 'inbound'
     } else if (path.startsWith('/requisition')) {

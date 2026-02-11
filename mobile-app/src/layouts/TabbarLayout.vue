@@ -22,17 +22,45 @@
       <van-tabbar-item name="inbound" icon="logistics">入库</van-tabbar-item>
       <van-tabbar-item name="profile" icon="user-o">我的</van-tabbar-item>
     </van-tabbar>
+
+    <!-- 自动更新对话框 -->
+    <AppUpdateDialog v-model:show="showUpdateDialog" />
   </div>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useAutoUpdate } from '@/composables/useAppUpdate'
+import AppUpdateDialog from '@/components/AppUpdateDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
 
 const activeTab = ref('dashboard')
+const showUpdateDialog = ref(false)
+
+// 使用自动更新检测
+const { hasUpdate, forceUpdate, performCheck } = useAutoUpdate({
+  autoCheck: true,
+  checkOnMount: true,
+  checkInterval: 24 * 60 * 60 * 1000 // 每24小时检查一次
+})
+
+// 监听是否有更新
+watch([hasUpdate, forceUpdate], ([hasUpdate, forceUpdate]) => {
+  if (hasUpdate) {
+    // 如果是强制更新，立即显示
+    // 如果是可选更新，延迟显示
+    if (forceUpdate) {
+      showUpdateDialog.value = true
+    } else {
+      setTimeout(() => {
+        showUpdateDialog.value = true
+      }, 3000) // 3秒后显示
+    }
+  }
+})
 
 watch(
   () => route.path,
@@ -41,7 +69,7 @@ watch(
       activeTab.value = 'dashboard'
     } else if (path.startsWith('/plans')) {
       activeTab.value = 'plans'
-    } else if (path.startsWith('/appointment')) {
+    } else if (path.startsWith('/appointments')) {
       activeTab.value = 'appointments'
     } else if (path.startsWith('/inbound')) {
       activeTab.value = 'inbound'
@@ -61,6 +89,12 @@ watch(activeTab, (name, oldName) => {
   if (route.path !== targetPath) {
     router.push(targetPath)
   }
+})
+
+// 在"我的"页面添加手动检查更新
+onMounted(() => {
+  // 暴露全局方法供其他页面调用
+  window.checkAppUpdate = performCheck
 })
 </script>
 

@@ -83,13 +83,25 @@
     </div>
 
     <template #footer>
-      <el-button @click="handleClose">关闭</el-button>
+      <div class="dialog-footer">
+        <el-button
+          v-if="canApprove()"
+          type="success"
+          :icon="Check"
+          @click="handleApprove"
+        >
+          审批
+        </el-button>
+        <el-button @click="handleClose">关闭</el-button>
+      </div>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { Check } from '@element-plus/icons-vue'
+import { useAuthStore } from '@/stores/auth'
 import { appointmentApi } from '@/api'
 
 const props = defineProps({
@@ -97,7 +109,9 @@ const props = defineProps({
   appointmentId: [Number, String]
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'approve'])
+
+const authStore = useAuthStore()
 
 const dialogVisible = computed({
   get: () => props.modelValue,
@@ -121,12 +135,12 @@ watch(() => props.modelValue, (val) => {
 
 async function loadDetail() {
   try {
-    const { data } = await appointmentApi.getDetail(props.appointmentId)
-    appointment.value = data.data
+    const response = await appointmentApi.getDetail(props.appointmentId)
+    appointment.value = response.data
 
     // 加载审批历史
     const historyRes = await appointmentApi.getApprovalHistory(props.appointmentId)
-    approvalLogs.value = historyRes.data.data || []
+    approvalLogs.value = historyRes.data || []
   } catch (error) {
     console.error('加载详情失败:', error)
   }
@@ -175,9 +189,25 @@ function getActionText(action) {
   }
   return texts[action] || action
 }
+
+function canApprove() {
+  if (!appointment.value) return false
+  return appointment.value.status === 'pending' && authStore.hasPermission('appointment_approve')
+}
+
+function handleApprove() {
+  emit('approve', appointment.value)
+}
+
 </script>
 
 <style scoped>
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .approval-history {
   margin-top: 20px;
   padding-top: 20px;

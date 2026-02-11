@@ -235,6 +235,7 @@
     <AppointmentDetailDialog
       v-model="detailVisible"
       :appointment-id="currentAppointmentId"
+      @approve="handleApproveFromDetail"
     />
 
     <!-- 审批对话框 -->
@@ -259,15 +260,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Refresh, Plus, Download, View, Edit, Delete, Check,
   Calendar, User
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
-import { useProjectStore } from '@/stores/projectStore'
 import TableToolbar from '@/components/common/TableToolbar.vue'
 import ProjectSelector from '@/components/common/ProjectSelector.vue'
 import AppointmentDialog from '@/components/Appointment/AppointmentDialog.vue'
@@ -275,19 +275,11 @@ import AppointmentDetailDialog from '@/components/Appointment/AppointmentDetailD
 import AppointmentApproveDialog from '@/components/Appointment/AppointmentApproveDialog.vue'
 import AppointmentAssignDialog from '@/components/Appointment/AppointmentAssignDialog.vue'
 import AppointmentCalendarDialog from '@/components/Appointment/AppointmentCalendarDialog.vue'
-import {
-  getAppointments,
-  deleteAppointment,
-  getAppointmentStats,
-  submitAppointment,
-  startWork,
-  completeAppointment,
-  cancelAppointment
-} from '@/api/appointment'
+import { appointmentApi, projectApi } from '@/api'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
-const projectStore = useProjectStore()
 
 const loading = ref(false)
 const tableData = ref([])
@@ -299,6 +291,7 @@ const calendarVisible = ref(false)
 const dialogMode = ref('create')
 const currentAppointment = ref(null)
 const currentAppointmentId = ref(null)
+const projectList = ref([])
 
 const searchForm = reactive({
   project_id: '',
@@ -326,13 +319,62 @@ const stats = reactive({
   urgent: 0
 })
 
-const projectList = computed(() => projectStore.projects)
-
 onMounted(() => {
   loadData()
   loadStats()
-  projectStore.fetchProjects()
+  fetchProjects()
 })
+
+// 监听路由参数，自动打开详情弹窗
+watch(() => route.query, (query) => {
+  const appointmentNo = query.appointment_no
+  const appointmentId = query.id
+
+  if (appointmentNo || appointmentId) {
+    // 延迟执行，确保数据已加载
+    setTimeout(() => {
+      let targetAppointment = null
+
+      if (appointmentNo) {
+        targetAppointment = tableData.value.find(item => item.appointment_no === appointmentNo)
+      } else if (appointmentId) {
+        targetAppointment = tableData.value.find(item => item.id === parseInt(appointmentId))
+      }
+
+      if (targetAppointment) {
+        handleView(targetAppointment)
+        // 清除查询参数，避免重复触发
+        router.replace({ query: {} })
+      } else {
+        // 如果当前页没有找到，可能数据在其他页，尝试重新加载数据
+        loadData().then(() => {
+          setTimeout(() => {
+            let retryTarget = null
+            if (appointmentNo) {
+              retryTarget = tableData.value.find(item => item.appointment_no === appointmentNo)
+            } else if (appointmentId) {
+              retryTarget = tableData.value.find(item => item.id === parseInt(appointmentId))
+            }
+
+            if (retryTarget) {
+              handleView(retryTarget)
+              router.replace({ query: {} })
+            }
+          }, 100)
+        })
+      }
+    }, 300)
+  }
+}, { immediate: true })
+
+async function fetchProjects() {
+  try {
+    const response = await projectApi.getList({ page: 1, page_size: 1000 })
+    projectList.value = response.data?.projects || response.data || []
+  } catch (error) {
+    console.error('获取项目列表失败:', error)
+  }
+}
 
 async function loadData() {
   loading.value = true
@@ -351,9 +393,10 @@ async function loadData() {
       params.end_date = searchForm.dateRange[1]
     }
 
-    const { data } = await getAppointments(params)
-    tableData.value = data.data || []
-    pagination.total = data.meta?.total || 0
+    const response = await appointmentApi.getList(params)
+    // 后端返回格式: { success: true, data: [...], meta: {...} }
+    tableData.value = response.data || []
+    pagination.total = response.meta?.total || 0
   } catch (error) {
     ElMessage.error('加载数据失败')
   } finally {
@@ -363,8 +406,9 @@ async function loadData() {
 
 async function loadStats() {
   try {
-    const { data } = await getAppointmentStats()
-    Object.assign(stats, data.data || {})
+    const response = await appointmentApi.getStats()
+    // 后端返回格式: { success: true, data: {...} }
+    Object.assign(stats, response.data || {})
   } catch (error) {
     console.error('加载统计数据失败:', error)
   }
@@ -404,7 +448,7 @@ function handleDelete(row) {
     type: 'warning'
   }).then(async () => {
     try {
-      await deleteAppointment(row.id)
+      await appointmentApi.delete(row.id)
       ElMessage.success('删除成功')
       loadData()
       loadStats()
@@ -441,6 +485,11 @@ function handleDialogSuccess() {
 function handleApproveSuccess() {
   loadData()
   loadStats()
+}
+
+function handleApproveFromDetail(row) {
+  currentAppointmentId.value = row.id
+  approveVisible.value = true
 }
 
 function handleAssignSuccess() {

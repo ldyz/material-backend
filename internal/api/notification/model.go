@@ -19,11 +19,12 @@ type Notification struct {
 
 // Notification types
 const (
-	TypeRequisitionApprove = "requisition_approve"
-	TypeInboundApprove     = "inbound_approve"
+	TypeRequisitionApprove  = "requisition_approve"
+	TypeInboundApprove      = "inbound_approve"
 	TypeMaterialPlanApprove = "material_plan_approve"
-	TypeStockAlert         = "stock_alert"
-	TypeSystem             = "system"
+	TypeAppointmentApprove  = "appointment_approve"
+	TypeStockAlert          = "stock_alert"
+	TypeSystem              = "system"
 )
 
 func (n *Notification) ToDTO() map[string]any {

@@ -4,12 +4,27 @@
 
     <!-- 用户信息卡片 -->
     <van-cell-group inset class="user-info">
-      <van-cell center>
+      <van-cell center @click="handleAvatarClick">
         <template #icon>
-          <van-icon name="user-circle-o" size="60" color="#1989fa" />
+          <div class="avatar-wrapper" @click.stop="handleAvatarClick">
+            <van-image
+              v-if="authStore.user?.avatar"
+              round
+              width="60"
+              height="60"
+              :src="authStore.user.avatar"
+            />
+            <van-icon
+              v-else
+              name="user-circle-o"
+              size="60"
+              :color="getAvatarColor()"
+            />
+            <van-icon name="photo-o" class="avatar-edit-icon" size="18" />
+          </div>
         </template>
         <template #title>
-          <span class="username">{{ authStore.username }}</span>
+          <span class="username">{{ authStore.user?.full_name || authStore.username }}</span>
         </template>
         <template #label>
           <span class="user-role" v-if="authStore.user?.role">{{ getRoleText(authStore.user.role) }}</span>
@@ -41,6 +56,7 @@
 
     <!-- 设置 -->
     <van-cell-group inset title="设置">
+      <van-cell title="上传头像" icon="photo-o" is-link @click="handleAvatarClick" />
       <van-cell title="刷新数据" icon="replay" is-link @click="handleRefresh" />
       <van-cell title="关于" icon="info-o" is-link @click="showAbout" />
     </van-cell-group>
@@ -71,6 +87,22 @@
         退出登录
       </van-button>
     </div>
+
+    <!-- 隐藏的文件上传input -->
+    <input
+      ref="avatarInputRef"
+      type="file"
+      accept="image/*"
+      style="display: none"
+      @change="handleAvatarChange"
+    />
+
+    <!-- 头像裁剪对话框 -->
+    <AvatarCropperDialog
+      v-model="showCropperDialog"
+      :image-file="selectedAvatarFile"
+      @success="handleAvatarSuccess"
+    />
   </div>
 </template>
 
@@ -79,10 +111,15 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { useAuthStore } from '@/stores/auth'
+import * as authApi from '@/api/auth'
+import AvatarCropperDialog from '@/components/AvatarCropperDialog.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const showAboutDialog = ref(false)
+const avatarInputRef = ref(null)
+const showCropperDialog = ref(false)
+const selectedAvatarFile = ref(null)
 
 function getRoleText(role) {
   const roleMap = {
@@ -93,6 +130,48 @@ function getRoleText(role) {
     super_admin: '超级管理员'
   }
   return roleMap[role] || role || '-'
+}
+
+function getAvatarColor() {
+  const colors = ['#1989fa', '#07c160', '#ff976a', '#ee0a24', '#909399']
+  const userId = authStore.user?.id || authStore.userId || 0
+  return colors[userId % colors.length]
+}
+
+function handleAvatarClick() {
+  avatarInputRef.value?.click()
+}
+
+async function handleAvatarChange(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+
+  // 验证文件大小（5MB - 裁剪前可以大一些）
+  if (file.size > 5 * 1024 * 1024) {
+    showToast({ type: 'fail', message: '图片文件大小不能超过5MB' })
+    return
+  }
+
+  // 验证文件类型
+  if (!file.type.startsWith('image/')) {
+    showToast({ type: 'fail', message: '只支持图片格式的文件' })
+    return
+  }
+
+  // 打开裁剪对话框
+  selectedAvatarFile.value = file
+  showCropperDialog.value = true
+
+  // 清空 input
+  if (avatarInputRef.value) {
+    avatarInputRef.value.value = ''
+  }
+}
+
+async function handleAvatarSuccess() {
+  // 刷新用户信息
+  await authStore.fetchCurrentUser()
+  selectedAvatarFile.value = null
 }
 
 async function handleRefresh() {
@@ -134,6 +213,21 @@ async function handleLogout() {
 
 .user-info {
   margin-bottom: 16px;
+}
+
+.avatar-wrapper {
+  position: relative;
+  margin-right: 12px;
+}
+
+.avatar-edit-icon {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  background-color: #fff;
+  border-radius: 50%;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .username {

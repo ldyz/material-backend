@@ -1,6 +1,6 @@
 {
   "name": "material-mobile",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Material Management Mobile App",
   "scripts": {
@@ -16,14 +16,18 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.0.2",
+    "@capacitor/app": "^8.0.0",
     "@capacitor/core": "^8.0.2",
+    "@capacitor/device": "^8.0.0",
     "@capacitor/local-notifications": "^8.0.0",
     "@capacitor/push-notifications": "^8.0.0",
     "@capacitor/status-bar": "^8.0.0",
     "axios": "^1.6.0",
+    "cropperjs": "^1.6.2",
     "pinia": "^2.1.7",
     "vant": "^4.8.0",
     "vue": "^3.4.0",
+    "vue-cropper": "^0.6.5",
     "vue-router": "^4.2.5"
   },
   "devDependencies": {

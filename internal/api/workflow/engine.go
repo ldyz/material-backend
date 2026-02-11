@@ -449,7 +449,45 @@ func (e *Engine) finishWorkflow(instance *WorkflowInstance, actorID uint, actorN
 	// 记录日志
 	e.log(instance.ID, NodeTypeEnd, "finish", actorID, actorName, nil)
 
+	// 通知申请人审批通过
+	e.notifyWorkflowApproved(instance, actorID, actorName)
+
 	return nil
+}
+
+// notifyWorkflowApproved 通知申请人工作流审批通过
+func (e *Engine) notifyWorkflowApproved(instance *WorkflowInstance, actorID uint, actorName string) {
+	businessTypeName := getBusinessTypeName(instance.BusinessType)
+
+	notificationData := map[string]interface{}{
+		"instance_id":   instance.ID,
+		"business_type": instance.BusinessType,
+		"business_id":   instance.BusinessID,
+		"business_no":   instance.BusinessNo,
+		"approved_by":   actorName,
+		"finished_at":   instance.FinishedAt,
+	}
+
+	title := fmt.Sprintf("审批通过：%s", businessTypeName)
+	content := fmt.Sprintf("您提交的%s已审批通过，单号：%s", businessTypeName, instance.BusinessNo)
+
+	var notificationType string
+	switch instance.BusinessType {
+	case "inbound_order":
+		notificationType = notification.TypeInboundApprove
+	case "requisition":
+		notificationType = notification.TypeRequisitionApprove
+	case "material_plan":
+		notificationType = notification.TypeMaterialPlanApprove
+	case "construction_appointment":
+		notificationType = notification.TypeAppointmentApprove
+	default:
+		notificationType = notification.TypeSystem
+	}
+
+	if err := notification.CreateNotification(e.db, instance.InitiatorID, notificationType, title, content, notificationData); err != nil {
+		fmt.Printf("通知申请人失败: %v\n", err)
+	}
 }
 
 // createApprovalTasks 创建审批待办任务
@@ -773,6 +811,8 @@ func (e *Engine) sendApprovalNotifications(instance *WorkflowInstance, node *Wor
 			notificationType = notification.TypeRequisitionApprove
 		} else if instance.BusinessType == "material_plan" {
 			notificationType = notification.TypeMaterialPlanApprove
+		} else if instance.BusinessType == "construction_appointment" {
+			notificationType = notification.TypeAppointmentApprove
 		} else {
 			notificationType = notification.TypeSystem
 		}
@@ -859,9 +899,10 @@ func (e *Engine) getUserSuperior(userID uint) (*auth.User, error) {
 // getBusinessTypeName 获取业务类型的显示名称
 func getBusinessTypeName(businessType string) string {
 	names := map[string]string{
-		"inbound_order": "入库单",
-		"requisition":   "领料单",
-		"material_plan": "物资计划",
+		"inbound_order":          "入库单",
+		"requisition":            "领料单",
+		"material_plan":          "物资计划",
+		"construction_appointment": "施工预约单",
 	}
 	if name, ok := names[businessType]; ok {
 		return name

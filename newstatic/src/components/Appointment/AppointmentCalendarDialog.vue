@@ -10,7 +10,6 @@
       <el-radio-group v-model="viewMode" @change="handleViewChange">
         <el-radio-button label="week">周视图</el-radio-button>
         <el-radio-button label="month">月视图</el-radio-button>
-        <el-radio-button label="season">季度视图</el-radio-button>
       </el-radio-group>
 
       <div class="date-navigator">
@@ -59,27 +58,18 @@
                 :class="{ 'has-appointment': slot.appointment }"
               >
                 <div class="slot-label">{{ slot.label }}</div>
-                <div v-if="slot.appointment" class="appointment-item" @click="showAppointment(slot.appointment)">
-                  <div class="appointment-no">{{ slot.appointment.appointment_no }}</div>
-                  <div class="appointment-location">{{ slot.appointment.work_location }}</div>
-                  <div class="appointment-content">{{ slot.appointment.work_content }}</div>
-                  <el-tag
-                    v-if="slot.appointment.is_urgent"
-                    type="danger"
-                    size="small"
-                    class="appointment-urgent"
-                  >加急</el-tag>
+                <div v-if="slot.appointment" class="appointment-item-simple" @click="showAppointment(slot.appointment)">
+                  <el-tag :type="getStatusType(slot.appointment.status)" size="small">
+                    {{ getTimeSlotShortLabel(slot.time_slot) }}
+                  </el-tag>
+                  <span class="appointment-summary">{{ slot.appointment.work_location }}</span>
+                  <span v-if="slot.appointment.assigned_worker_name" class="appointment-worker-small">
+                    {{ slot.appointment.assigned_worker_name }}
+                  </span>
+                  <el-tag v-if="slot.appointment.is_urgent" type="danger" size="small">急</el-tag>
                 </div>
                 <div v-else class="slot-empty">
-                  <el-button
-                    v-if="canCreate"
-                    type="primary"
-                    size="small"
-                    link
-                    @click="createAppointment(day.date, slot.time_slot)"
-                  >
-                    + 预约
-                  </el-button>
+                  <span class="slot-empty-text">空闲</span>
                 </div>
               </div>
             </div>
@@ -89,10 +79,70 @@
 
       <!-- 月视图 -->
       <div v-else-if="viewMode === 'month'" class="month-view">
+        <!-- 任务状态图例 -->
+        <div class="legend-section">
+          <div class="legend-group">
+            <div class="legend-title">任务状态：</div>
+            <div class="legend-items">
+              <span class="legend-item">
+                <span class="legend-box" style="background: linear-gradient(135deg, #fff1f0 0%, #ffccc7 100%); border: 1px solid #ffa39e;"></span>
+                加急任务
+              </span>
+              <span class="legend-item">
+                <span class="legend-box" style="background: linear-gradient(135deg, #fffbe6 0%, #ffe58f 100%); border: 1px solid #ffd666;"></span>
+                待审批
+              </span>
+              <span class="legend-item">
+                <span class="legend-box" style="background: linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%); border: 1px solid #91d5ff;"></span>
+                进行中
+              </span>
+              <span class="legend-item">
+                <span class="legend-box" style="background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%); border: 1px solid #b7eb8f;"></span>
+                已排期
+              </span>
+              <span class="legend-item">
+                <span class="legend-box" style="background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%); border: 1px solid #d9d9d9;"></span>
+                已完成
+              </span>
+            </div>
+          </div>
+
+          <!-- 人力状态图例 -->
+          <div class="legend-group">
+            <div class="legend-title">人力状态：</div>
+            <div class="legend-items">
+              <span class="legend-item">
+                <span class="legend-box legend-available"></span>
+                空闲 (任务 &lt; 30%人力)
+              </span>
+              <span class="legend-item">
+                <span class="legend-box legend-normal"></span>
+                正常 (30%-75%人力)
+              </span>
+              <span class="legend-item">
+                <span class="legend-box legend-busy"></span>
+                紧张 (75%-100%人力)
+              </span>
+              <span class="legend-item">
+                <span class="legend-box legend-overload"></span>
+                超载 (任务 ≥ 100%人力)
+              </span>
+            </div>
+          </div>
+        </div>
         <el-calendar v-model="currentDate">
           <template #date-cell="{ data }">
-            <div class="calendar-day" @click="handleDayClick(data)">
-              <div class="day-number">{{ data.day.split('-').slice(-1)[0] }}</div>
+            <div
+              class="calendar-day"
+              :class="[getDayClass(data.day), getWorkloadClass(data.day)]"
+              @click="handleDayClick(data)"
+            >
+              <div class="day-number">
+                {{ data.day.split('-').slice(-1)[0] }}
+                <span v-if="getDayWorkloadInfo(data.day)" class="workload-indicator" :class="getWorkloadClass(data.day)">
+                  {{ getDayWorkloadInfo(data.day)?.text }}
+                </span>
+              </div>
               <div class="day-appointments">
                 <div
                   v-for="apt in getAppointmentsForDay(data.day)"
@@ -100,45 +150,19 @@
                   class="day-appointment-item"
                   @click.stop="showAppointment(apt)"
                 >
-                  <el-tag :type="getStatusColor(apt.status)" size="small">
+                  <el-tag :type="getStatusType(apt.status)" size="small">
                     {{ apt.time_slot }}
                   </el-tag>
                   <span class="appointment-summary">{{ apt.work_location }}</span>
+                  <span v-if="apt.assigned_worker_name" class="appointment-worker-small">
+                    {{ apt.assigned_worker_name }}
+                  </span>
                   <el-tag v-if="apt.is_urgent" type="danger" size="small">急</el-tag>
                 </div>
               </div>
             </div>
           </template>
         </el-calendar>
-      </div>
-
-      <!-- 季度视图 - 统计列表 -->
-      <div v-else class="season-view">
-        <el-table :data="seasonData" border style="width: 100%">
-          <el-table-column prop="date" label="日期" width="120" />
-          <el-table-column prop="time_slot" label="时间段" width="100">
-            <template #default="scope">
-              {{ getTimeSlotLabel(scope.row.time_slot) }}
-            </template>
-          </el-table-column>
-          <el-table-column prop="appointment_no" label="预约单号" width="140" />
-          <el-table-column prop="work_location" label="作业地点" />
-          <el-table-column prop="work_content" label="作业内容" show-overflow-tooltip />
-          <el-table-column label="状态" width="90">
-            <template #default="scope">
-              <el-tag :type="getStatusType(scope.row.status)" size="small">
-                {{ getStatusLabel(scope.row.status) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="80">
-            <template #default="scope">
-              <el-button type="primary" link @click="showAppointment(scope.row)">
-                查看
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
       </div>
     </div>
 
@@ -178,13 +202,16 @@ const selectedWorkerId = ref(null)
 const loading = ref(false)
 const appointments = ref([])
 const weekDays = ref([])
-const seasonData = ref([])
 const workerList = ref([])
 
 const detailVisible = ref(false)
 const selectedAppointmentId = ref(null)
 
 const canCreate = ref(false) // TODO: 根据权限设置
+
+// 人力状态相关
+const totalWorkers = ref(0) // 总作业人员数量
+const dailyWorkload = ref({}) // 每日工作量统计
 
 const currentDateRange = computed(() => {
   const date = currentDate.value
@@ -198,13 +225,8 @@ const currentDateRange = computed(() => {
     return `${start.toLocaleDateString('zh-CN')} - ${end.toLocaleDateString('zh-CN')}`
   } else if (viewMode.value === 'month') {
     return `${date.getFullYear()}年 ${date.getMonth() + 1}月`
-  } else {
-    // 季度
-    const quarter = Math.floor(date.getMonth() / 3)
-    const start = new Date(date.getFullYear(), quarter * 3, 1)
-    const end = new Date(date.getFullYear(), (quarter + 1) * 3, 0)
-    return `${start.toLocaleDateString('zh-CN')} - ${end.toLocaleDateString('zh-CN')}`
   }
+  return ''
 })
 
 watch(() => props.modelValue, (val) => {
@@ -216,6 +238,18 @@ watch(() => props.modelValue, (val) => {
 watch(viewMode, () => {
   loadData()
 })
+
+// 获取作业人员总数
+async function fetchTotalWorkers() {
+  try {
+    const response = await appointmentApi.getWorkersList()
+    const workers = response.data || []
+    totalWorkers.value = workers.length
+  } catch (error) {
+    console.error('获取作业人员总数失败:', error)
+    totalWorkers.value = 10 // 设置默认值
+  }
+}
 
 async function loadData() {
   loading.value = true
@@ -232,13 +266,14 @@ async function loadData() {
       params.worker_id = selectedWorkerId.value
     }
 
-    const { data } = await appointmentApi.getList(params)
-    appointments.value = data.data || []
+    const response = await appointmentApi.getList(params)
+    appointments.value = response.data || response.data?.data || []
+
+    // 计算工作量
+    calculateDailyWorkload()
 
     if (viewMode.value === 'week') {
       buildWeekData()
-    } else if (viewMode.value === 'season') {
-      buildSeasonData()
     }
   } catch (error) {
     ElMessage.error('加载数据失败')
@@ -263,11 +298,6 @@ function getDateRange() {
   } else if (viewMode.value === 'month') {
     startDate = new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0]
     endDate = new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().split('T')[0]
-  } else {
-    // 季度
-    const quarter = Math.floor(date.getMonth() / 3)
-    startDate = new Date(date.getFullYear(), quarter * 3, 1).toISOString().split('T')[0]
-    endDate = new Date(date.getFullYear(), (quarter + 1) * 3, 0).toISOString().split('T')[0]
   }
 
   return { startDate, endDate }
@@ -282,9 +312,9 @@ function buildWeekData() {
   const days = []
   const dayNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
   const timeSlots = [
-    { time_slot: 'morning', label: '上午' },
-    { time_slot: 'afternoon', label: '下午' },
-    { time_slot: 'evening', label: '晚上' }
+    { time_slot: 'morning', label: '上午 (8:00-11:30)' },
+    { time_slot: 'noon', label: '中午 (12:00-13:30)' },
+    { time_slot: 'afternoon', label: '下午 (13:30-16:30)' }
   ]
 
   for (let i = 0; i < 7; i++) {
@@ -314,18 +344,15 @@ function buildWeekData() {
   weekDays.value = days
 }
 
-function buildSeasonData() {
-  // 按日期排序
-  seasonData.value = [...appointments.value].sort((a, b) => {
-    const dateA = new Date(a.work_date)
-    const dateB = new Date(b.work_date)
-    return dateA - dateB
-  })
-}
-
 function getAppointmentsForDay(day) {
   return appointments.value.filter(apt => {
-    const aptDate = apt.work_date.split(' ')[0]
+    // 处理不同格式的日期
+    let aptDate = apt.work_date
+    if (aptDate.includes(' ')) {
+      aptDate = aptDate.split(' ')[0]
+    } else if (aptDate.includes('T')) {
+      aptDate = aptDate.split('T')[0]
+    }
     return aptDate === day
   })
 }
@@ -341,8 +368,6 @@ function previousPeriod() {
     date.setDate(date.getDate() - 7)
   } else if (viewMode.value === 'month') {
     date.setMonth(date.getMonth() - 1)
-  } else {
-    date.setMonth(date.getMonth() - 3)
   }
   currentDate.value = date
   loadData()
@@ -354,8 +379,6 @@ function nextPeriod() {
     date.setDate(date.getDate() + 7)
   } else if (viewMode.value === 'month') {
     date.setMonth(date.getMonth() + 1)
-  } else {
-    date.setMonth(date.getMonth() + 3)
   }
   currentDate.value = date
   loadData()
@@ -392,9 +415,116 @@ function getStatusType(status) {
   return appointmentApi.getStatusType(status)
 }
 
+function getTimeSlotShortLabel(timeSlot) {
+  const labels = {
+    morning: '上午',
+    noon: '中午',
+    afternoon: '下午',
+    full_day: '全天'
+  }
+  return labels[timeSlot] || timeSlot
+}
+
+function getDayClass(day) {
+  const dayAppointments = getAppointmentsForDay(day)
+
+  if (dayAppointments.length === 0) {
+    return ''
+  }
+
+  // 检查是否有加急任务
+  const hasUrgent = dayAppointments.some(apt => apt.is_urgent)
+  if (hasUrgent) {
+    return 'day-has-urgent'
+  }
+
+  // 检查状态优先级: pending > in_progress > scheduled > completed > other
+  const statusPriority = ['pending', 'in_progress', 'scheduled', 'completed']
+  for (const status of statusPriority) {
+    if (dayAppointments.some(apt => apt.status === status)) {
+      return `day-has-${status}`
+    }
+  }
+
+  return 'day-has-appointments'
+}
+
+// 计算每日工作量
+function calculateDailyWorkload() {
+  const workload = {}
+
+  appointments.value.forEach(apt => {
+    const date = apt.work_date.split(' ')[0] || apt.work_date.split('T')[0]
+
+    if (!workload[date]) {
+      workload[date] = {
+        total: 0,
+        assigned: 0,
+        unassigned: 0
+      }
+    }
+
+    workload[date].total++
+
+    if (apt.assigned_worker_id) {
+      workload[date].assigned++
+    } else {
+      workload[date].unassigned++
+    }
+  })
+
+  dailyWorkload.value = workload
+}
+
+// 获取某天的人力状态类名
+function getWorkloadClass(day) {
+  const info = getDayWorkloadInfo(day)
+  if (!info) return ''
+
+  if (info.ratio >= 1) return 'workload-overload'
+  if (info.ratio >= 0.75) return 'workload-busy'
+  if (info.ratio >= 0.3) return 'workload-normal'
+  return 'workload-available'
+}
+
+// 获取某天的人力状态信息
+function getDayWorkloadInfo(day) {
+  if (!dailyWorkload.value[day] || totalWorkers.value === 0) {
+    return null
+  }
+
+  const workload = dailyWorkload.value[day]
+  const ratio = workload.total / totalWorkers.value
+  let status = ''
+  let text = `${workload.total}/${totalWorkers.value}任务`
+
+  if (ratio >= 1) {
+    status = '超载'
+  } else if (ratio >= 0.75) {
+    status = '紧张'
+  } else if (ratio >= 0.3) {
+    status = '正常'
+  } else {
+    status = '空闲'
+  }
+
+  return {
+    ratio,
+    status,
+    text: `${text}`,
+    total: workload.total,
+    workers: totalWorkers.value
+  }
+}
+
 function handleClose() {
   emit('update:modelValue', false)
 }
+
+// 初始化
+onMounted(() => {
+  fetchTotalWorkers()
+})
 </script>
 
 <style scoped>
@@ -474,36 +604,34 @@ function handleClose() {
   color: #ddd;
 }
 
-.appointment-item {
-  padding: 12px;
+.slot-empty-text {
+  color: #c0c4cc;
+  font-size: 13px;
+}
+
+.appointment-item-simple {
+  padding: 10px 12px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   transition: background 0.2s;
 }
 
-.appointment-item:hover {
+.appointment-item-simple:hover {
   background: #f5f7fa;
 }
 
-.appointment-no {
-  font-weight: 500;
-  color: #333;
-  margin-bottom: 4px;
-}
-
-.appointment-location {
+.appointment-summary {
   font-size: 13px;
-  color: #666;
-  margin-bottom: 4px;
+  color: #606266;
+  flex: 1;
 }
 
-.appointment-content {
+.appointment-worker-small {
   font-size: 12px;
-  color: #999;
-  margin-bottom: 4px;
-}
-
-.appointment-urgent {
-  margin-top: 4px;
+  color: #909399;
 }
 
 .month-view {
@@ -551,7 +679,181 @@ function handleClose() {
   color: #666;
 }
 
-.season-view {
-  padding: 10px;
+.appointment-worker-small {
+  font-size: 11px;
+  color: #409eff;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: #ecf5ff;
+}
+
+.text-muted {
+  color: #999;
+  font-style: italic;
+}
+
+/* 日历视图天样式 - 根据任务状态显示不同背景色 */
+.month-view :deep(.el-calendar-day) {
+  height: 100%;
+  min-height: 85px;
+  padding: 0;
+}
+
+.month-view :deep(.el-calendar-table__td) {
+  border: 1px solid #ebeef5;
+  padding: 0;
+}
+
+.month-view :deep(.el-calendar-table) {
+  border: none;
+}
+
+.month-view :deep(.el-calendar-table td.is-selected) {
+  background: transparent;
+}
+
+/* 我们的 calendar-day div 需要占满整个单元格 */
+.month-view :deep(.el-calendar-day .calendar-day) {
+  width: 100%;
+  height: 100%;
+  min-height: 80px;
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+.month-view :deep(.el-calendar-day .calendar-day.day-has-urgent) {
+  background: linear-gradient(135deg, #fff1f0 0%, #ffccc7 100%) !important;
+  border-radius: 4px;
+  border: 1px solid #ffa39e;
+}
+
+.month-view :deep(.el-calendar-day .calendar-day.day-has-pending) {
+  background: linear-gradient(135deg, #fffbe6 0%, #ffe58f 100%) !important;
+  border-radius: 4px;
+  border: 1px solid #ffd666;
+}
+
+.month-view :deep(.el-calendar-day .calendar-day.day-has-in_progress) {
+  background: linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%) !important;
+  border-radius: 4px;
+  border: 1px solid #91d5ff;
+}
+
+.month-view :deep(.el-calendar-day .calendar-day.day-has-scheduled) {
+  background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%) !important;
+  border-radius: 4px;
+  border: 1px solid #b7eb8f;
+}
+
+.month-view :deep(.el-calendar-day .calendar-day.day-has-completed) {
+  background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%) !important;
+  border-radius: 4px;
+  border: 1px solid #d9d9d9;
+}
+
+.month-view :deep(.el-calendar-day .calendar-day.day-has-appointments) {
+  background: linear-gradient(135deg, #f9f9f9 0%, #f0f0f0 100%) !important;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+/* 人力状态指示器 */
+.legend-section {
+  padding: 16px;
+  margin-bottom: 16px;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px solid #ebeef5;
+}
+
+.legend-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.legend-group:last-child {
+  margin-bottom: 0;
+}
+
+.legend-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-right: 12px;
+  min-width: 80px;
+}
+
+.legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #606266;
+}
+
+.legend-box {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid #dcdfe6;
+  flex-shrink: 0;
+}
+
+.legend-box.legend-available {
+  background: #67c23a;
+}
+
+.legend-box.legend-normal {
+  background: #409eff;
+}
+
+.legend-box.legend-busy {
+  background: #e6a23c;
+}
+
+.legend-box.legend-overload {
+  background: #f56c6c;
+}
+
+.month-view :deep(.day-number) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.workload-indicator {
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.month-view :deep(.workload-indicator.workload-available) {
+  background: #67c23a;
+  color: white;
+}
+
+.month-view :deep(.workload-indicator.workload-normal) {
+  background: #409eff;
+  color: white;
+}
+
+.month-view :deep(.workload-indicator.workload-busy) {
+  background: #e6a23c;
+  color: white;
+}
+
+.month-view :deep(.workload-indicator.workload-overload) {
+  background: #f56c6c;
+  color: white;
 }
 </style>

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -119,6 +120,58 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			response.SuccessWithMessage(c, nil, "密码修改成功")
 		})
 
+		// update avatar
+		auth.POST("/avatar", func(c *gin.Context) {
+			user, err := GetCurrentUser(c, db)
+			if err != nil || user == nil {
+				response.NotFound(c, "用户不存在")
+				return
+			}
+
+			// 获取上传的文件
+			file, err := c.FormFile("avatar")
+			if err != nil {
+				response.BadRequest(c, "请选择要上传的头像文件")
+				return
+			}
+
+			// 检查文件大小（最大2MB）
+			if file.Size > 2*1024*1024 {
+				response.BadRequest(c, "头像文件大小不能超过2MB")
+				return
+			}
+
+			// 检查文件类型
+			ext := filepath.Ext(file.Filename)
+			allowedExts := map[string]bool{
+				".jpg":  true,
+				".jpeg": true,
+				".png":  true,
+				".gif":  true,
+				".webp": true,
+			}
+			if !allowedExts[strings.ToLower(ext)] {
+				response.BadRequest(c, "只支持 JPG、PNG、GIF、WEBP 格式的图片")
+				return
+			}
+
+			// 创建上传目录
+			uploadDir := "static/uploads/avatars"
+			if err := c.SaveUploadedFile(file, filepath.Join(uploadDir, file.Filename)); err != nil {
+				response.InternalError(c, "文件保存失败")
+				return
+			}
+
+			// 更新用户头像路径
+			user.Avatar = "/uploads/avatars/" + file.Filename
+			if err := db.Save(user).Error; err != nil {
+				response.InternalError(c, "头像更新失败")
+				return
+			}
+
+			response.SuccessWithMessage(c, map[string]string{"avatar": user.Avatar}, "头像更新成功")
+		})
+
 		// USERS CRUD
 		// list users
 		auth.GET("/users", PermissionMiddleware(db, "user_view"), func(c *gin.Context) {
@@ -139,12 +192,23 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 		// create user
 		auth.POST("/users", PermissionMiddleware(db, "user_create"), func(c *gin.Context) {
-			var req struct{ Username, Password, Email, FullName, Role string; IsActive bool }
+			var req struct {
+				Username string `json:"username"`
+				Password string `json:"password"`
+				Email    string `json:"email"`
+				FullName string `json:"full_name"`
+				Role     string `json:"role"`
+				IsActive bool   `json:"is_active"`
+			}
 			if err := c.ShouldBindJSON(&req); err != nil {
 				response.BadRequest(c, err.Error())
 				return
 			}
-			u := User{Username: req.Username, Email: req.Email, FullName: req.FullName, Role: req.Role, IsActive: req.IsActive}
+			u := User{Username: req.Username, Email: req.Email, FullName: req.FullName, Role: req.Role, IsActive: true}
+			// 默认启用，只有在请求明确指定false时才禁用
+			if req.IsActive == false {
+				u.IsActive = false
+			}
 			if err := u.SetPassword(req.Password); err != nil {
 				response.InternalError(c, "设置密码失败")
 				return

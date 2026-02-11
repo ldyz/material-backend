@@ -1,12 +1,14 @@
 package appointment
 
 import (
+	"log"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yourorg/material-backend/backend/internal/api/auth"
+	"github.com/yourorg/material-backend/backend/internal/api/audit"
 	"github.com/yourorg/material-backend/backend/internal/api/response"
 	jwtpkg "github.com/yourorg/material-backend/backend/pkg/jwt"
 	"gorm.io/gorm"
@@ -36,6 +38,9 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	// 作业人员的预约列表
 	g.GET("/worker/:workerId", auth.PermissionMiddleware(db, "appointment_view"), getWorkerAppointments(service))
 
+	// 获取作业人员列表
+	g.GET("/workers", auth.PermissionMiddleware(db, "appointment_view"), getWorkersList(service))
+
 	// 搜索
 	g.GET("/search", auth.PermissionMiddleware(db, "appointment_view"), searchAppointments(service))
 
@@ -58,7 +63,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	g.DELETE("/:id", auth.PermissionMiddleware(db, "appointment_delete"), deleteAppointment(service))
 
 	// 提交审批
-	g.POST("/:id/submit", auth.PermissionMiddleware(db, "appointment_submit"), submitAppointment(service))
+	g.POST("/:id/submit", auth.PermissionMiddleware(db, "appointment_submit"), submitAppointment(service, workflowService))
 
 	// 启动工作流
 	g.POST("/:id/workflow/start", auth.PermissionMiddleware(db, "appointment_approve"), startWorkflow(workflowService))
@@ -111,6 +116,9 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		// 获取日历视图数据
 		calendar.GET("/view", auth.PermissionMiddleware(db, "appointment_view"), getCalendarView(calendarService))
 	}
+
+	// 每日统计数据
+	g.GET("/daily-statistics", auth.PermissionMiddleware(db, "appointment_view"), getDailyStatistics(service))
 }
 
 // getStats 获取统计数据
@@ -174,16 +182,20 @@ func listAppointments(service *AppointmentService) gin.HandlerFunc {
 			}
 		}
 
+		// 获取当前用户ID
+		currentUserID := c.GetInt64("current_user_id")
+
 		req := AppointmentListRequest{
-			Page:        page,
-			PageSize:    pageSize,
-			Status:      strings.TrimSpace(c.Query("status")),
-			IsUrgent:    isUrgent,
-			StartDate:   strings.TrimSpace(c.Query("start_date")),
-			EndDate:     strings.TrimSpace(c.Query("end_date")),
-			ApplicantID: applicantID,
-			WorkerID:    workerID,
-			WorkType:    strings.TrimSpace(c.Query("work_type")),
+			Page:          page,
+			PageSize:      pageSize,
+			Status:        strings.TrimSpace(c.Query("status")),
+			IsUrgent:      isUrgent,
+			StartDate:     strings.TrimSpace(c.Query("start_date")),
+			EndDate:       strings.TrimSpace(c.Query("end_date")),
+			ApplicantID:   applicantID,
+			WorkerID:      workerID,
+			WorkType:      strings.TrimSpace(c.Query("work_type")),
+			CurrentUserID: uint(currentUserID),
 		}
 
 		appointments, total, err := service.List(req)
@@ -204,6 +216,9 @@ func listAppointments(service *AppointmentService) gin.HandlerFunc {
 			"page_size": pageSize,
 		}
 
+		// 添加日志
+		log.Printf("返回预约单列表: total=%d, len(items)=%d", total, len(items))
+
 		response.SuccessWithMeta(c, items, meta)
 	}
 }
@@ -211,12 +226,13 @@ func listAppointments(service *AppointmentService) gin.HandlerFunc {
 // getMyAppointments 获取我的预约
 func getMyAppointments(service *AppointmentService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID := jwtpkg.GetUserID(c)
+		userID := c.GetInt64("current_user_id")
 		if userID == 0 {
 			response.Unauthorized(c, "未授权")
 			return
 		}
 
+		uid := uint(userID)
 		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 		pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 		if pageSize > 100 {
@@ -229,7 +245,7 @@ func getMyAppointments(service *AppointmentService) gin.HandlerFunc {
 			Status:      strings.TrimSpace(c.Query("status")),
 			StartDate:   strings.TrimSpace(c.Query("start_date")),
 			EndDate:     strings.TrimSpace(c.Query("end_date")),
-			ApplicantID: &userID,
+			ApplicantID: &uid,
 		}
 
 		appointments, total, err := service.List(req)
@@ -256,7 +272,7 @@ func getMyAppointments(service *AppointmentService) gin.HandlerFunc {
 // getPendingApprovals 获取待审批列表
 func getPendingApprovals(service *WorkflowService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID := jwtpkg.GetUserID(c)
+		userID := c.GetInt64("current_user_id")
 		if userID == 0 {
 			response.Unauthorized(c, "未授权")
 			return
@@ -268,7 +284,7 @@ func getPendingApprovals(service *WorkflowService) gin.HandlerFunc {
 			pageSize = 100
 		}
 
-		items, total, err := service.GetPendingApprovals(userID, page, pageSize)
+		items, total, err := service.GetPendingApprovals(uint(userID), page, pageSize)
 		if err != nil {
 			response.InternalError(c, "获取待审批列表失败")
 			return
@@ -397,8 +413,8 @@ func exportAppointments(service *AppointmentService) gin.HandlerFunc {
 // createAppointment 创建预约单
 func createAppointment(service *AppointmentService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID := jwtpkg.GetUserID(c)
-		userName := jwtpkg.GetUserName(c)
+		userID := c.GetInt64("current_user_id")
+		userName := c.GetString("current_username")
 		if userID == 0 {
 			response.Unauthorized(c, "未授权")
 			return
@@ -410,11 +426,15 @@ func createAppointment(service *AppointmentService) gin.HandlerFunc {
 			return
 		}
 
-		appointment, err := service.Create(req, userID, userName)
+		appointment, err := service.Create(req, uint(userID), userName)
 		if err != nil {
 			response.BadRequest(c, err.Error())
 			return
 		}
+
+		// 记录操作日志
+		uid := uint(userID)
+		audit.LogCreate(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, appointment.ID, appointment.AppointmentNo, req)
 
 		response.Success(c, appointment.ToDTO())
 	}
@@ -423,8 +443,8 @@ func createAppointment(service *AppointmentService) gin.HandlerFunc {
 // batchCreateAppointments 批量创建预约单
 func batchCreateAppointments(service *AppointmentService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID := jwtpkg.GetUserID(c)
-		userName := jwtpkg.GetUserName(c)
+		userID := c.GetInt64("current_user_id")
+		userName := c.GetString("current_username")
 		if userID == 0 {
 			response.Unauthorized(c, "未授权")
 			return
@@ -436,7 +456,7 @@ func batchCreateAppointments(service *AppointmentService) gin.HandlerFunc {
 			return
 		}
 
-		appointments, errs := service.BatchCreate(req, userID, userName)
+		appointments, errs := service.BatchCreate(req, uint(userID), userName)
 		if len(errs) > 0 {
 			errorMsgs := make([]string, len(errs))
 			for i, e := range errs {
@@ -489,6 +509,12 @@ func updateAppointment(service *AppointmentService) gin.HandlerFunc {
 			return
 		}
 
+		userID := c.GetInt64("current_user_id")
+		userName := c.GetString("current_username")
+
+		// 获取原始数据用于变更记录
+		before, _ := service.GetByID(uint(id))
+
 		var req UpdateAppointmentRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			response.BadRequest(c, "请求参数错误: "+err.Error())
@@ -500,6 +526,10 @@ func updateAppointment(service *AppointmentService) gin.HandlerFunc {
 			response.BadRequest(c, err.Error())
 			return
 		}
+
+		// 记录操作日志
+		uid := uint(userID)
+		audit.LogUpdate(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, appointment.ID, appointment.AppointmentNo, before, appointment)
 
 		response.Success(c, appointment.ToDTO())
 	}
@@ -515,17 +545,27 @@ func deleteAppointment(service *AppointmentService) gin.HandlerFunc {
 			return
 		}
 
+		userID := c.GetInt64("current_user_id")
+		userName := c.GetString("current_username")
+
+		// 获取原始数据用于日志记录
+		before, _ := service.GetByID(uint(id))
+
 		if err := service.Delete(uint(id)); err != nil {
 			response.BadRequest(c, err.Error())
 			return
 		}
 
+		// 记录操作日志
+		uid := uint(userID)
+		audit.LogDelete(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, uint(id), before.AppointmentNo, before)
+
 		response.SuccessWithMessage(c, nil, "删除成功")
 	}
 }
 
-// submitAppointment 提交审批
-func submitAppointment(service *AppointmentService) gin.HandlerFunc {
+// submitAppointment 提交审批并自动启动工作流
+func submitAppointment(service *AppointmentService, workflowService *WorkflowService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		idStr := c.Param("id")
 		id, err := strconv.ParseUint(idStr, 10, 32)
@@ -534,11 +574,26 @@ func submitAppointment(service *AppointmentService) gin.HandlerFunc {
 			return
 		}
 
+		userID := c.GetInt64("current_user_id")
+		userName := c.GetString("current_username")
+
+		// 提交预约单
 		appointment, err := service.Submit(uint(id))
 		if err != nil {
 			response.BadRequest(c, err.Error())
 			return
 		}
+
+		// 自动启动工作流（workflowID=0会使用默认工作流）
+		_, _, err = workflowService.StartApprovalWorkflow(appointment.ID, 0)
+		if err != nil {
+			log.Printf("启动工作流失败: %v", err)
+			// 工作流启动失败不影响提交结果，只记录日志
+		}
+
+		// 记录操作日志
+		uid := uint(userID)
+		audit.LogSubmit(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, appointment.ID, appointment.AppointmentNo)
 
 		response.Success(c, appointment.ToDTO())
 	}
@@ -593,8 +648,8 @@ func approveAppointment(service *WorkflowService) gin.HandlerFunc {
 			return
 		}
 
-		userID := jwtpkg.GetUserID(c)
-		userName := jwtpkg.GetUserName(c)
+		userID := c.GetInt64("current_user_id")
+		userName := c.GetString("current_username")
 		if userID == 0 {
 			response.Unauthorized(c, "未授权")
 			return
@@ -606,9 +661,17 @@ func approveAppointment(service *WorkflowService) gin.HandlerFunc {
 			return
 		}
 
-		if err := service.ProcessApproval(*appointment.WorkflowInstanceID, userID, userName, req); err != nil {
+		if err := service.ProcessApproval(*appointment.WorkflowInstanceID, uint(userID), userName, req); err != nil {
 			response.BadRequest(c, err.Error())
 			return
+		}
+
+		// 记录操作日志
+		uid := uint(userID)
+		if req.Action == "approve" {
+			audit.LogApprove(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, appointment.ID, appointment.AppointmentNo, req.Comment)
+		} else if req.Action == "reject" {
+			audit.LogReject(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, appointment.ID, appointment.AppointmentNo, req.Comment)
 		}
 
 		// 获取更新后的预约单
@@ -627,13 +690,13 @@ func recallWorkflow(service *WorkflowService) gin.HandlerFunc {
 			return
 		}
 
-		userID := jwtpkg.GetUserID(c)
+		userID := c.GetInt64("current_user_id")
 		if userID == 0 {
 			response.Unauthorized(c, "未授权")
 			return
 		}
 
-		if err := service.RecallWorkflow(uint(id), userID); err != nil {
+		if err := service.RecallWorkflow(uint(id), uint(userID)); err != nil {
 			response.BadRequest(c, err.Error())
 			return
 		}
@@ -652,22 +715,52 @@ func assignWorker(service *AppointmentService) gin.HandlerFunc {
 			return
 		}
 
+		userID := c.GetInt64("current_user_id")
+		userName := c.GetString("current_username")
+
 		var req AssignWorkerRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			response.BadRequest(c, "请求参数错误: "+err.Error())
 			return
 		}
 
-		// 获取作业人员姓名
-		var workerName string
-		db := service.db
-		db.Table("users").Where("id = ?", req.WorkerID).Pluck("name", &workerName)
+		// 兼容旧版单选和新版多选
+		var workerIDs []uint
+		if req.WorkerID > 0 {
+			workerIDs = []uint{req.WorkerID}
+		} else if len(req.WorkerIDs) > 0 {
+			workerIDs = req.WorkerIDs
+		} else {
+			response.BadRequest(c, "请选择作业人员")
+			return
+		}
 
-		appointment, err := service.AssignWorker(uint(id), req.WorkerID, workerName)
+		db := service.db
+		// 获取作业人员姓名
+		var workerNames []string
+		db.Table("users").Where("id IN ?", workerIDs).Pluck("full_name", &workerNames)
+
+		// 获取监护人姓名
+		var supervisorName string
+		if req.SupervisorID != nil && *req.SupervisorID > 0 {
+			db.Table("users").Where("id = ?", *req.SupervisorID).Pluck("full_name", &supervisorName)
+		}
+
+		appointment, err := service.AssignWorkers(uint(id), workerIDs, workerNames, req.SupervisorID, supervisorName)
 		if err != nil {
 			response.BadRequest(c, err.Error())
 			return
 		}
+
+		// 记录操作日志
+		uid := uint(userID)
+		assignData := map[string]interface{}{
+			"worker_ids":    workerIDs,
+			"worker_names":  workerNames,
+			"supervisor_id": req.SupervisorID,
+			"supervisor_name": supervisorName,
+		}
+		audit.LogAssign(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, appointment.ID, appointment.AppointmentNo, assignData)
 
 		response.Success(c, appointment.ToDTO())
 	}
@@ -683,11 +776,18 @@ func startWork(service *AppointmentService) gin.HandlerFunc {
 			return
 		}
 
+		userID := c.GetInt64("current_user_id")
+		userName := c.GetString("current_username")
+
 		appointment, err := service.StartWork(uint(id))
 		if err != nil {
 			response.BadRequest(c, err.Error())
 			return
 		}
+
+		// 记录操作日志
+		uid := uint(userID)
+		audit.LogStart(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, appointment.ID, appointment.AppointmentNo)
 
 		response.Success(c, appointment.ToDTO())
 	}
@@ -703,6 +803,9 @@ func completeAppointment(service *AppointmentService) gin.HandlerFunc {
 			return
 		}
 
+		userID := c.GetInt64("current_user_id")
+		userName := c.GetString("current_username")
+
 		var req CompleteAppointmentRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			response.BadRequest(c, "请求参数错误: "+err.Error())
@@ -714,6 +817,10 @@ func completeAppointment(service *AppointmentService) gin.HandlerFunc {
 			response.BadRequest(c, err.Error())
 			return
 		}
+
+		// 记录操作日志
+		uid := uint(userID)
+		audit.LogComplete(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, appointment.ID, appointment.AppointmentNo)
 
 		response.Success(c, appointment.ToDTO())
 	}
@@ -729,6 +836,9 @@ func cancelAppointment(service *AppointmentService) gin.HandlerFunc {
 			return
 		}
 
+		userID := c.GetInt64("current_user_id")
+		userName := c.GetString("current_username")
+
 		var req struct {
 			Reason string `json:"reason"`
 		}
@@ -739,6 +849,10 @@ func cancelAppointment(service *AppointmentService) gin.HandlerFunc {
 			response.BadRequest(c, err.Error())
 			return
 		}
+
+		// 记录操作日志
+		uid := uint(userID)
+		audit.LogCancel(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, appointment.ID, appointment.AppointmentNo, req.Reason)
 
 		response.Success(c, appointment.ToDTO())
 	}
@@ -807,8 +921,8 @@ func getCurrentApproval(service *WorkflowService) gin.HandlerFunc {
 // batchApprove 批量审批
 func batchApprove(service *WorkflowService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID := jwtpkg.GetUserID(c)
-		userName := jwtpkg.GetUserName(c)
+		userID := c.GetInt64("current_user_id")
+		userName := c.GetString("current_username")
 		if userID == 0 {
 			response.Unauthorized(c, "未授权")
 			return
@@ -824,7 +938,7 @@ func batchApprove(service *WorkflowService) gin.HandlerFunc {
 			return
 		}
 
-		results, errs := service.BatchApprove(req.InstanceIDs, userID, userName, req.Action, req.Comment)
+		results, errs := service.BatchApprove(req.InstanceIDs, uint(userID), userName, req.Action, req.Comment)
 
 		response.Success(c, map[string]any{
 			"results": results,
@@ -921,7 +1035,7 @@ func batchBlockCalendar(service *CalendarService) gin.HandlerFunc {
 	}
 }
 
-// getAvailableWorkers 获取可用作业人员
+// getAvailableWorkers 获取作业人员列表（包含可用状态）
 func getAvailableWorkers(service *CalendarService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		workDateStr := c.Query("work_date")
@@ -938,22 +1052,13 @@ func getAvailableWorkers(service *CalendarService) gin.HandlerFunc {
 			return
 		}
 
-		workers, err := service.GetAvailableWorkers(workDate, timeSlot)
+		workers, err := service.GetAllWorkersWithAvailability(workDate, timeSlot)
 		if err != nil {
-			response.InternalError(c, "获取可用作业人员失败")
+			response.InternalError(c, "获取作业人员失败")
 			return
 		}
 
-		// 获取作业人员详细信息
-		type WorkerInfo struct {
-			ID   uint   `json:"id"`
-			Name string `json:"name"`
-		}
-		var workerInfos []WorkerInfo
-		db := service.db
-		db.Table("users").Where("id IN ?", workers).Find(&workerInfos)
-
-		response.Success(c, workerInfos)
+		response.Success(c, workers)
 	}
 }
 
@@ -1005,5 +1110,45 @@ func getCalendarView(service *CalendarService) gin.HandlerFunc {
 			"end_date":   endDateStr,
 			"events":     calendarData,
 		})
+	}
+}
+
+// getWorkersList 获取作业人员列表
+func getWorkersList(service *AppointmentService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		workers, err := service.GetWorkersList()
+		if err != nil {
+			log.Printf("获取作业人员列表失败: %v", err)
+			response.InternalError(c, "获取作业人员列表失败")
+			return
+		}
+
+		response.Success(c, workers)
+	}
+}
+
+// getDailyStatistics 获取每日预约统计数据
+func getDailyStatistics(service *AppointmentService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		startDate := c.Query("start_date")
+		endDate := c.Query("end_date")
+
+		// 默认返回当月数据
+		if startDate == "" || endDate == "" {
+			now := time.Now()
+			startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+			endOfMonth := startOfMonth.AddDate(0, 1, -1)
+			startDate = startOfMonth.Format("2006-01-02")
+			endDate = endOfMonth.Format("2006-01-02")
+		}
+
+		stats, err := service.GetDailyStatistics(startDate, endDate)
+		if err != nil {
+			log.Printf("获取每日统计数据失败: %v", err)
+			response.InternalError(c, "获取每日统计数据失败")
+			return
+		}
+
+		response.Success(c, stats)
 	}
 }

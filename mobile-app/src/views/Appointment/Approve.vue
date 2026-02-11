@@ -115,7 +115,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Toast, Dialog } from 'vant'
+import { showSuccessToast, showFailToast, Dialog } from 'vant'
 import {
   getAppointmentDetail,
   approveAppointment,
@@ -153,10 +153,12 @@ onMounted(async () => {
 
 async function loadDetail() {
   try {
-    const { data } = await getAppointmentDetail(route.params.id)
-    appointment.value = data.data
+    const response = await getAppointmentDetail(route.params.id)
+    console.log('Appointment detail response:', response)
+    appointment.value = response.data
   } catch (error) {
-    Toast.fail('加载预约单详情失败')
+    console.error('加载预约单详情失败:', error)
+    showFailToast('加载预约单详情失败')
   } finally {
     loading.value = false
   }
@@ -164,8 +166,9 @@ async function loadDetail() {
 
 async function loadApprovalHistory() {
   try {
-    const { data } = await getApprovalHistory(route.params.id)
-    approvalLogs.value = data.data || []
+    const response = await getApprovalHistory(route.params.id)
+    console.log('Approval history response:', response)
+    approvalLogs.value = response.data || []
   } catch (error) {
     console.error('加载审批历史失败:', error)
   }
@@ -173,8 +176,9 @@ async function loadApprovalHistory() {
 
 async function loadCurrentApproval() {
   try {
-    const { data } = await getCurrentApproval(route.params.id)
-    currentApproval.value = data.data
+    const response = await getCurrentApproval(route.params.id)
+    console.log('Current approval response:', response)
+    currentApproval.value = response.data
   } catch (error) {
     console.error('加载当前审批节点失败:', error)
   }
@@ -183,11 +187,12 @@ async function loadCurrentApproval() {
 async function loadAvailableWorkers() {
   if (!appointment.value) return
   try {
-    const { data } = await getAvailableWorkers({
+    const response = await getAvailableWorkers({
       work_date: appointment.value.work_date,
       time_slot: appointment.value.time_slot
     })
-    workerOptions.value = data.data?.map(worker => ({
+    console.log('Available workers response:', response)
+    workerOptions.value = response.data?.map(worker => ({
       text: worker.name,
       value: worker.id
     })) || []
@@ -198,7 +203,7 @@ async function loadAvailableWorkers() {
 
 async function handleApprove() {
   if (assignNow.value && !selectedWorkerId.value) {
-    Toast.fail('请选择作业人员')
+    showFailToast('请选择作业人员')
     return
   }
 
@@ -210,10 +215,10 @@ async function handleApprove() {
       assign_now: assignNow.value,
       worker_id: selectedWorkerId.value
     })
-    Toast.success('审批成功')
+    showSuccessToast('审批成功')
     router.back()
   } catch (error) {
-    Toast.fail(error.message || '审批失败')
+    showFailToast(error.message || '审批失败')
   } finally {
     submitting.value = false
   }
@@ -226,10 +231,10 @@ async function handleReject() {
       action: 'reject',
       comment: comment.value
     })
-    Toast.success('已拒绝')
+    showSuccessToast('已拒绝')
     router.back()
   } catch (error) {
-    Toast.fail(error.message || '操作失败')
+    showFailToast(error.message || '操作失败')
   } finally {
     submitting.value = false
   }

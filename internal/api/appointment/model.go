@@ -1,6 +1,7 @@
 package appointment
 
 import (
+	"encoding/json"
 	"time"
 
 	"gorm.io/gorm"
@@ -8,30 +9,34 @@ import (
 
 // ConstructionAppointment 施工预约单
 type ConstructionAppointment struct {
-	ID                  uint      `gorm:"primaryKey" json:"id"`
-	AppointmentNo       string    `gorm:"size:50;uniqueIndex" json:"appointment_no"`
-	ProjectID           *uint     `gorm:"index" json:"project_id"`
-	ApplicantID         uint      `gorm:"index" json:"applicant_id"`
-	ApplicantName       string    `gorm:"size:100" json:"applicant_name"`
-	ContactPhone        string    `gorm:"size:20" json:"contact_phone"`
-	ContactPerson       string    `gorm:"size:100" json:"contact_person"`
-	WorkDate            time.Time `gorm:"index;not null" json:"work_date"`
-	TimeSlot            string    `gorm:"size:50;not null" json:"time_slot"`
-	WorkLocation        string    `gorm:"size:500;not null" json:"work_location"`
-	WorkContent         string    `gorm:"type:text;not null" json:"work_content"`
-	WorkType            string    `gorm:"size:50" json:"work_type"`
-	IsUrgent            bool      `gorm:"default:false;index" json:"is_urgent"`
-	Priority            int       `gorm:"default:0" json:"priority"`
-	UrgentReason        string    `gorm:"type:text" json:"urgent_reason"`
-	AssignedWorkerID    *uint     `gorm:"index" json:"assigned_worker_id"`
-	AssignedWorkerName  string    `gorm:"size:100" json:"assigned_worker_name"`
-	Status              string    `gorm:"size:20;default:draft;index" json:"status"`
-	WorkflowInstanceID  *uint     `gorm:"index" json:"workflow_instance_id"`
-	SubmittedAt         *time.Time `json:"submitted_at"`
-	ApprovedAt          *time.Time `json:"approved_at"`
-	CompletedAt         *time.Time `json:"completed_at"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                   uint      `gorm:"primaryKey" json:"id"`
+	AppointmentNo        string    `gorm:"size:50;uniqueIndex" json:"appointment_no"`
+	ProjectID            *uint     `gorm:"index" json:"project_id"`
+	ApplicantID          uint      `gorm:"index" json:"applicant_id"`
+	ApplicantName        string    `gorm:"size:100" json:"applicant_name"`
+	ContactPhone         string    `gorm:"size:20" json:"contact_phone"`
+	ContactPerson        string    `gorm:"size:100" json:"contact_person"`
+	WorkDate             time.Time `gorm:"index;not null" json:"work_date"`
+	TimeSlot             string    `gorm:"size:50;not null" json:"time_slot"`
+	WorkLocation         string    `gorm:"size:500;not null" json:"work_location"`
+	WorkContent          string    `gorm:"type:text;not null" json:"work_content"`
+	WorkType             string    `gorm:"size:50" json:"work_type"`
+	IsUrgent             bool      `gorm:"default:false;index" json:"is_urgent"`
+	Priority             int       `gorm:"default:0" json:"priority"`
+	UrgentReason         string    `gorm:"type:text" json:"urgent_reason"`
+	AssignedWorkerID     *uint     `gorm:"index" json:"assigned_worker_id"`        // 保留用于兼容性
+	AssignedWorkerName   string    `gorm:"size:100" json:"assigned_worker_name"`    // 保留用于兼容性
+	AssignedWorkerIDs    string    `gorm:"type:text" json:"assigned_worker_ids"`    // JSON数组格式: [1,2,3]
+	AssignedWorkerNames  string    `gorm:"type:text" json:"assigned_worker_names"`  // 逗号分隔: 张三,李四,王五
+	SupervisorID         *uint     `gorm:"index" json:"supervisor_id"`           // 监护人ID
+	SupervisorName       string    `gorm:"size:100" json:"supervisor_name"`       // 监护人姓名
+	Status               string    `gorm:"size:20;default:draft;index" json:"status"`
+	WorkflowInstanceID   *uint     `gorm:"index" json:"workflow_instance_id"`
+	SubmittedAt          *time.Time `json:"submitted_at"`
+	ApprovedAt           *time.Time `json:"approved_at"`
+	CompletedAt          *time.Time `json:"completed_at"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 // WorkerCalendar 作业人员日历
@@ -71,31 +76,39 @@ func (a *ConstructionAppointment) ToDTO() map[string]any {
 		completedAt = a.CompletedAt.Format("2006-01-02 15:04:05")
 	}
 
+	// 解析作业人员ID列表
+	var assignedWorkerIDs []uint
+	if a.AssignedWorkerIDs != "" {
+		json.Unmarshal([]byte(a.AssignedWorkerIDs), &assignedWorkerIDs)
+	}
+
 	return map[string]any{
-		"id":                  a.ID,
-		"appointment_no":      a.AppointmentNo,
-		"project_id":          a.ProjectID,
-		"applicant_id":        a.ApplicantID,
-		"applicant_name":      a.ApplicantName,
-		"contact_phone":       a.ContactPhone,
-		"contact_person":      a.ContactPerson,
-		"work_date":           a.WorkDate.Format("2006-01-02"),
-		"time_slot":           a.TimeSlot,
-		"work_location":       a.WorkLocation,
-		"work_content":        a.WorkContent,
-		"work_type":           a.WorkType,
-		"is_urgent":           a.IsUrgent,
-		"priority":            a.Priority,
-		"urgent_reason":       a.UrgentReason,
-		"assigned_worker_id":  a.AssignedWorkerID,
-		"assigned_worker_name": a.AssignedWorkerName,
-		"status":              a.Status,
-		"workflow_instance_id": a.WorkflowInstanceID,
-		"submitted_at":        submittedAt,
-		"approved_at":         approvedAt,
-		"completed_at":        completedAt,
-		"created_at":          a.CreatedAt.Format("2006-01-02 15:04:05"),
-		"updated_at":          a.UpdatedAt.Format("2006-01-02 15:04:05"),
+		"id":                    a.ID,
+		"appointment_no":        a.AppointmentNo,
+		"project_id":            a.ProjectID,
+		"applicant_id":          a.ApplicantID,
+		"applicant_name":        a.ApplicantName,
+		"contact_phone":         a.ContactPhone,
+		"contact_person":        a.ContactPerson,
+		"work_date":             a.WorkDate.Format("2006-01-02"),
+		"time_slot":             a.TimeSlot,
+		"work_location":         a.WorkLocation,
+		"work_content":          a.WorkContent,
+		"work_type":             a.WorkType,
+		"is_urgent":             a.IsUrgent,
+		"priority":              a.Priority,
+		"urgent_reason":         a.UrgentReason,
+		"assigned_worker_id":    a.AssignedWorkerID,
+		"assigned_worker_name":  a.AssignedWorkerName,
+		"assigned_worker_ids":   assignedWorkerIDs,
+		"assigned_worker_names": a.AssignedWorkerNames,
+		"status":                a.Status,
+		"workflow_instance_id":  a.WorkflowInstanceID,
+		"submitted_at":          submittedAt,
+		"approved_at":           approvedAt,
+		"completed_at":          completedAt,
+		"created_at":            a.CreatedAt.Format("2006-01-02 15:04:05"),
+		"updated_at":            a.UpdatedAt.Format("2006-01-02 15:04:05"),
 	}
 }
 
@@ -117,18 +130,20 @@ func (w *WorkerCalendar) ToDTO() map[string]any {
 
 // CreateAppointmentRequest 创建预约单请求
 type CreateAppointmentRequest struct {
-	ProjectID      *uint  `json:"project_id" binding:"required_without=WorkType"`
-	ContactPhone   string `json:"contact_phone"`
-	ContactPerson  string `json:"contact_person"`
-	WorkDate       string `json:"work_date" binding:"required"`
-	TimeSlot       string `json:"time_slot" binding:"required,oneof=morning afternoon evening full_day"`
-	WorkLocation   string `json:"work_location" binding:"required"`
-	WorkContent    string `json:"work_content" binding:"required"`
-	WorkType       string `json:"work_type"`
-	IsUrgent       bool   `json:"is_urgent"`
-	Priority       int    `json:"priority" binding:"min=0,max=10"`
-	UrgentReason   string `json:"urgent_reason"`
-	AssignedWorkerID *uint `json:"assigned_worker_id"`
+	ProjectID          *uint  `json:"project_id"`
+	ContactPhone       string `json:"contact_phone"`
+	ContactPerson      string `json:"contact_person"`
+	WorkDate           string `json:"work_date" binding:"required"`
+	TimeSlot           string `json:"time_slot" binding:"required,oneof=morning noon afternoon full_day"`
+	WorkLocation       string `json:"work_location" binding:"required"`
+	WorkContent        string `json:"work_content" binding:"required"`
+	WorkType           string `json:"work_type"`
+	IsUrgent           bool   `json:"is_urgent"`
+	Priority           int    `json:"priority" binding:"min=0,max=10"`
+	UrgentReason       string `json:"urgent_reason"`
+	AssignedWorkerID   *uint  `json:"assigned_worker_id"`
+	AssignedWorkerIDs  string `json:"assigned_worker_ids"`  // JSON数组格式
+	AssignedWorkerNames string `json:"assigned_worker_names"` // 逗号分隔
 }
 
 // UpdateAppointmentRequest 更新预约单请求
@@ -137,7 +152,7 @@ type UpdateAppointmentRequest struct {
 	ContactPhone      string  `json:"contact_phone"`
 	ContactPerson     string  `json:"contact_person"`
 	WorkDate          string  `json:"work_date"`
-	TimeSlot          string  `json:"time_slot" binding:"omitempty,oneof=morning afternoon evening full_day"`
+	TimeSlot          string  `json:"time_slot" binding:"omitempty,oneof=morning noon afternoon full_day"`
 	WorkLocation      string  `json:"work_location"`
 	WorkContent       string  `json:"work_content"`
 	WorkType          string  `json:"work_type"`
@@ -158,7 +173,8 @@ type AppointmentListRequest struct {
 	EndDate    string `form:"end_date"`
 	ApplicantID *uint `form:"applicant_id"`
 	WorkerID   *uint  `form:"worker_id"`
-	WorkType   string `form:"work_type"`
+	WorkType     string `form:"work_type"`
+	CurrentUserID uint  // 当前用户ID，用于权限过滤
 }
 
 // CalendarListRequest 日历列表查询请求
@@ -166,7 +182,7 @@ type CalendarListRequest struct {
 	WorkerID   *uint  `form:"worker_id"`
 	StartDate  string `form:"start_date" binding:"required"`
 	EndDate    string `form:"end_date" binding:"required"`
-	TimeSlot   string `form:"time_slot" binding:"omitempty,oneof=morning afternoon evening full_day"`
+	TimeSlot   string `form:"time_slot" binding:"omitempty,oneof=morning noon afternoon full_day"`
 	Status     string `form:"status"`
 }
 
@@ -174,12 +190,14 @@ type CalendarListRequest struct {
 type AvailabilityCheckRequest struct {
 	WorkerID   uint   `json:"worker_id" binding:"required"`
 	WorkDate   string `json:"work_date" binding:"required"`
-	TimeSlot   string `json:"time_slot" binding:"required,oneof=morning afternoon evening full_day"`
+	TimeSlot   string `json:"time_slot" binding:"required,oneof=morning noon afternoon full_day"`
 }
 
 // AssignWorkerRequest 分配作业人员请求
 type AssignWorkerRequest struct {
-	WorkerID uint `json:"worker_id" binding:"required"`
+	WorkerID     uint   `json:"worker_id,omitempty"`   // 单个作业人员ID（兼容旧版）
+	WorkerIDs    []uint `json:"worker_ids,omitempty"`  // 多个作业人员ID（新版）
+	SupervisorID *uint  `json:"supervisor_id,omitempty"` // 监护人ID
 }
 
 // BatchBlockCalendarRequest 批量锁定日历请求
@@ -187,7 +205,7 @@ type BatchBlockCalendarRequest struct {
 	WorkerID      uint     `json:"worker_id" binding:"required"`
 	StartDate     string   `json:"start_date" binding:"required"`
 	EndDate       string   `json:"end_date" binding:"required"`
-	TimeSlots     []string `json:"time_slots" binding:"required,min=1"`
+	TimeSlots     []string `json:"time_slots" binding:"required,min=1,dive,oneof=morning noon afternoon full_day"`
 	BlockedReason string   `json:"blocked_reason"`
 }
 
@@ -250,11 +268,25 @@ type StatsResponse struct {
 	MonthCount  int64 `json:"month_count"`
 }
 
+// DailyStatistics 每日统计数据
+type DailyStatistics struct {
+	Date         string `json:"date"`         // YYYY-MM-DD
+	TotalCount   int64  `json:"total_count"`  // 当天任务总数
+	UrgentCount  int64  `json:"urgent_count"` // 加急任务数
+	TotalWorkers int64  `json:"total_workers"` // 总作业人员数
+}
+
+// DailyStatisticsResponse 每日统计响应
+type DailyStatisticsResponse struct {
+	Statistics []DailyStatistics `json:"statistics"`
+	TotalWorkers int64           `json:"total_workers"` // 总作业人员数
+}
+
 // TimeSlotConstants 时间段常量
 const (
 	TimeSlotMorning   = "morning"
+	TimeSlotNoon      = "noon"
 	TimeSlotAfternoon = "afternoon"
-	TimeSlotEvening   = "evening"
 	TimeSlotFullDay   = "full_day"
 )
 
@@ -328,9 +360,9 @@ func (a *ConstructionAppointment) NeedsUrgentApproval() bool {
 // GetTimeSlotLabel 获取时间段标签
 func GetTimeSlotLabel(timeSlot string) string {
 	labels := map[string]string{
-		TimeSlotMorning:   "上午",
-		TimeSlotAfternoon: "下午",
-		TimeSlotEvening:   "晚上",
+		TimeSlotMorning:   "上午 (8:00-11:30)",
+		TimeSlotNoon:      "中午 (12:00-13:30)",
+		TimeSlotAfternoon: "下午 (13:30-16:30)",
 		TimeSlotFullDay:   "全天",
 	}
 	if label, ok := labels[timeSlot]; ok {

@@ -199,6 +199,15 @@ export function getAppointmentStats(params) {
   })
 }
 
+// 获取每日预约统计数据
+export function getDailyStatistics(params) {
+  return request({
+    url: '/appointments/daily-statistics',
+    method: 'GET',
+    params
+  })
+}
+
 // 日历相关API
 
 // 获取作业人员日历
@@ -246,6 +255,14 @@ export function getCalendarView(params) {
   })
 }
 
+// 获取作业人员列表
+export function getWorkersList() {
+  return request({
+    url: '/appointments/workers',
+    method: 'GET'
+  })
+}
+
 // 导出预约单
 export function exportAppointments(params) {
   return request({
@@ -262,8 +279,8 @@ export function exportAppointments(params) {
 export function getTimeSlotLabel(timeSlot) {
   const labels = {
     morning: '上午',
+    noon: '中午',
     afternoon: '下午',
-    evening: '晚上',
     full_day: '全天'
   }
   return labels[timeSlot] || timeSlot
@@ -300,9 +317,9 @@ export function getStatusColor(status) {
 // 获取时间段选项
 export function getTimeSlotOptions() {
   return [
-    { value: 'morning', label: '上午 (08:00-12:00)' },
-    { value: 'afternoon', label: '下午 (14:00-18:00)' },
-    { value: 'evening', label: '晚上 (19:00-22:00)' },
+    { value: 'morning', label: '上午 (8:00-11:30)' },
+    { value: 'noon', label: '中午 (12:00-13:30)' },
+    { value: 'afternoon', label: '下午 (13:30-16:30)' },
     { value: 'full_day', label: '全天' }
   ]
 }

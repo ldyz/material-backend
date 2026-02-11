@@ -21,3 +21,14 @@ export function getCurrentUser() {
     method: 'GET'
   })
 }
+
+export function uploadAvatar(formData) {
+  return request({
+    url: '/auth/avatar',
+    method: 'POST',
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}

@@ -147,6 +147,97 @@ func (s *Service) LogReject(userID *uint, username, module, resourceType string,
 	return s.Log(log)
 }
 
+// LogAssign 记录分配操作
+func (s *Service) LogAssign(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string, assignedData interface{}) error {
+	var paramsJSON json.RawMessage
+	if assignedData != nil {
+		var err error
+		paramsJSON, err = json.Marshal(assignedData)
+		if err != nil {
+			return err
+		}
+	}
+
+	log := &OperationLog{
+		UserID:        userID,
+		Username:      username,
+		Operation:     OpAssign,
+		Module:        module,
+		ResourceType:  resourceType,
+		ResourceID:    &resourceID,
+		ResourceNo:    resourceNo,
+		RequestParams: paramsJSON,
+		Status:        LogStatusSuccess,
+	}
+	return s.Log(log)
+}
+
+// LogStart 记录开始操作
+func (s *Service) LogStart(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string) error {
+	log := &OperationLog{
+		UserID:       userID,
+		Username:     username,
+		Operation:    OpStart,
+		Module:       module,
+		ResourceType: resourceType,
+		ResourceID:   &resourceID,
+		ResourceNo:   resourceNo,
+		Status:       LogStatusSuccess,
+	}
+	return s.Log(log)
+}
+
+// LogSubmit 记录提交操作
+func (s *Service) LogSubmit(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string) error {
+	log := &OperationLog{
+		UserID:       userID,
+		Username:     username,
+		Operation:    OpSubmit,
+		Module:       module,
+		ResourceType: resourceType,
+		ResourceID:   &resourceID,
+		ResourceNo:   resourceNo,
+		Status:       LogStatusSuccess,
+	}
+	return s.Log(log)
+}
+
+// LogCancel 记录取消操作
+func (s *Service) LogCancel(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string, reason string) error {
+	params := map[string]any{
+		"reason": reason,
+	}
+	paramsJSON, _ := json.Marshal(params)
+
+	log := &OperationLog{
+		UserID:        userID,
+		Username:      username,
+		Operation:     OpCancel,
+		Module:        module,
+		ResourceType:  resourceType,
+		ResourceID:    &resourceID,
+		ResourceNo:    resourceNo,
+		RequestParams: paramsJSON,
+		Status:        LogStatusSuccess,
+	}
+	return s.Log(log)
+}
+
+// LogComplete 记录完成操作
+func (s *Service) LogComplete(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string) error {
+	log := &OperationLog{
+		UserID:       userID,
+		Username:     username,
+		Operation:    OpComplete,
+		Module:       module,
+		ResourceType: resourceType,
+		ResourceID:   &resourceID,
+		ResourceNo:   resourceNo,
+		Status:       LogStatusSuccess,
+	}
+	return s.Log(log)
+}
+
 // LogError 记录错误操作
 func (s *Service) LogError(userID *uint, username, operation, module string, errorMessage string, requestPath string, params interface{}) error {
 	var paramsJSON json.RawMessage
@@ -432,4 +523,39 @@ func LogReject(userID *uint, username, module, resourceType string, resourceID u
 		return fmt.Errorf("audit service not initialized")
 	}
 	return auditService.LogReject(userID, username, module, resourceType, resourceID, resourceNo, reason)
+}
+
+func LogAssign(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string, assignedData interface{}) error {
+	if auditService == nil {
+		return fmt.Errorf("audit service not initialized")
+	}
+	return auditService.LogAssign(userID, username, module, resourceType, resourceID, resourceNo, assignedData)
+}
+
+func LogStart(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string) error {
+	if auditService == nil {
+		return fmt.Errorf("audit service not initialized")
+	}
+	return auditService.LogStart(userID, username, module, resourceType, resourceID, resourceNo)
+}
+
+func LogSubmit(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string) error {
+	if auditService == nil {
+		return fmt.Errorf("audit service not initialized")
+	}
+	return auditService.LogSubmit(userID, username, module, resourceType, resourceID, resourceNo)
+}
+
+func LogCancel(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string, reason string) error {
+	if auditService == nil {
+		return fmt.Errorf("audit service not initialized")
+	}
+	return auditService.LogCancel(userID, username, module, resourceType, resourceID, resourceNo, reason)
+}
+
+func LogComplete(userID *uint, username, module, resourceType string, resourceID uint, resourceNo string) error {
+	if auditService == nil {
+		return fmt.Errorf("audit service not initialized")
+	}
+	return auditService.LogComplete(userID, username, module, resourceType, resourceID, resourceNo)
 }

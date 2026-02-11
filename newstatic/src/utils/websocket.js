@@ -20,8 +20,8 @@ const DEFAULT_CONFIG = {
   // 心跳间隔（毫秒）
   heartbeatInterval: 30000,
 
-  // 心跳超时（毫秒）
-  heartbeatTimeout: 5000,
+  // 心跳超时（毫秒）- 应该大于心跳间隔
+  heartbeatTimeout: 35000,
 
   // 消息队列大小
   messageQueueSize: 100
@@ -260,14 +260,13 @@ class WebSocketManager {
       if (this.connected) {
         try {
           this.ws.send(JSON.stringify({ type: 'ping' }))
+          // 发送ping后，设置超时等待pong
+          this.resetHeartbeatTimeout()
         } catch (error) {
           console.error('发送心跳失败:', error)
         }
       }
     }, this.options.heartbeatInterval)
-
-    // 设置心跳超时检测
-    this.resetHeartbeatTimeout()
   }
 
   /**

@@ -43,10 +43,12 @@ const (
 	OpCancel   = "cancel"
 	OpActivate = "activate"
 	OpComplete = "complete"
-	OpIssue    = "issue"   // 发放
-	OpReceive  = "receive" // 接收
-	OpAdjust   = "adjust"  // 调整
+	OpIssue    = "issue"    // 发放
+	OpReceive  = "receive"  // 接收
+	OpAdjust   = "adjust"   // 调整
 	OpTransfer = "transfer"
+	OpAssign   = "assign"   // 分配
+	OpStart    = "start"    // 开始
 	OpLogin    = "login"
 	OpLogout   = "logout"
 )
@@ -61,20 +63,22 @@ const (
 	ModuleMaterial     = "material"
 	ModuleWorkflow     = "workflow"
 	ModuleProject      = "project"
-	ModuleConstruction  = "construction"
+	ModuleConstruction = "construction"
+	ModuleAppointment  = "appointment"
 	ModuleSystem       = "system"
 	ModuleAuth         = "auth"
 )
 
 // ResourceType 资源类型常量
 const (
-	ResourceMaterialPlan   = "MaterialPlan"
-	ResourceInboundOrder   = "InboundOrder"
-	ResourceRequisition    = "Requisition"
-	ResourceStock          = "Stock"
-	ResourceMaterial       = "Material"
-	ResourceWorkflowTask   = "WorkflowTask"
+	ResourceMaterialPlan     = "MaterialPlan"
+	ResourceInboundOrder     = "InboundOrder"
+	ResourceRequisition      = "Requisition"
+	ResourceStock            = "Stock"
+	ResourceMaterial         = "Material"
+	ResourceWorkflowTask     = "WorkflowTask"
 	ResourceWorkflowInstance = "WorkflowInstance"
+	ResourceAppointment      = "ConstructionAppointment"
 )
 
 // LogStatus 日志状态常量

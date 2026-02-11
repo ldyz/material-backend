@@ -64,11 +64,21 @@
 
           <el-dropdown @command="handleCommand">
             <div class="user-info">
-              <el-avatar :size="32" :icon="UserFilled" />
+              <el-avatar
+                :size="40"
+                :src="authStore.user?.avatar || undefined"
+                :style="{ backgroundColor: getAvatarColor() }"
+              >
+                {{ authStore.displayName?.charAt(0) || '?' }}
+              </el-avatar>
               <span class="username">{{ authStore.displayName }}</span>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item command="uploadAvatar">
+                  <el-icon><Picture /></el-icon>
+                  上传头像
+                </el-dropdown-item>
                 <el-dropdown-item command="resetPassword">
                   <el-icon><Key /></el-icon>
                   修改密码
@@ -80,6 +90,22 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+
+          <!-- 隐藏的文件上传input -->
+          <input
+            ref="avatarInputRef"
+            type="file"
+            accept="image/*"
+            style="display: none"
+            @change="handleAvatarChange"
+          />
+
+          <!-- 头像裁剪对话框 -->
+          <AvatarCropperDialog
+            v-model="showCropperDialog"
+            :image-file="selectedAvatarFile"
+            @success="handleAvatarSuccess"
+          />
         </div>
       </el-header>
 
@@ -122,10 +148,13 @@ import {
   Grid,
   Connection,
   Clock,
-  Calendar
+  Calendar,
+  Picture
 } from '@element-plus/icons-vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import NotificationBell from '@/components/Notification/NotificationBell.vue'
+import AvatarCropperDialog from '@/components/common/AvatarCropperDialog.vue'
+import { authApi } from '@/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -320,8 +349,54 @@ const handleCommand = async (command) => {
     }
   } else if (command === 'resetPassword') {
     router.push('/reset-password')
+  } else if (command === 'uploadAvatar') {
+    avatarInputRef.value?.click()
   }
 }
+
+// 头像上传
+const avatarInputRef = ref(null)
+const showCropperDialog = ref(false)
+const selectedAvatarFile = ref(null)
+
+const handleAvatarChange = async (event) => {
+  const file = event.target.files?.[0]
+  if (!file) return
+
+  // 验证文件大小（5MB - 裁剪前可以大一些）
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.error('图片文件大小不能超过5MB')
+    return
+  }
+
+  // 验证文件类型
+  if (!file.type.startsWith('image/')) {
+    ElMessage.error('只支持图片格式的文件')
+    return
+  }
+
+  // 打开裁剪对话框
+  selectedAvatarFile.value = file
+  showCropperDialog.value = true
+
+  // 清空 input
+  if (avatarInputRef.value) {
+    avatarInputRef.value.value = ''
+  }
+}
+
+const handleAvatarSuccess = async () => {
+  // 刷新用户信息
+  await authStore.refreshUserInfo()
+  selectedAvatarFile.value = null
+}
+
+const getAvatarColor = () => {
+  const colors = ['#409EFF', '#67C23A', '#E6A23C', '#F56C6C', '#909399']
+  const userId = authStore.user?.id || 0
+  return colors[userId % colors.length]
+}
+
 
 // 响应式处理
 const handleResize = () => {

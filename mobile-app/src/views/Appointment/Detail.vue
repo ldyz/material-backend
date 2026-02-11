@@ -94,9 +94,16 @@
           v-for="(log, index) in approvalLogs"
           :key="index"
           :title="log.node_name"
-          :value="log.action === 'approve' ? '通过' : log.action === 'reject' ? '拒绝' : log.action"
+          :value="getActionLabel(log.action)"
           :label="`${log.approver_name} - ${formatFullDateTime(log.created_at)}`"
-        />
+        >
+          <template #label v-if="log.remark">
+            <div class="approval-remark">
+              <span>{{ log.approver_name }} - {{ formatFullDateTime(log.created_at) }}</span>
+              <div class="remark-text">备注：{{ log.remark }}</div>
+            </div>
+          </template>
+        </van-cell>
         <van-empty v-if="!approvalLogs.length" description="暂无审批记录" />
       </van-cell-group>
 
@@ -150,7 +157,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Toast, Dialog } from 'vant'
+import { showSuccessToast, showFailToast, Dialog } from 'vant'
 import {
   getAppointmentDetail,
   submitAppointment,
@@ -191,10 +198,13 @@ onMounted(async () => {
 
 async function loadDetail() {
   try {
-    const { data } = await getAppointmentDetail(route.params.id)
-    appointment.value = data.data
+    const response = await getAppointmentDetail(route.params.id)
+    console.log('Appointment detail response:', response)
+    // response 直接就是 { success: true, data: {...}, meta: {...} }
+    appointment.value = response.data
   } catch (error) {
-    Toast.fail('加载预约单详情失败')
+    console.error('加载预约单详情失败:', error)
+    showFailToast('加载预约单详情失败')
   } finally {
     loading.value = false
   }
@@ -202,8 +212,10 @@ async function loadDetail() {
 
 async function loadApprovalHistory() {
   try {
-    const { data } = await getApprovalHistory(route.params.id)
-    approvalLogs.value = data.data || []
+    const response = await getApprovalHistory(route.params.id)
+    console.log('Approval history response:', response)
+    // response 直接就是 { success: true, data: [...], meta: {...} }
+    approvalLogs.value = response.data || []
   } catch (error) {
     console.error('加载审批历史失败:', error)
   }
@@ -212,20 +224,20 @@ async function loadApprovalHistory() {
 async function handleSubmit() {
   try {
     await submitAppointment(route.params.id)
-    Toast.success('提交成功')
+    showSuccessToast('提交成功')
     await loadDetail()
   } catch (error) {
-    Toast.fail(error.message || '提交失败')
+    showFailToast(error.message || '提交失败')
   }
 }
 
 async function handleStartWork() {
   try {
     await startWork(route.params.id)
-    Toast.success('操作成功')
+    showSuccessToast('操作成功')
     await loadDetail()
   } catch (error) {
-    Toast.fail(error.message || '操作失败')
+    showFailToast(error.message || '操作失败')
   }
 }
 
@@ -234,11 +246,11 @@ async function handleComplete() {
     await completeAppointment(route.params.id, {
       completion_note: completionNote.value
     })
-    Toast.success('操作成功')
+    showSuccessToast('操作成功')
     completeDialogVisible.value = false
     await loadDetail()
   } catch (error) {
-    Toast.fail(error.message || '操作失败')
+    showFailToast(error.message || '操作失败')
   }
 }
 
@@ -249,18 +261,18 @@ function showCancelDialog() {
 
 async function handleCancel() {
   if (!cancelReason.value.trim()) {
-    Toast.fail('请输入取消原因')
+    showFailToast('请输入取消原因')
     return
   }
   try {
     await cancelAppointment(route.params.id, {
       reason: cancelReason.value
     })
-    Toast.success('取消成功')
+    showSuccessToast('取消成功')
     cancelDialogVisible.value = false
     await loadDetail()
   } catch (error) {
-    Toast.fail(error.message || '取消失败')
+    showFailToast(error.message || '取消失败')
   }
 }
 
@@ -280,6 +292,21 @@ function formatFullDateTime(dateStr) {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
   return date.toLocaleString('zh-CN')
+}
+
+// 获取审批动作的中文标签
+function getActionLabel(action) {
+  const actionLabels = {
+    'start': '提交',
+    'approve': '通过',
+    'reject': '拒绝',
+    'return': '退回',
+    'comment': '评论',
+    'cancel': '取消',
+    'submit': '提交',
+    'resubmit': '重新提交'
+  }
+  return actionLabels[action] || action
 }
 </script>
 
@@ -303,5 +330,17 @@ function formatFullDateTime(dateStr) {
 
 .action-buttons .van-button {
   margin-bottom: 8px;
+}
+
+.approval-remark {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.remark-text {
+  color: #646566;
+  font-size: 12px;
+  margin-top: 4px;
 }
 </style>

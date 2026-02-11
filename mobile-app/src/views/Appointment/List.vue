@@ -52,7 +52,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onActivated } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { getAppointments, getTimeSlotLabel, getStatusLabel, getStatusColor } from '@/api/appointment'
 
@@ -89,6 +89,23 @@ const urgentOptions = [
 onMounted(() => {
   loadData()
 })
+
+// 页面激活时刷新数据（从创建页返回时）
+onActivated(() => {
+  // 从其他页面返回时，总是刷新列表
+  console.log('List activated, refreshing data...')
+  onFilterChange()
+})
+
+// 监听路由变化，确保返回时刷新
+watch(
+  () => route.path,
+  (newPath) => {
+    if (newPath === '/appointments') {
+      onFilterChange()
+    }
+  }
+)
 
 function onFilterChange() {
   appointments.value = []
@@ -129,8 +146,16 @@ async function loadData() {
       params.is_urgent = false
     }
 
-    const { data } = await getAppointments(params)
-    const items = data.data || []
+    console.log('Loading appointments with params:', params)
+    const response = await getAppointments(params)
+    console.log('API response:', response)
+    console.log('Response.data:', response.data)
+    console.log('Response.meta:', response.meta)
+
+    // response 直接就是拦截器返回的 { success: true, data: [...], meta: {...} }
+    // response.data 才是数据数组
+    const items = response.data || []
+    console.log('Parsed items:', items)
 
     if (currentPage.value === 1) {
       appointments.value = items
@@ -138,7 +163,7 @@ async function loadData() {
       appointments.value.push(...items)
     }
 
-    const meta = data.meta || {}
+    const meta = response.meta || {}
     const total = meta.total || 0
     finished.value = appointments.value.length >= total
 

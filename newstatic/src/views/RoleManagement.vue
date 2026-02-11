@@ -336,6 +336,22 @@ const permissionTree = [
       { id: 'workflow_task_delegate', label: '委派任务' },
       { id: 'workflow_log_view', label: '查看流程日志' }
     ]
+  },
+  {
+    id: 'appointment',
+    label: '施工预约',
+    children: [
+      { id: 'appointment_view', label: '查看预约单' },
+      { id: 'appointment_create', label: '创建预约单' },
+      { id: 'appointment_edit', label: '编辑预约单' },
+      { id: 'appointment_delete', label: '删除预约单' },
+      { id: 'appointment_submit', label: '提交审批' },
+      { id: 'appointment_approve', label: '审批预约单' },
+      { id: 'appointment_assign', label: '分配作业人员' },
+      { id: 'appointment_execute', label: '执行作业' },
+      { id: 'appointment_cancel', label: '取消预约单' },
+      { id: 'appointment_export', label: '导出数据' }
+    ]
   }
 ]
 

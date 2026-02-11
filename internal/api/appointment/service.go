@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"strings"
 	"time"
 
+	"github.com/yourorg/material-backend/backend/internal/api/notification"
 	"gorm.io/gorm"
 )
 
@@ -49,21 +52,31 @@ func (s *AppointmentService) Create(req CreateAppointmentRequest, applicantID ui
 
 	// 创建预约单
 	appointment := &ConstructionAppointment{
-		ProjectID:         req.ProjectID,
-		ApplicantID:       applicantID,
-		ApplicantName:     applicantName,
-		ContactPhone:      req.ContactPhone,
-		ContactPerson:     req.ContactPerson,
-		WorkDate:          workDate,
-		TimeSlot:          req.TimeSlot,
-		WorkLocation:      req.WorkLocation,
-		WorkContent:       req.WorkContent,
-		WorkType:          req.WorkType,
-		IsUrgent:          req.IsUrgent,
-		Priority:          req.Priority,
-		UrgentReason:      req.UrgentReason,
-		AssignedWorkerID:  req.AssignedWorkerID,
-		Status:            StatusDraft,
+		ProjectID:           req.ProjectID,
+		ApplicantID:         applicantID,
+		ApplicantName:       applicantName,
+		ContactPhone:        req.ContactPhone,
+		ContactPerson:       req.ContactPerson,
+		WorkDate:            workDate,
+		TimeSlot:            req.TimeSlot,
+		WorkLocation:        req.WorkLocation,
+		WorkContent:         req.WorkContent,
+		WorkType:            req.WorkType,
+		IsUrgent:            req.IsUrgent,
+		Priority:            req.Priority,
+		UrgentReason:        req.UrgentReason,
+		AssignedWorkerID:    req.AssignedWorkerID,
+		AssignedWorkerIDs:   req.AssignedWorkerIDs,
+		AssignedWorkerNames: req.AssignedWorkerNames,
+		Status:              StatusDraft,
+	}
+
+	// 设置主作业人员姓名（兼容性）
+	if appointment.AssignedWorkerID != nil && req.AssignedWorkerNames != "" {
+		names := parseCommaSeparatedNames(req.AssignedWorkerNames)
+		if len(names) > 0 {
+			appointment.AssignedWorkerName = names[0]
+		}
 	}
 
 	// 如果指定了作业人员，检查可用性
@@ -232,6 +245,13 @@ func (s *AppointmentService) List(req AppointmentListRequest) ([]ConstructionApp
 		query = query.Where("work_type = ?", req.WorkType)
 	}
 
+	// 权限过滤：草稿状态的预约单只对创建者可见
+	// 如果当前用户ID存在，且没有指定状态过滤，则排除其他人的草稿
+	if req.CurrentUserID != 0 && req.Status == "" {
+		// 查看所有人的非草稿预约单，或者自己创建的预约单（包括草稿）
+		query = query.Where("(status != ? OR applicant_id = ?)", StatusDraft, req.CurrentUserID)
+	}
+
 	// 统计总数
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -328,6 +348,89 @@ func (s *AppointmentService) AssignWorker(id uint, workerID uint, workerName str
 	if err := s.calendarService.BookAppointmentForWorker(&appointment); err != nil {
 		return nil, fmt.Errorf("failed to book calendar: %w", err)
 	}
+
+	// 通知作业人员
+	s.notifyWorkerAssigned(&appointment)
+
+	return &appointment, nil
+}
+
+// AssignWorkers 分配多个作业人员
+func (s *AppointmentService) AssignWorkers(id uint, workerIDs []uint, workerNames []string, supervisorID *uint, supervisorName string) (*ConstructionAppointment, error) {
+	var appointment ConstructionAppointment
+	if err := s.db.First(&appointment, id).Error; err != nil {
+		return nil, err
+	}
+
+	// 检查所有作业人员可用性
+	for _, workerID := range workerIDs {
+		available, reason, err := s.calendarService.CheckAvailability(workerID, appointment.WorkDate, appointment.TimeSlot)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check availability: %w", err)
+		}
+		if !available {
+			return nil, fmt.Errorf("作业人员在指定时间段不可用: %s", reason)
+		}
+	}
+
+	// 如果已有作业人员，先释放其日历
+	if appointment.AssignedWorkerID != nil {
+		if err := s.calendarService.CancelAppointmentForWorker(&appointment); err != nil {
+			return nil, fmt.Errorf("failed to release previous worker: %w", err)
+		}
+	}
+
+	// 将workerID列表序列化为JSON
+	workerIDsJSON, err := json.Marshal(workerIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal worker IDs: %w", err)
+	}
+
+	// 将workerNames用逗号连接
+	workerNamesStr := strings.Join(workerNames, ",")
+
+	// 分配新作业人员
+	appointment.AssignedWorkerIDs = string(workerIDsJSON)
+	appointment.AssignedWorkerNames = workerNamesStr
+
+	// 为了兼容性，如果有作业人员，设置第一个为默认值
+	if len(workerIDs) > 0 {
+		appointment.AssignedWorkerID = &workerIDs[0]
+		if len(workerNames) > 0 {
+			appointment.AssignedWorkerName = workerNames[0]
+		}
+	}
+
+	// 保存监护人信息
+	if supervisorID != nil && *supervisorID > 0 {
+		appointment.SupervisorID = supervisorID
+		appointment.SupervisorName = supervisorName
+	} else {
+		appointment.SupervisorID = nil
+		appointment.SupervisorName = ""
+	}
+
+	// 如果状态是待审批或已排期，更新为已排期
+	if appointment.Status == StatusPending {
+		appointment.Status = StatusScheduled
+	}
+
+	if err := s.db.Save(&appointment).Error; err != nil {
+		return nil, err
+	}
+
+	// 为每个作业人员预约日历
+	for _, workerID := range workerIDs {
+		tempAppointment := appointment
+		tempAppointment.AssignedWorkerID = &workerID
+		if err := s.calendarService.BookAppointmentForWorker(&tempAppointment); err != nil {
+			// 记录错误但继续
+			log.Printf("Warning: failed to book calendar for worker %d: %v", workerID, err)
+		}
+	}
+
+	// 通知所有作业人员
+	s.notifyWorkersAssigned(&appointment, workerIDs)
 
 	return &appointment, nil
 }
@@ -449,7 +552,7 @@ func (s *AppointmentService) GetStats(filterDate *time.Time, applicantID *uint) 
 		Count(&stats.WeekCount)
 
 	// 本月计数
-	startOfMonth := time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.Now.Location())
+	startOfMonth := time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.Local)
 	endOfMonth := startOfMonth.AddDate(0, 1, -1)
 	s.db.Model(&ConstructionAppointment{}).
 		Where("work_date >= ? AND work_date <= ?", startOfMonth.Format("2006-01-02"), endOfMonth.Format("2006-01-02")).
@@ -600,4 +703,186 @@ func (s *AppointmentService) ExportToJSON(ids []uint) ([]byte, error) {
 	}
 
 	return json.MarshalIndent(data, "", "  ")
+}
+
+// notifyWorkerAssigned 通知单个作业人员被分配任务
+func (s *AppointmentService) notifyWorkerAssigned(appointment *ConstructionAppointment) {
+	if appointment.AssignedWorkerID == nil || *appointment.AssignedWorkerID == 0 {
+		return
+	}
+
+	notificationData := map[string]interface{}{
+		"appointment_id": appointment.ID,
+		"appointment_no": appointment.AppointmentNo,
+		"work_date":      appointment.WorkDate.Format("2006-01-02"),
+		"time_slot":      appointment.TimeSlot,
+		"work_location":  appointment.WorkLocation,
+		"work_content":   appointment.WorkContent,
+		"assigned_at":    time.Now(),
+	}
+
+	title := "新的作业任务分配"
+	content := fmt.Sprintf("您被分配了一项施工任务，单号：%s，作业时间：%s %s，地点：%s，内容：%s",
+		appointment.AppointmentNo,
+		appointment.WorkDate.Format("2006-01-02"),
+		appointment.TimeSlot,
+		appointment.WorkLocation,
+		appointment.WorkContent)
+
+	if err := notification.CreateNotification(s.db, *appointment.AssignedWorkerID, notification.TypeAppointmentApprove, title, content, notificationData); err != nil {
+		log.Printf("通知作业人员失败: %v", err)
+	}
+}
+
+// notifyWorkersAssigned 通知多个作业人员被分配任务
+func (s *AppointmentService) notifyWorkersAssigned(appointment *ConstructionAppointment, workerIDs []uint) {
+	now := time.Now()
+
+	for _, workerID := range workerIDs {
+		notificationData := map[string]interface{}{
+			"appointment_id": appointment.ID,
+			"appointment_no": appointment.AppointmentNo,
+			"work_date":      appointment.WorkDate.Format("2006-01-02"),
+			"time_slot":      appointment.TimeSlot,
+			"work_location":  appointment.WorkLocation,
+			"work_content":   appointment.WorkContent,
+			"assigned_at":    now,
+		}
+
+		title := "新的作业任务分配"
+		content := fmt.Sprintf("您被分配了一项施工任务，单号：%s，作业时间：%s %s，地点：%s",
+			appointment.AppointmentNo,
+			appointment.WorkDate.Format("2006-01-02"),
+			appointment.TimeSlot,
+			appointment.WorkLocation)
+
+		if err := notification.CreateNotification(s.db, workerID, notification.TypeAppointmentApprove, title, content, notificationData); err != nil {
+			log.Printf("通知作业人员 %d 失败: %v", workerID, err)
+		}
+	}
+}
+
+// WorkerInfo 作业人员信息
+type WorkerInfo struct {
+	ID       uint   `json:"id"`
+	FullName string `json:"full_name"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Avatar   string `json:"avatar"`
+}
+
+// GetWorkersList 获取作业人员列表
+func (s *AppointmentService) GetWorkersList() ([]WorkerInfo, error) {
+	var workers []WorkerInfo
+
+	// 查询作业人员角色的用户（支持中英文角色名）
+	err := s.db.Table("users").
+		Select("id, full_name, username, email, avatar").
+		Where("is_active = ? AND (role = ? OR role = ? OR role = ? OR role = ?)",
+			true,
+			"worker",           // 英文作业人员
+			"作业人员",          // 中文作业人员
+			"team_leader",      // 英文班组长
+			"班组长",            // 中文班组长
+		).
+		Find(&workers).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get workers list: %w", err)
+	}
+
+	return workers, nil
+}
+
+// GetWorkerByID 根据ID获取作业人员信息
+func (s *AppointmentService) GetWorkerByID(workerID uint) (*WorkerInfo, error) {
+	var worker WorkerInfo
+
+	err := s.db.Table("users").
+		Select("id, full_name, username, email, avatar").
+		Where("id = ?", workerID).
+		Where("is_active = ? AND (role = ? OR role = ? OR role = ? OR role = ?)",
+			true,
+			"worker",           // 英文作业人员
+			"作业人员",          // 中文作业人员
+			"team_leader",      // 英文班组长
+			"班组长",            // 中文班组长
+		).
+		First(&worker).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("worker not found: %w", err)
+	}
+
+	return &worker, nil
+}
+
+// GetDailyStatistics 获取每日预约统计数据
+func (s *AppointmentService) GetDailyStatistics(startDate, endDate string) (*DailyStatisticsResponse, error) {
+	// 获取总作业人员数
+	var totalWorkers int64
+	err := s.db.Table("users").
+		Where("is_active = ? AND (role = ? OR role = ? OR role = ? OR role = ?)",
+			true,
+			"worker",
+			"作业人员",
+			"team_leader",
+			"班组长",
+		).
+		Count(&totalWorkers).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get total workers count: %w", err)
+	}
+
+	// 获取每日预约统计
+	type DailyCount struct {
+		Date        string
+		TotalCount  int64
+		UrgentCount int64
+	}
+
+	var dailyCounts []DailyCount
+	err = s.db.Model(&ConstructionAppointment{}).
+		Select("TO_CHAR(work_date, 'YYYY-MM-DD') as date, COUNT(*) as total_count, SUM(CASE WHEN is_urgent = true THEN 1 ELSE 0 END) as urgent_count").
+		Where("work_date >= ? AND work_date <= ?", startDate, endDate).
+		Where("status IN ?", []string{StatusPending, StatusScheduled, StatusInProgress}).
+		Group("TO_CHAR(work_date, 'YYYY-MM-DD')").
+		Order("date ASC").
+		Scan(&dailyCounts).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get daily statistics: %w", err)
+	}
+
+	// 转换为响应格式
+	statistics := make([]DailyStatistics, len(dailyCounts))
+	for i, dc := range dailyCounts {
+		statistics[i] = DailyStatistics{
+			Date:         dc.Date,
+			TotalCount:   dc.TotalCount,
+			UrgentCount:  dc.UrgentCount,
+			TotalWorkers: totalWorkers,
+		}
+	}
+
+	return &DailyStatisticsResponse{
+		Statistics:   statistics,
+		TotalWorkers: totalWorkers,
+	}, nil
+}
+
+// parseCommaSeparatedNames 解析逗号分隔的姓名列表
+func parseCommaSeparatedNames(namesStr string) []string {
+	if namesStr == "" {
+		return []string{}
+	}
+	names := strings.Split(namesStr, ",")
+	result := make([]string, 0, len(names))
+	for _, name := range names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }

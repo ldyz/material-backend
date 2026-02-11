@@ -27,6 +27,28 @@
       </el-row>
     </div>
 
+    <!-- 预约统计卡片 -->
+    <div class="stats-section" v-if="authStore.hasPermission('appointment_view')">
+      <div class="section-header">
+        <h3 class="section-title">施工预约统计</h3>
+      </div>
+      <el-row :gutter="20" class="mt-16">
+        <el-col :xs="12" :sm="6" :md="6" v-for="stat in appointmentStats" :key="stat.title">
+          <div class="stat-card" :class="stat.status" @click="handleStatClick(stat)">
+            <div class="stat-icon" :style="{ background: stat.color }">
+              <el-icon :size="28" color="white">
+                <component :is="stat.icon" />
+              </el-icon>
+            </div>
+            <div class="stat-content">
+              <div class="stat-value">{{ stat.value }}</div>
+              <div class="stat-label">{{ stat.title }}</div>
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+    </div>
+
     <!-- 主要内容区域 -->
     <el-row :gutter="20" class="content-section">
       <!-- 快捷操作 -->
@@ -82,9 +104,12 @@ import {
   Download,
   Edit,
   Delete,
-  Management
+  Management,
+  Clock,
+  User,
+  Check
 } from '@element-plus/icons-vue'
-import { systemApi } from '@/api'
+import { systemApi, appointmentApi } from '@/api'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -147,6 +172,38 @@ const statistics = ref([
     icon: Download,
     color: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
     status: 'primary'
+  }
+])
+
+// 预约统计数据
+const appointmentStats = ref([
+  {
+    title: '全部预约',
+    value: '-',
+    icon: Calendar,
+    color: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    status: 'primary'
+  },
+  {
+    title: '待审批',
+    value: '-',
+    icon: Clock,
+    color: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+    status: 'warning'
+  },
+  {
+    title: '已排期',
+    value: '-',
+    icon: Check,
+    color: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+    status: 'success'
+  },
+  {
+    title: '进行中',
+    value: '-',
+    icon: User,
+    color: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+    status: 'info'
   }
 ])
 
@@ -255,8 +312,43 @@ const viewAllActions = () => {
   console.log('查看全部快捷操作')
 }
 
+// 获取预约统计数据
+const fetchAppointmentStats = async () => {
+  try {
+    const response = await appointmentApi.getStats()
+    const data = response.data || {}
+
+    // 更新预约统计数据
+    if (data.total !== undefined) {
+      appointmentStats.value[0].value = data.total.toLocaleString()
+    }
+    if (data.pending !== undefined) {
+      appointmentStats.value[1].value = data.pending.toLocaleString()
+    }
+    if (data.scheduled !== undefined) {
+      appointmentStats.value[2].value = data.scheduled.toLocaleString()
+    }
+    if (data.in_progress !== undefined) {
+      appointmentStats.value[3].value = data.in_progress.toLocaleString()
+    }
+  } catch (error) {
+    console.error('获取预约统计失败:', error)
+  }
+}
+
+// 处理统计卡片点击
+const handleStatClick = (stat) => {
+  router.push({
+    path: '/appointments',
+    query: { status: stat.title === '待审批' ? 'pending' : stat.title === '已排期' ? 'scheduled' : stat.title === '进行中' ? 'in_progress' : '' }
+  })
+}
+
 onMounted(() => {
   fetchStatistics()
+  if (authStore.hasPermission('appointment_view')) {
+    fetchAppointmentStats()
+  }
 })
 </script>
 
@@ -289,6 +381,24 @@ onMounted(() => {
 /* 统计区域 */
 .stats-section {
   margin-bottom: 24px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0;
+}
+
+.mt-16 {
+  margin-top: 16px;
 }
 
 .stat-card {

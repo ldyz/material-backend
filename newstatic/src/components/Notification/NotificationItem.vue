@@ -122,35 +122,84 @@ const handleClick = () => {
 // 处理导航跳转
 const handleNavigation = () => {
   const data = parseNotificationData()
-  if (!data) return
+  const type = props.notification.type
 
-  // 根据业务类型跳转到相应页面
+  // 根据通知类型和数据跳转到相应页面
   // 使用查询参数而不是路径参数，因为列表页支持查询参数打开详情
-  switch (data.business_type) {
-    case 'inbound_order':
-      // 支持两种方式：通过 order_no 或 id 查询
-      if (data.order_no) {
-        router.push({ path: '/inbound', query: { order_no: data.order_no } })
-      } else if (data.inbound_no) {
-        router.push({ path: '/inbound', query: { order_no: data.inbound_no } })
-      } else {
-        router.push({ path: '/inbound', query: { id: data.business_id } })
-      }
-      break
-    case 'requisition':
-      // 支持两种方式：通过 requisition_no 或 id 查询
-      if (data.requisition_no) {
+
+  // 审批类通知 - 根据具体业务类型路由
+  if (type.includes('approve') || type.includes('requisition')) {
+    // 领料单/出库单审批
+    if (type.includes('requisition') || data?.requisition_no) {
+      if (data?.requisition_no) {
         router.push({ path: '/requisitions', query: { requisition_no: data.requisition_no } })
       } else {
-        router.push({ path: '/requisitions', query: { id: data.business_id } })
+        router.push({ path: '/requisitions', query: { id: data?.requisition_id } })
       }
-      break
-    case 'material_plan':
-      // 物资计划暂时跳转到列表页
+      return
+    }
+
+    // 入库单审批
+    if (type.includes('inbound') || data?.order_no || data?.inbound_no) {
+      if (data?.order_no) {
+        router.push({ path: '/inbound', query: { order_no: data.order_no } })
+      } else if (data?.inbound_no) {
+        router.push({ path: '/inbound', query: { order_no: data.inbound_no } })
+      } else {
+        router.push({ path: '/inbound', query: { id: data?.inbound_id } })
+      }
+      return
+    }
+
+    // 施工预约单审批
+    if (type.includes('appointment') || data?.appointment_no) {
+      if (data?.appointment_no) {
+        router.push({ path: '/appointments', query: { appointment_no: data.appointment_no } })
+      } else {
+        router.push({ path: '/appointments', query: { id: data?.appointment_id } })
+      }
+      return
+    }
+
+    // 物资计划审批
+    if (type.includes('material_plan')) {
       router.push('/material-plans')
-      break
-    default:
-      break
+      return
+    }
+  }
+
+  // 兼容旧方式：根据 business_type 路由
+  if (data?.business_type) {
+    switch (data.business_type) {
+      case 'inbound_order':
+        if (data.order_no) {
+          router.push({ path: '/inbound', query: { order_no: data.order_no } })
+        } else if (data.inbound_no) {
+          router.push({ path: '/inbound', query: { order_no: data.inbound_no } })
+        } else {
+          router.push({ path: '/inbound', query: { id: data.business_id } })
+        }
+        break
+      case 'requisition':
+        if (data.requisition_no) {
+          router.push({ path: '/requisitions', query: { requisition_no: data.requisition_no } })
+        } else {
+          router.push({ path: '/requisitions', query: { id: data.business_id } })
+        }
+        break
+      case 'material_plan':
+        router.push('/material-plans')
+        break
+      case 'construction_appointment':
+        if (data.appointment_no) {
+          router.push({ path: '/appointments', query: { appointment_no: data.appointment_no } })
+        } else {
+          router.push({ path: '/appointments', query: { id: data.business_id || data.appointment_id } })
+        }
+        break
+      default:
+        break
+    }
   }
 }
 

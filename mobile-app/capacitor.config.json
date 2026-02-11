@@ -1,15 +1,9 @@
 {
   "appId": "com.material.management",
-  "appName": "Material Management",
+  "appName": "材料管理系统",
   "webDir": "dist",
   "server": {
     "cleartext": true,
     "androidScheme": "https"
-  },
-  "android": {
-    "buildOptions": {
-      "keystorePath": "",
-      "keystoreAlias": ""
-    }
   }
 }

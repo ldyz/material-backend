@@ -1,10 +1,12 @@
 package appointment
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/yourorg/material-backend/backend/internal/api/notification"
 	"github.com/yourorg/material-backend/backend/internal/api/workflow"
 	"gorm.io/gorm"
 )
@@ -126,7 +128,7 @@ func (s *WorkflowService) updateAppointmentStatusByWorkflow(instance *workflow.W
 			appointment.AssignedWorkerID = &workerID
 			// 获取作业人员姓名
 			var workerName string
-			s.db.Table("users").Where("id = ?", workerID).Pluck("name", &workerName)
+			s.db.Table("users").Where("id = ?", workerID).Pluck("full_name", &workerName)
 			appointment.AssignedWorkerName = workerName
 		}
 
@@ -137,15 +139,21 @@ func (s *WorkflowService) updateAppointmentStatusByWorkflow(instance *workflow.W
 
 		// 预约日历
 		if appointment.AssignedWorkerID != nil {
-			if err := s.appointmentService.AssignWorker(appointment.ID, *appointment.AssignedWorkerID, appointment.AssignedWorkerName); err != nil {
+			if _, err := s.appointmentService.AssignWorker(appointment.ID, *appointment.AssignedWorkerID, appointment.AssignedWorkerName); err != nil {
 				// 日历预约失败不影响状态更新
 				fmt.Printf("Warning: failed to book calendar: %v\n", err)
 			}
 		}
 
+		// 通知申请人和作业人员
+		s.notifyAppointmentApproved(&appointment)
+
 	case workflow.InstanceStatusRejected:
 		// 工作流拒绝
 		appointment.Status = StatusRejected
+		s.db.Save(&appointment)
+		// 通知申请人被拒绝
+		s.notifyAppointmentRejected(&appointment)
 
 	case workflow.InstanceStatusCancelled:
 		// 工作流取消
@@ -159,14 +167,12 @@ func (s *WorkflowService) updateAppointmentStatusByWorkflow(instance *workflow.W
 func (s *WorkflowService) getDefaultWorkflowID(appointment *ConstructionAppointment) (uint, error) {
 	// 检查是否是加急预约
 	if appointment.IsUrgent && appointment.NeedsUrgentApproval() {
-		// 返回加急工作流ID（需要在数据库中配置）
-		// 这里假设加急工作流ID为3
-		return 3, nil
+		// 返回加急工作流ID（数据库中配置的ID为11）
+		return 11, nil
 	}
 
-	// 返回普通工作流ID
-	// 这里假设普通工作流ID为2
-	return 2, nil
+	// 返回普通工作流ID（数据库中配置的ID为10）
+	return 10, nil
 }
 
 // GetPendingApprovals 获取待审批列表
@@ -233,13 +239,13 @@ func (s *WorkflowService) GetApprovalHistory(appointmentID uint) ([]map[string]a
 	result := make([]map[string]any, len(logs))
 	for i, log := range logs {
 		result[i] = map[string]any{
-			"id":           log.ID,
-			"node_name":    log.NodeName,
-			"action":       log.Action,
-			"approver_id":  log.ApproverID,
-			"approver_name": log.ApproverName,
-			"remark":       log.Remark,
-			"created_at":   log.CreatedAt.Format("2006-01-02 15:04:05"),
+			"id":            log.ID,
+			"node_name":     log.NodeKey,
+			"action":        log.Action,
+			"approver_id":   log.ActorID,
+			"approver_name": log.ActorName,
+			"remark":        log.ActionData,
+			"created_at":    log.CreatedAt.Format("2006-01-02 15:04:05"),
 		}
 	}
 
@@ -302,10 +308,25 @@ func (s *WorkflowService) RecallWorkflow(appointmentID uint, userID uint) error 
 		return errors.New("该预约单未启动工作流")
 	}
 
-	// 取消工作流实例
-	if err := s.workflowEngine.CancelInstance(*appointment.WorkflowInstanceID, userID, appointment.ApplicantName, "申请人撤回"); err != nil {
+	// 更新工作流实例状态为已取消
+	var instance workflow.WorkflowInstance
+	if err := s.db.First(&instance, *appointment.WorkflowInstanceID).Error; err != nil {
 		return err
 	}
+	instance.Status = workflow.InstanceStatusCancelled
+	now := time.Now()
+	instance.FinishedAt = &now
+	if err := s.db.Save(&instance).Error; err != nil {
+		return err
+	}
+
+	// 取消所有待办任务
+	s.db.Model(&workflow.WorkflowPendingTask{}).
+		Where("instance_id = ? AND status = ?", *appointment.WorkflowInstanceID, workflow.TaskStatusPending).
+		Updates(map[string]any{
+			"status":       workflow.TaskStatusCancelled,
+			"processed_at": now,
+		})
 
 	// 更新预约单状态
 	appointment.Status = StatusDraft
@@ -317,12 +338,14 @@ func (s *WorkflowService) RecallWorkflow(appointmentID uint, userID uint) error 
 
 // TransferApproval 转交审批
 func (s *WorkflowService) TransferApproval(instanceID uint, fromUserID uint, toUserID uint, toUserName string, remark string) error {
-	return s.workflowEngine.TransferApproval(instanceID, fromUserID, toUserID, toUserName, remark)
+	// TODO: 实现转交审批功能
+	return errors.New("转交审批功能暂未实现")
 }
 
 // AddNodeApprover 添加节点审批人
 func (s *WorkflowService) AddNodeApprover(instanceID uint, nodeID uint, newApproverID uint, newApproverName string) error {
-	return s.workflowEngine.AddNodeApprover(instanceID, nodeID, newApproverID, newApproverName)
+	// TODO: 实现添加节点审批人功能
+	return errors.New("添加节点审批人功能暂未实现")
 }
 
 // BatchApprove 批量审批
@@ -377,7 +400,7 @@ func (s *WorkflowService) GetWorkflowProgress(appointmentID uint) (map[string]an
 
 	// 获取所有节点
 	var nodes []workflow.WorkflowNode
-	if err := s.db.Where("workflow_id = ?", instance.WorkflowID).Order("node_order ASC").Find(&nodes).Error; err != nil {
+	if err := s.db.Where("workflow_id = ?", instance.WorkflowID).Find(&nodes).Error; err != nil {
 		return nil, err
 	}
 
@@ -392,10 +415,10 @@ func (s *WorkflowService) GetWorkflowProgress(appointmentID uint) (map[string]an
 	// 构建进度信息
 	nodeProgress := make([]map[string]any, len(nodes))
 	for i, node := range nodes {
-		// 查找该节点的日志
+		// 查找该节点的日志（通过 NodeKey 匹配）
 		var nodeLog *workflow.WorkflowLog
 		for j := range logs {
-			if logs[j].NodeID == node.ID {
+			if logs[j].NodeKey == node.NodeKey {
 				nodeLog = &logs[j]
 				break
 			}
@@ -410,21 +433,21 @@ func (s *WorkflowService) GetWorkflowProgress(appointmentID uint) (map[string]an
 		}
 
 		// 检查是否是当前节点
-		isCurrent := instance.CurrentNode == node.NodeType
+		isCurrent := instance.CurrentNode == node.NodeKey
 
 		nodeProgress[i] = map[string]any{
-			"node_id":     node.ID,
-			"node_name":   node.NodeName,
-			"node_type":   node.NodeType,
-			"node_order":  node.NodeOrder,
-			"status":      status,
-			"is_current":  isCurrent,
+			"node_id":      node.ID,
+			"node_name":    node.NodeName,
+			"node_type":    node.NodeType,
+			"node_key":     node.NodeKey,
+			"status":       status,
+			"is_current":   isCurrent,
 			"processed_at": nil,
 		}
 
 		if nodeLog != nil {
 			nodeProgress[i]["processed_at"] = nodeLog.CreatedAt.Format("2006-01-02 15:04:05")
-			nodeProgress[i]["approver_name"] = nodeLog.ApproverName
+			nodeProgress[i]["approver_name"] = nodeLog.ActorName
 		}
 	}
 
@@ -438,4 +461,98 @@ func (s *WorkflowService) GetWorkflowProgress(appointmentID uint) (map[string]an
 		"finished_at":      instance.FinishedAt,
 		"nodes":            nodeProgress,
 	}, nil
+}
+
+// notifyAppointmentApproved 通知申请人和作业人员审批通过
+func (s *WorkflowService) notifyAppointmentApproved(appointment *ConstructionAppointment) {
+	// 构建通知数据
+	notificationData := map[string]interface{}{
+		"appointment_id":   appointment.ID,
+		"appointment_no":   appointment.AppointmentNo,
+		"work_date":        appointment.WorkDate.Format("2006-01-02"),
+		"time_slot":        appointment.TimeSlot,
+		"work_location":    appointment.WorkLocation,
+		"work_content":     appointment.WorkContent,
+		"approved_at":      appointment.ApprovedAt,
+	}
+
+	// 通知申请人（创建人）
+	applicantTitle := "预约审批通过"
+	applicantContent := fmt.Sprintf("您提交的施工预约单 %s 已审批通过，作业时间：%s %s，地点：%s",
+		appointment.AppointmentNo,
+		appointment.WorkDate.Format("2006-01-02"),
+		appointment.TimeSlot,
+		appointment.WorkLocation)
+
+	if err := notification.CreateNotification(s.db, appointment.ApplicantID, notification.TypeAppointmentApprove, applicantTitle, applicantContent, notificationData); err != nil {
+		fmt.Printf("通知申请人失败: %v\n", err)
+	}
+
+	// 通知作业人员
+	if appointment.AssignedWorkerID != nil && *appointment.AssignedWorkerID != 0 {
+		workerTitle := "新的作业任务分配"
+		workerContent := fmt.Sprintf("您被分配了一项施工任务，单号：%s，作业时间：%s %s，地点：%s，内容：%s",
+			appointment.AppointmentNo,
+			appointment.WorkDate.Format("2006-01-02"),
+			appointment.TimeSlot,
+			appointment.WorkLocation,
+			appointment.WorkContent)
+
+		workerData := map[string]interface{}{
+			"appointment_id": appointment.ID,
+			"appointment_no": appointment.AppointmentNo,
+			"work_date":      appointment.WorkDate.Format("2006-01-02"),
+			"time_slot":      appointment.TimeSlot,
+			"work_location":  appointment.WorkLocation,
+			"work_content":   appointment.WorkContent,
+			"assigned_at":    appointment.ApprovedAt,
+		}
+
+		if err := notification.CreateNotification(s.db, *appointment.AssignedWorkerID, notification.TypeAppointmentApprove, workerTitle, workerContent, workerData); err != nil {
+			fmt.Printf("通知作业人员失败: %v\n", err)
+		}
+	}
+
+	// 处理多作业人员通知
+	if appointment.AssignedWorkerIDs != "" {
+		var workerIDs []uint
+		if err := json.Unmarshal([]byte(appointment.AssignedWorkerIDs), &workerIDs); err == nil {
+			for _, workerID := range workerIDs {
+				// 跳过已经通知的主作业人员
+				if appointment.AssignedWorkerID != nil && workerID == *appointment.AssignedWorkerID {
+					continue
+				}
+				workerTitle := "新的作业任务分配"
+				workerContent := fmt.Sprintf("您被分配了一项施工任务，单号：%s，作业时间：%s %s，地点：%s",
+					appointment.AppointmentNo,
+					appointment.WorkDate.Format("2006-01-02"),
+					appointment.TimeSlot,
+					appointment.WorkLocation)
+
+				if err := notification.CreateNotification(s.db, workerID, notification.TypeAppointmentApprove, workerTitle, workerContent, notificationData); err != nil {
+					fmt.Printf("通知作业人员 %d 失败: %v\n", workerID, err)
+				}
+			}
+		}
+	}
+}
+
+// notifyAppointmentRejected 通知申请人审批被拒绝
+func (s *WorkflowService) notifyAppointmentRejected(appointment *ConstructionAppointment) {
+	// 构建通知数据
+	notificationData := map[string]interface{}{
+		"appointment_id": appointment.ID,
+		"appointment_no": appointment.AppointmentNo,
+		"work_date":      appointment.WorkDate.Format("2006-01-02"),
+		"time_slot":      appointment.TimeSlot,
+		"work_location":  appointment.WorkLocation,
+		"work_content":   appointment.WorkContent,
+	}
+
+	title := "预约审批未通过"
+	content := fmt.Sprintf("您提交的施工预约单 %s 未通过审批，请查看详情并修改后重新提交", appointment.AppointmentNo)
+
+	if err := notification.CreateNotification(s.db, appointment.ApplicantID, notification.TypeAppointmentApprove, title, content, notificationData); err != nil {
+		fmt.Printf("通知申请人失败: %v\n", err)
+	}
 }

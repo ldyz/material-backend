@@ -82,6 +82,23 @@ export const authApi = {
       method: 'POST',
       data
     })
+  },
+
+  /**
+   * 上传头像
+   *
+   * @param {FormData} formData - 包含头像文件的表单数据
+   * @returns {Promise} 返回上传结果
+   */
+  uploadAvatar(formData) {
+    return request({
+      url: '/auth/avatar',
+      method: 'POST',
+      data: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
   }
 }
 
@@ -4059,6 +4076,34 @@ export const appointmentApi = {
   getStats(params) {
     return request({
       url: '/appointments/stats',
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 获取作业人员列表
+   *
+   * @returns {Promise} 返回作业人员列表
+   */
+  getWorkersList() {
+    return request({
+      url: '/appointments/workers',
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 获取每日预约统计数据
+   *
+   * @param {Object} params - 查询参数
+   * @param {string} params.start_date - 开始日期
+   * @param {string} params.end_date - 结束日期
+   * @returns {Promise} 返回每日统计数据
+   */
+  getDailyStatistics(params) {
+    return request({
+      url: '/appointments/daily-statistics',
       method: 'GET',
       params
     })

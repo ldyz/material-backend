@@ -23,6 +23,7 @@ type User struct {
 	Password  string     `json:"-"`
 	Email     string     `json:"email"`
 	FullName  string     `json:"full_name"`
+	Avatar    string     `json:"avatar"`
 	Role      string     `json:"role"`
 	Group     string     `json:"group"`
 	IsActive  bool       `json:"is_active"`
@@ -148,15 +149,16 @@ func (u *User) ToDTO() map[string]any {
 	}
 
 	return map[string]any{
-		"id": u.ID,
-		"username": u.Username,
-		"email": u.Email,
-		"full_name": u.FullName,
-		"role": u.Role,
-		"group": u.Group,
-		"is_active": u.IsActive,
+		"id":         u.ID,
+		"username":   u.Username,
+		"email":      u.Email,
+		"full_name":  u.FullName,
+		"avatar":     u.Avatar,
+		"role":       u.Role,
+		"group":      u.Group,
+		"is_active":  u.IsActive,
 		"last_login": u.LastLogin,
 		"created_at": u.CreatedAt,
-		"roles": roles,
+		"roles":      roles,
 	}
 }

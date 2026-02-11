@@ -116,12 +116,8 @@ const routes = [
   }
 ]
 
-// 检测是否在 Capacitor 原生环境
-const isCapacitor = typeof window !== 'undefined' && window.Capacitor
-const base = isCapacitor ? '/' : '/mobile/'
-
 const router = createRouter({
-  history: createWebHistory(base),
+  history: createWebHistory('/mobile/'),
   routes,
   scrollBehavior() {
     return { top: 0 }

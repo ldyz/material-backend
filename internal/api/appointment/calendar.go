@@ -178,7 +178,7 @@ func (s *CalendarService) fillMissingDates(existing []WorkerCalendar, workerID u
 
 	// 生成所有日期
 	var result []WorkerCalendar
-	timeSlots := []string{TimeSlotMorning, TimeSlotAfternoon, TimeSlotEvening}
+	timeSlots := []string{TimeSlotMorning, TimeSlotNoon, TimeSlotAfternoon}
 
 	for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
 		dateStr := d.Format("2006-01-02")
@@ -216,7 +216,7 @@ func (s *CalendarService) BatchBlockCalendar(req BatchBlockCalendarRequest) erro
 
 	// 验证时间段
 	validSlots := map[string]bool{
-		TimeSlotMorning: true, TimeSlotAfternoon: true, TimeSlotEvening: true, TimeSlotFullDay: true,
+		TimeSlotMorning: true, TimeSlotNoon: true, TimeSlotAfternoon: true, TimeSlotFullDay: true,
 	}
 	for _, slot := range req.TimeSlots {
 		if !validSlots[slot] {
@@ -275,6 +275,69 @@ func (s *CalendarService) GetAvailableWorkers(workDate time.Time, timeSlot strin
 	return available, nil
 }
 
+// WorkerWithInfo 带信息的作业人员
+type WorkerWithInfo struct {
+	ID          uint   `json:"id"`
+	Name        string `json:"name"`
+	Avatar      string `json:"avatar"`
+	IsAvailable bool   `json:"is_available"`
+}
+
+// GetAllWorkersWithAvailability 获取所有作业人员及其可用状态
+func (s *CalendarService) GetAllWorkersWithAvailability(workDate time.Time, timeSlot string) ([]WorkerWithInfo, error) {
+	// 获取作业人员和班组长角色的用户（支持中文名称）
+	type UserInfo struct {
+		ID     uint
+		Name   string
+		Avatar string
+	}
+	var users []UserInfo
+	err := s.db.Table("users").
+		Select("id, full_name as name, avatar").
+		Where("is_active = ? AND (role = ? OR role = ? OR role = ? OR role = ?)",
+			true,
+			"worker",           // 英文作业人员
+			"作业人员",          // 中文作业人员
+			"team_leader",      // 英文班组长
+			"班组长",            // 中文班组长
+		).
+		Find(&users).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 如果没有用户，返回空列表
+	if len(users) == 0 {
+		return []WorkerWithInfo{}, nil
+	}
+
+	// 提取所有用户ID
+	userIDs := make([]uint, len(users))
+	for i, u := range users {
+		userIDs[i] = u.ID
+	}
+
+	// 检查可用性
+	availability, err := s.CheckMultipleAvailability(userIDs, workDate, timeSlot)
+	if err != nil {
+		return nil, err
+	}
+
+	// 构建结果，包含可用状态
+	result := make([]WorkerWithInfo, len(users))
+	for i, u := range users {
+		result[i] = WorkerWithInfo{
+			ID:          u.ID,
+			Name:        u.Name,
+			Avatar:      u.Avatar,
+			IsAvailable: availability[u.ID],
+		}
+	}
+
+	return result, nil
+}
+
 // GetWorkerAvailabilitySummary 获取作业人员可用性摘要
 func (s *CalendarService) GetWorkerAvailabilitySummary(workerID uint, startDate, endDate time.Time) (map[string]interface{}, error) {
 	// 获取日历
@@ -327,7 +390,7 @@ func (s *CalendarService) GetAppointmentsByDateRange(startDate, endDate time.Tim
 
 // ValidateTimeSlot 验证时间段是否有效
 func (s *CalendarService) ValidateTimeSlot(timeSlot string) error {
-	validSlots := []string{TimeSlotMorning, TimeSlotAfternoon, TimeSlotEvening, TimeSlotFullDay}
+	validSlots := []string{TimeSlotMorning, TimeSlotNoon, TimeSlotAfternoon, TimeSlotFullDay}
 	for _, slot := range validSlots {
 		if timeSlot == slot {
 			return nil

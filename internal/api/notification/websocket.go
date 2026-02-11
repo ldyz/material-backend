@@ -186,12 +186,36 @@ func (c *Client) readPump() {
 	})
 
 	for {
-		_, _, err := c.conn.ReadMessage()
+		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("WebSocket error: %v", err)
 			}
 			break
+		}
+
+		// Handle client ping messages
+		if len(message) > 0 {
+			log.Printf("Received message: %s", string(message))
+			var msg map[string]interface{}
+			if err := json.Unmarshal(message, &msg); err == nil {
+				log.Printf("Parsed message: %+v", msg)
+				if msgType, ok := msg["type"].(string); ok && msgType == "ping" {
+					log.Printf("Ping received, sending pong")
+					// Respond with pong
+					pongMsg := map[string]interface{}{"type": "pong"}
+					if data, err := json.Marshal(pongMsg); err == nil {
+						c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+						if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
+							log.Printf("Failed to send pong: %v", err)
+							return
+						}
+						log.Printf("Pong sent successfully")
+					}
+				}
+			} else {
+				log.Printf("Failed to parse message: %v", err)
+			}
 		}
 	}
 }

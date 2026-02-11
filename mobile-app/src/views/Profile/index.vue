@@ -57,6 +57,19 @@
     <!-- 设置 -->
     <van-cell-group inset title="设置">
       <van-cell title="上传头像" icon="photo-o" is-link @click="handleAvatarClick" />
+      <van-cell
+        title="检查更新"
+        icon="upgrade"
+        is-link
+        @click="handleCheckUpdate"
+      >
+        <template #right-icon>
+          <van-tag v-if="updateStatus" :type="updateStatus.type">
+            {{ updateStatus.text }}
+          </van-tag>
+          <van-icon v-else name="arrow" />
+        </template>
+      </van-cell>
       <van-cell title="刷新数据" icon="replay" is-link @click="handleRefresh" />
       <van-cell title="关于" icon="info-o" is-link @click="showAbout" />
     </van-cell-group>
@@ -109,10 +122,11 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { showToast, showConfirmDialog } from 'vant'
+import { showToast, showConfirmDialog, showSuccessToast, showFailToast, showDialog } from 'vant'
 import { useAuthStore } from '@/stores/auth'
 import * as authApi from '@/api/auth'
 import AvatarCropperDialog from '@/components/AvatarCropperDialog.vue'
+import { useAppUpdate } from '@/composables/useAppUpdate'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -120,6 +134,10 @@ const showAboutDialog = ref(false)
 const avatarInputRef = ref(null)
 const showCropperDialog = ref(false)
 const selectedAvatarFile = ref(null)
+const updateStatus = ref(null)
+
+// 使用应用更新 composable
+const { isChecking, checkUpdate, downloadAndInstall, latestVersion, currentVersion } = useAppUpdate()
 
 function getRoleText(role) {
   const roleMap = {
@@ -181,6 +199,48 @@ async function handleRefresh() {
     showToast({ type: 'success', message: '刷新成功' })
   } catch (error) {
     showToast({ type: 'fail', message: '刷新失败' })
+  }
+}
+
+// 检查更新
+async function handleCheckUpdate() {
+  if (isChecking.value) {
+    showToast({ type: 'loading', message: '正在检查更新...', forbidClick: true })
+    return
+  }
+
+  try {
+    const result = await checkUpdate()
+
+    if (result.hasUpdate) {
+      // 有更新可用
+      updateStatus.value = { type: 'danger', text: '有新版本' }
+
+      showDialog({
+        title: '发现新版本',
+        message: `当前版本: ${currentVersion.value}\n最新版本: ${result.version}\n\n${result.message || '建议更新到最新版本以获得更好的体验'}`,
+        confirmButtonText: '立即更新',
+        cancelButtonText: '稍后再说',
+        confirmButtonColor: '#1989fa',
+        showCancelButton: true,
+        teleport: 'body'
+      }).then(() => {
+        // 用户点击立即更新
+        downloadAndInstall()
+        updateStatus.value = { type: 'success', text: '已下载' }
+      }).catch(() => {
+        // 用户取消
+        updateStatus.value = { type: 'primary', text: '待更新' }
+      })
+    } else {
+      // 已是最新版本
+      updateStatus.value = { type: 'success', text: '已是最新' }
+      showSuccessToast('当前已是最新版本')
+    }
+  } catch (error) {
+    console.error('检查更新失败:', error)
+    updateStatus.value = { type: 'danger', text: '检查失败' }
+    showFailToast('检查更新失败，请稍后重试')
   }
 }
 

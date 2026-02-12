@@ -7,7 +7,7 @@ const isChecking = ref(false)
 const hasUpdate = ref(false)
 const latestVersion = ref('')
 const downloadUrl = ref('')
-const currentVersion = ref('1.0.0')
+const currentVersion = ref('')
 const forceUpdate = ref(false)
 const updateMessage = ref('')
 
@@ -19,11 +19,22 @@ const isWeb = ref(
 )
 
 // 获取当前应用版本
+// 获取当前应用版本
 async function getCurrentVersion() {
-  // 在 Web 环境中使用模拟版本
+  // 在 Web 环境中，从 package.json 读取版本
   if (isWeb.value) {
-    currentVersion.value = '1.0.0'
-    return '1.0.0'
+    try {
+      // 尝试从 package.json 读取版本
+      const response = await fetch('/package.json', { cache: 'no-store' })
+      const packageJson = await response.json()
+      const version = packageJson.version || '1.0.3'
+      currentVersion.value = version
+      return version
+    } catch (error) {
+      console.error('无法读取 package.json，使用默认版本:', error)
+      currentVersion.value = '1.0.3'
+      return '1.0.3'
+    }
   }
 
   try {
@@ -32,9 +43,8 @@ async function getCurrentVersion() {
     return info.version
   } catch (error) {
     console.error('获取应用版本失败:', error)
-    return '1.0.0'
+    return '1.0.3'
   }
-
 }
 
 // 检查更新
@@ -122,8 +132,19 @@ async function downloadAndInstall() {
       link.href = downloadUrl.value
       link.download = `material-management-${latestVersion.value}.apk`
       document.body.appendChild(link)
+
+      // 添加调试日志
+      console.log('开始下载 APK:', downloadUrl.value)
+      console.log('下载文件名:', `material-management-${latestVersion.value}.apk`)
+
+      // 尝试点击下载
       link.click()
-      document.body.removeChild(link)
+
+      // 等待一段时间后检查
+      setTimeout(() => {
+        document.body.removeChild(link)
+        console.log('下载链接已触发')
+      }, 500)
     }
   } catch (error) {
     console.error('下载更新失败:', error)

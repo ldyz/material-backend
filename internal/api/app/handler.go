@@ -1,6 +1,11 @@
 package app
 
 import (
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+
 	"github.com/gin-gonic/gin"
 	"github.com/yourorg/material-backend/backend/internal/api/response"
 	"gorm.io/gorm"
@@ -50,6 +55,100 @@ func (h *Handler) CheckVersion(c *gin.Context) {
 		ForceUpdate:   latest.ForceUpdate,
 		UpdateMessage: latest.UpdateMessage,
 		ReleaseNotes:  latest.ReleaseNotes,
+	})
+}
+
+// DownloadAPK 下载 APK 文件
+func (h *Handler) DownloadAPK(c *gin.Context) {
+	version := c.Query("version")
+	platform := c.Query("platform")
+	if platform == "" {
+		platform = "android"
+	}
+
+	// 构建文件路径（使用绝对路径）
+	baseDir, _ := os.Getwd()
+	var filename string
+	if version != "" {
+		filename = filepath.Join(baseDir, "mobile-app-updates", platform, "material-management-"+version+".apk")
+	} else {
+		// 如果没有指定版本，从数据库获取最新版本
+		var latest AppVersion
+		err := h.DB.Where("platform = ?", platform).
+			Order("published_at DESC, created_at DESC").
+			First(&latest).Error
+		if err == nil {
+			filename = filepath.Join(baseDir, "mobile-app-updates", platform, "material-management-"+latest.Version+".apk")
+		} else {
+			// 回退到 latest.apk
+			filename = filepath.Join(baseDir, "mobile-app-updates", platform, "latest.apk")
+		}
+	}
+
+	// 解析符号链接
+	realPath, err := filepath.EvalSymlinks(filename)
+	if err == nil && realPath != "" {
+		filename = realPath
+	}
+
+	// 检查文件是否存在
+	fileInfo, err := os.Stat(filename)
+	if err != nil || os.IsNotExist(err) {
+		response.Error(c, http.StatusNotFound, "文件不存在: version="+version+", file="+filename)
+		return
+	}
+
+	// 验证是文件而不是目录
+	if fileInfo.IsDir() {
+		response.Error(c, http.StatusNotFound, "路径是目录而非文件")
+		return
+	}
+
+	// 设置下载的文件名
+	downloadName := "material-management-" + version + ".apk"
+	if version == "" {
+		downloadName = "material-management.apk"
+	}
+	c.Header("Content-Description", "File Transfer")
+	c.Header("Content-Transfer-Encoding", "binary")
+	c.Header("Content-Disposition", "attachment; filename="+downloadName)
+	c.Header("Content-Type", "application/vnd.android.package-archive")
+	c.Header("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
+
+	// 发送文件
+	c.File(filename)
+}
+
+// GetLatestAPKInfo 获取最新 APK 信息（返回 JSON）
+func (h *Handler) GetLatestAPKInfo(c *gin.Context) {
+	platform := c.Query("platform")
+	if platform == "" {
+		platform = "android"
+	}
+
+	// 获取该平台的最新版本
+	var latest AppVersion
+	err := h.DB.Where("platform = ?", platform).
+		Order("published_at DESC, created_at DESC").
+		First(&latest).Error
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"message": "未找到版本信息",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":        true,
+		"platform":       latest.Platform,
+		"version":        latest.Version,
+		"download_url":   latest.DownloadURL,
+		"api_download_url": "/api/app/download-apk?platform=" + platform + "&version=" + latest.Version,
+		"update_message": latest.UpdateMessage,
+		"release_notes":  latest.ReleaseNotes,
+		"published_at":   latest.PublishedAt,
 	})
 }
 

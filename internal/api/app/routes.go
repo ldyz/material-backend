@@ -13,5 +13,8 @@ func RegisterRoutes(r *gin.RouterGroup, db *gorm.DB) {
 	app := r.Group("/app")
 	{
 		app.GET("/version", handler.CheckVersion)
+		app.GET("/download-apk", handler.DownloadAPK)
+		app.GET("/download-apk/:version/:platform", handler.DownloadAPK)
+		app.GET("/latest-apk-info", handler.GetLatestAPKInfo)
 	}
 }

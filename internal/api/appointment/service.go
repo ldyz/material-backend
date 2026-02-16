@@ -871,6 +871,66 @@ func (s *AppointmentService) GetDailyStatistics(startDate, endDate string) (*Dai
 	}, nil
 }
 
+// GetTimeSlotStatistics 获取指定日期的时间段统计数据
+func (s *AppointmentService) GetTimeSlotStatistics(date string) (*TimeSlotStatisticsResponse, error) {
+	// 获取总作业人员数
+	var totalWorkers int64
+	err := s.db.Table("users").
+		Where("is_active = ? AND (role = ? OR role = ? OR role = ? OR role = ?)",
+			true,
+			"worker",
+			"作业人员",
+			"team_leader",
+			"班组长",
+		).
+		Count(&totalWorkers).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get total workers count: %w", err)
+	}
+
+	// 定义所有时间段
+	timeSlots := []string{TimeSlotMorning, TimeSlotNoon, TimeSlotAfternoon, TimeSlotFullDay}
+
+	// 获取每个时间段的统计
+	type TimeSlotCount struct {
+		TimeSlot   string
+		TotalCount int64
+	}
+
+	var timeSlotCounts []TimeSlotCount
+	err = s.db.Model(&ConstructionAppointment{}).
+		Select("time_slot as time_slot, COUNT(*) as total_count").
+		Where("work_date = ?", date).
+		Where("time_slot IN ?", timeSlots).
+		Where("status IN ?", []string{StatusPending, StatusScheduled, StatusInProgress}).
+		Group("time_slot").
+		Scan(&timeSlotCounts).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to get time slot statistics: %w", err)
+	}
+
+	// 构建结果，确保所有时间段都有数据
+	countMap := make(map[string]int64)
+	for _, tsc := range timeSlotCounts {
+		countMap[tsc.TimeSlot] = tsc.TotalCount
+	}
+
+	statistics := make([]TimeSlotStatistics, len(timeSlots))
+	for i, slot := range timeSlots {
+		statistics[i] = TimeSlotStatistics{
+			Date:         date,
+			TimeSlot:     slot,
+			TotalCount:   countMap[slot],
+			TotalWorkers: totalWorkers,
+		}
+	}
+
+	return &TimeSlotStatisticsResponse{
+		Statistics:   statistics,
+		TotalWorkers: totalWorkers,
+	}, nil
+}
+
 // parseCommaSeparatedNames 解析逗号分隔的姓名列表
 func parseCommaSeparatedNames(namesStr string) []string {
 	if namesStr == "" {
@@ -885,4 +945,11 @@ func parseCommaSeparatedNames(namesStr string) []string {
 		}
 	}
 	return result
+}
+
+// GetPendingApprovalCount 获取待审批数量
+func (s *AppointmentService) GetPendingApprovalCount() (int, error) {
+	var count int64
+	s.db.Model(&ConstructionAppointment{}).Where("status = ?", StatusPending).Count(&count)
+	return int(count), nil
 }

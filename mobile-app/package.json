@@ -1,6 +1,6 @@
 {
   "name": "material-mobile",
-  "version": "1.0.3",
+  "version": "1.0.23",
   "type": "module",
   "description": "Material Management Mobile App",
   "scripts": {
@@ -11,7 +11,7 @@
     "test": "npm run dev",
     "cap:sync": "npx cap sync",
     "cap:android": "npx cap open android",
-    "android:build": "CAPACITOR_BUILD=true npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
+    "android:build": "node sync-version.cjs && CAPACITOR_BUILD=true npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
     "android:release": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease"
   },
   "dependencies": {
@@ -19,6 +19,7 @@
     "@capacitor/app": "^8.0.0",
     "@capacitor/core": "^8.0.2",
     "@capacitor/device": "^8.0.0",
+    "@capacitor/filesystem": "^8.1.1",
     "@capacitor/local-notifications": "^8.0.0",
     "@capacitor/push-notifications": "^8.0.0",
     "@capacitor/status-bar": "^8.0.0",

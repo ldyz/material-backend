@@ -99,10 +99,12 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Check } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { appointmentApi } from '@/api'
+import eventBus from '@/utils/eventBus'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -130,7 +132,138 @@ watch(() => props.appointmentId, (id) => {
 watch(() => props.modelValue, (val) => {
   if (val && props.appointmentId) {
     loadDetail()
+    setupEventBusListener()
+    setupVisibilityListener()
+  } else {
+    cleanupEventBusListener()
+    cleanupVisibilityListener()
   }
+})
+
+// EventBus 事件处理函数
+function handleApprovalUpdate(updateData) {
+  console.log('[EventBus] 收到审批更新事件:', updateData)
+
+  // 检查是否是当前预约单的更新
+  if (updateData.appointment_id === parseInt(props.appointmentId)) {
+    console.log('[EventBus] 当前预约单有更新，正在刷新审批历史...')
+
+    // 播放提示音
+    playNotificationSound()
+
+    // 显示 Toast 提示
+    ElMessage.success('审批状态已更新')
+
+    // 刷新预约单详情
+    loadDetail()
+  }
+}
+
+// 播放提示音
+function playNotificationSound() {
+  try {
+    // 使用 Web Audio API 生成简单的"叮"声
+    if ('AudioContext' in window || 'webkitAudioContext' in window) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext
+      const audioCtx = new AudioContext()
+
+      // 创建振荡器（发声源）
+      const oscillator = audioCtx.createOscillator()
+      const gainNode = audioCtx.createGain()
+
+      // 设置音调（800Hz）和类型（正弦波）
+      oscillator.type = 'sine'
+      oscillator.frequency.value = 800
+
+      // 设置音量（开始时 0.3）
+      gainNode.gain.value = 0.3
+
+      // 连接节点
+      oscillator.connect(gainNode)
+      gainNode.connect(audioCtx.destination)
+
+      // 播放 200ms 的提示音
+      oscillator.start()
+      setTimeout(() => {
+        oscillator.stop()
+        audioCtx.close()
+      }, 200)
+
+      console.log('[提示音] 播放成功')
+    } else {
+      console.log('[提示音] 浏览器不支持 Web Audio API')
+    }
+  } catch (error) {
+    console.log('[提示音] 播放失败:', error)
+  }
+}
+
+// 设置 EventBus 监听
+let unsubscribeFromEventBus = null
+
+function setupEventBusListener() {
+  // 清除之前的监听
+  cleanupEventBusListener()
+
+  // 监听审批更新事件
+  unsubscribeFromEventBus = eventBus.on('appointment:approval-updated', handleApprovalUpdate)
+  console.log('[EventBus] 已注册审批更新监听')
+}
+
+// 清理 EventBus 监听
+function cleanupEventBusListener() {
+  if (unsubscribeFromEventBus) {
+    unsubscribeFromEventBus()
+    unsubscribeFromEventBus = null
+    console.log('[EventBus] 已清理审批更新监听')
+  }
+}
+
+// 页面可见性检测
+function setupVisibilityListener() {
+  // 监听页面可见性变化
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+
+  // 监听对话框获得焦点
+  window.addEventListener('focus', handlePageFocus)
+}
+
+// 清理页面可见性监听
+function cleanupVisibilityListener() {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.removeEventListener('focus', handlePageFocus)
+}
+
+// 处理页面可见性变化
+function handleVisibilityChange() {
+  // 对话框打开且页面重新可见时刷新
+  if (!document.hidden && props.modelValue && props.appointmentId) {
+    console.log('[页面可见] 页面重新可见，刷新数据...')
+    refreshDataIfNeeded()
+  }
+}
+
+// 处理页面获得焦点
+function handlePageFocus() {
+  // 对话框打开时刷新
+  if (props.modelValue && props.appointmentId) {
+    console.log('[页面焦点] 页面获得焦点，刷新数据...')
+    refreshDataIfNeeded()
+  }
+}
+
+// 刷新数据（如果需要）
+function refreshDataIfNeeded() {
+  if (props.appointmentId) {
+    loadDetail()
+  }
+}
+
+// 组件卸载时清理
+onUnmounted(() => {
+  cleanupEventBusListener()
+  cleanupVisibilityListener()
+  console.log('[清理] 已移除所有监听器')
 })
 
 async function loadDetail() {

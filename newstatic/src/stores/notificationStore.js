@@ -15,6 +15,7 @@ import { defineStore } from 'pinia'
 import { notificationApi } from '@/api'
 import { ElMessage } from 'element-plus'
 import { useWebSocket } from '@/utils/websocket'
+import eventBus from '@/utils/eventBus'
 
 /**
  * 通知状态管理 Store
@@ -302,6 +303,11 @@ export const useNotificationStore = defineStore('notification', {
         case 'unread_count':
           // 未读数量更新
           this.updateUnreadCount(data.count)
+          break
+        case 'appointment_approval_update':
+          // 预约审批更新 - 通过 EventBus 广播
+          console.log('[NotificationStore] 收到审批更新消息:', data)
+          eventBus.emit('appointment:approval-updated', data.data)
           break
         default:
           console.warn('未知的 WebSocket 消息类型:', data.type)

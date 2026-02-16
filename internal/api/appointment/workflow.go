@@ -106,7 +106,14 @@ func (s *WorkflowService) ProcessApproval(instanceID uint, approverID uint, appr
 	}
 
 	// 根据工作流状态更新预约单状态
-	return s.updateAppointmentStatusByWorkflow(&instance, extraData)
+	if err := s.updateAppointmentStatusByWorkflow(&instance, extraData); err != nil {
+		return err
+	}
+
+	// 通过 WebSocket 广播审批更新通知
+	s.broadcastApprovalUpdate(instance.BusinessID, approverID, approverName, req.Action, req.Comment)
+
+	return nil
 }
 
 // updateAppointmentStatusByWorkflow 根据工作流状态更新预约单状态
@@ -554,5 +561,74 @@ func (s *WorkflowService) notifyAppointmentRejected(appointment *ConstructionApp
 
 	if err := notification.CreateNotification(s.db, appointment.ApplicantID, notification.TypeAppointmentApprove, title, content, notificationData); err != nil {
 		fmt.Printf("通知申请人失败: %v\n", err)
+	}
+}
+
+// broadcastApprovalUpdate 通过 WebSocket 广播审批更新通知
+func (s *WorkflowService) broadcastApprovalUpdate(appointmentID uint, approverID uint, approverName string, action string, comment string) {
+	// 获取预约单信息
+	var appointment ConstructionAppointment
+	if err := s.db.First(&appointment, appointmentID).Error; err != nil {
+		fmt.Printf("获取预约单失败，无法广播通知: %v\n", err)
+		return
+	}
+
+	// 构建需要通知的用户列表
+	userIDs := make([]uint, 0)
+	userIDsMap := make(map[uint]bool)
+
+	// 添加申请人
+	userIDsMap[appointment.ApplicantID] = true
+
+	// 添加当前审批人（待办任务的审批人）
+	var pendingTasks []struct {
+		ApproverID uint
+	}
+	if err := s.db.Table("workflow_pending_tasks").
+		Where("instance_id = ? AND status = ?", appointment.WorkflowInstanceID, "pending").
+		Pluck("approver_id", &pendingTasks).Error; err == nil {
+		for _, task := range pendingTasks {
+			userIDsMap[task.ApproverID] = true
+		}
+	}
+
+	// 转换为数组
+	for userID := range userIDsMap {
+		userIDs = append(userIDs, userID)
+	}
+
+	// 构建消息数据
+	messageData := map[string]interface{}{
+		"appointment_id":   appointment.ID,
+		"appointment_no":   appointment.AppointmentNo,
+		"approver_id":      approverID,
+		"approver_name":    approverName,
+		"action":           action,
+		"comment":          comment,
+		"status":           appointment.Status,
+		"workflow_instance_id": appointment.WorkflowInstanceID,
+	}
+
+	// 通过 WebSocket hub 广播消息
+	hub := notification.GetHub()
+	if hub != nil {
+		for _, userID := range userIDs {
+			// 构建完整消息
+			message := map[string]interface{}{
+				"type": "appointment_approval_update",
+				"data": messageData,
+			}
+
+			// 序列化消息
+			data, err := json.Marshal(message)
+			if err != nil {
+				fmt.Printf("序列化审批更新消息失败: %v\n", err)
+				continue
+			}
+
+			// 发送给指定用户
+			hub.BroadcastToUser(userID, data)
+			fmt.Printf("已向用户 %d 广播审批更新通知: 预约单 %s, 操作: %s\n", userID, appointment.AppointmentNo, action)
+		}
 	}
 }

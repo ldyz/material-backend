@@ -61,6 +61,16 @@
             </span>
           </template>
         </van-field>
+        <!-- 人员可用性提示 -->
+        <van-cell
+          v-if="form.work_date && !hasAvailableWorkers && !form.is_urgent"
+          title="提示"
+          icon="warning-o"
+        >
+          <template #value>
+            <span style="color: #ee0a24">该日期所有人员已被安排，请创建加急预约单</span>
+          </template>
+        </van-cell>
         <van-field
           v-model="form.time_slot"
           name="time_slot"
@@ -151,7 +161,7 @@
               round
               width="40"
               height="40"
-              :src="getWorkerById(workerId).avatar"
+              :src="getAssetUrl(getWorkerById(workerId).avatar)"
             />
             <div
               v-else
@@ -183,18 +193,43 @@
         v-model="currentDate"
         title="选择日期"
         :min-date="minDate"
+        :max-date="maxDate"
         @confirm="onDateConfirm"
         @cancel="onDatePickerClose"
       />
     </van-popup>
 
     <!-- 时间段选择器 -->
-    <van-popup v-model:show="showTimeSlotPicker" position="bottom">
-      <van-picker
-        :columns="timeSlotOptions"
-        @confirm="onTimeSlotConfirm"
-        @cancel="showTimeSlotPicker = false"
-      />
+    <van-popup v-model:show="showTimeSlotPicker" position="bottom" :style="{ height: '50%' }" round>
+      <div class="time-slot-picker">
+        <van-nav-bar
+          title="选择时间段"
+          left-text="取消"
+          @click-left="showTimeSlotPicker = false"
+        />
+        <van-loading v-if="loadingTimeSlots" type="spinner" size="24" vertical>加载中...</van-loading>
+        <van-cell-group v-else inset>
+          <van-cell
+            v-for="option in timeSlotOptions"
+            :key="option.value"
+            :title="option.text"
+            is-link
+            :class="{
+              'time-slot-full': getTimeSlotStatus(option.value) === 'full',
+              'time-slot-busy': getTimeSlotStatus(option.value) === 'busy',
+              'time-slot-moderate': getTimeSlotStatus(option.value) === 'moderate',
+              'time-slot-available': getTimeSlotStatus(option.value) === 'available'
+            }"
+            @click="selectTimeSlot(option.value)"
+          >
+            <template #right-icon>
+              <van-tag :type="getTimeSlotStatusTagType(getTimeSlotStatus(option.value))" round>
+                {{ getTimeSlotStatusText(option.value) || '请选择日期' }}
+              </van-tag>
+            </template>
+          </van-cell>
+        </van-cell-group>
+      </div>
     </van-popup>
 
     <!-- 作业类型选择器 -->
@@ -252,7 +287,7 @@
                   round
                   width="50"
                   height="50"
-                  :src="worker.avatar"
+                  :src="getAssetUrl(worker.avatar)"
                 />
                 <div
                   v-else
@@ -282,7 +317,8 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showSuccessToast, showFailToast, showConfirmDialog } from 'vant'
-import { createAppointment, submitAppointment, getTimeSlotOptions, getDailyStatistics, getWorkersList } from '@/api/appointment'
+import { createAppointment, submitAppointment, getTimeSlotOptions, getDailyStatistics, getWorkersList, getTimeSlotStatistics, getAvailableWorkers } from '@/api/appointment'
+import { getAssetUrl } from '@/utils/request'
 
 const router = useRouter()
 
@@ -305,7 +341,23 @@ const showTimeSlotPicker = ref(false)
 const showWorkerPicker = ref(false)
 const showWorkTypePicker = ref(false)
 const currentDate = ref([new Date().getFullYear(), new Date().getMonth() + 1, new Date().getDate()])
-const minDate = new Date(new Date().getTime() - 30 * 24 * 60 * 60 * 1000) // 30天前
+
+// 计算最小可选日期（明天）
+const minDate = computed(() => {
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  tomorrow.setHours(0, 0, 0, 0)
+  return tomorrow
+})
+
+// 计算最大可选日期（加急可以选择之后1天，普通无限制）
+const maxDate = computed(() => {
+  // 不设置最大日期限制，让用户可以预约未来的任意日期
+  return undefined
+})
+
+// 该日期是否有空闲人员
+const hasAvailableWorkers = ref(true)
 const selectedWorkTypes = ref([])
 const selectedWorkers = ref([]) // 选中的作业人员ID列表
 const workerList = ref([]) // 作业人员列表
@@ -313,6 +365,30 @@ const workerList = ref([]) // 作业人员列表
 // 每日预约数据
 const dailyAppointments = ref({})
 const totalWorkers = ref(0)
+
+// 时间段统计数据
+const timeSlotStatistics = ref([])
+const loadingTimeSlots = ref(false)
+
+// 检查日期是否有空闲人员
+async function checkAvailabilityForDate(date) {
+  try {
+    // 检查上午时段的可用性作为参考
+    const response = await getAvailableWorkers({
+      work_date: date,
+      time_slot: 'morning'
+    })
+    const workers = response.data || []
+    hasAvailableWorkers.value = workers.length > 0
+
+    if (!hasAvailableWorkers.value && !form.value.is_urgent) {
+      showFailToast('该日期所有人员已被安排，请选择其他日期或创建加急预约单')
+    }
+  } catch (error) {
+    console.error('检查可用人员失败:', error)
+    hasAvailableWorkers.value = true
+  }
+}
 
 // 获取作业人员列表
 async function fetchWorkers() {
@@ -322,6 +398,51 @@ async function fetchWorkers() {
   } catch (error) {
     console.error('获取作业人员列表失败:', error)
   }
+}
+
+// 获取时间段统计数据
+async function fetchTimeSlotStatistics() {
+  if (!form.value.work_date) return
+
+  loadingTimeSlots.value = true
+  try {
+    const response = await getTimeSlotStatistics(form.value.work_date)
+    timeSlotStatistics.value = response.data.statistics || []
+    totalWorkers.value = response.data.total_workers || 0
+  } catch (error) {
+    console.error('获取时间段统计数据失败:', error)
+    timeSlotStatistics.value = []
+  } finally {
+    loadingTimeSlots.value = false
+  }
+}
+
+// 计算时间段的繁忙程度
+function getTimeSlotStatus(timeSlot) {
+  const stat = timeSlotStatistics.value.find(s => s.time_slot === timeSlot)
+  if (!stat) return 'unknown'
+
+  const totalWorkersCount = totalWorkers.value || 1
+  const ratio = stat.total_count / totalWorkersCount
+
+  if (ratio >= 1) return 'full'
+  if (ratio >= 0.75) return 'busy'
+  if (ratio >= 0.4) return 'moderate'
+  return 'available'
+}
+
+// 获取时间段状态文本
+function getTimeSlotStatusText(timeSlot) {
+  const stat = timeSlotStatistics.value.find(s => s.time_slot === timeSlot)
+  if (!stat) return ''
+
+  const totalWorkersCount = totalWorkers.value || 1
+  const ratio = stat.total_count / totalWorkersCount
+
+  if (ratio >= 1) return '已满'
+  if (ratio >= 0.75) return '繁忙'
+  if (ratio >= 0.4) return '适中'
+  return '空闲'
 }
 
 // 计算已选择作业人员的名称
@@ -414,6 +535,12 @@ const workTypeLabel = computed(() => {
 async function handleSubmit() {
   try {
     submitting.value = true
+
+    // 检查是否有空闲人员
+    if (!form.value.is_urgent && !hasAvailableWorkers.value) {
+      showFailToast('该日期所有人员已被安排，请选择其他日期或创建加急预约单')
+      return
+    }
 
     // 准备提交数据
     const submitData = { ...form.value }
@@ -512,12 +639,39 @@ function onDateConfirm(result) {
   const monthStr = month.toString().padStart(2, '0')
   const dayStr = day.toString().padStart(2, '0')
   form.value.work_date = `${year}-${monthStr}-${dayStr}`
+
+  // 清空已选时间段
+  form.value.time_slot = ''
+
+  // 检查该日期是否有空闲人员
+  checkAvailabilityForDate(form.value.work_date)
+
+  // 获取该日期的时间段统计
+  fetchTimeSlotStatistics()
+
   showDatePicker.value = false
 }
 
 function onTimeSlotConfirm({ selectedOptions }) {
   form.value.time_slot = selectedOptions[0].value
   showTimeSlotPicker.value = false
+}
+
+// 选择时间段
+function selectTimeSlot(value) {
+  form.value.time_slot = value
+  showTimeSlotPicker.value = false
+}
+
+// 获取时间段状态标签类型
+function getTimeSlotStatusTagType(status) {
+  switch (status) {
+    case 'full': return 'danger'
+    case 'busy': return 'warning'
+    case 'moderate': return 'primary'
+    case 'available': return 'success'
+    default: return 'default'
+  }
 }
 
 function toggleWorkType(value) {
@@ -844,5 +998,36 @@ function onDatePickerClose() {
 
 .remove-worker-icon:active {
   color: #323233;
+}
+
+/* 时间段选择器样式 */
+.time-slot-picker {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.time-slot-picker .van-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.time-slot-picker .van-cell-group {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.time-slot-full {
+  opacity: 0.5;
+}
+
+.time-slot-busy {
+  background-color: #fff7e6;
+}
+
+.time-slot-available {
+  background-color: #f0f9ff;
 }
 </style>

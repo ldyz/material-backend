@@ -25,6 +25,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 	// 统计
 	g.GET("/stats", auth.PermissionMiddleware(db, "appointment_view"), getStats(service))
+	// 待审批数量
+	g.GET("/ending-count", auth.PermissionMiddleware(db, "appointment_view"), getPendingApprovalCount(service))
 
 	// 预约单列表
 	g.GET("", auth.PermissionMiddleware(db, "appointment_view"), listAppointments(service))
@@ -119,6 +121,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 	// 每日统计数据
 	g.GET("/daily-statistics", auth.PermissionMiddleware(db, "appointment_view"), getDailyStatistics(service))
+	// 时间段统计数据
+	g.GET("/time-slot-statistics", auth.PermissionMiddleware(db, "appointment_view"), getTimeSlotStatistics(service))
 }
 
 // getStats 获取统计数据
@@ -220,6 +224,21 @@ func listAppointments(service *AppointmentService) gin.HandlerFunc {
 		log.Printf("返回预约单列表: total=%d, len(items)=%d", total, len(items))
 
 		response.SuccessWithMeta(c, items, meta)
+	}
+}
+
+// getPendingApprovalCount 获取待审批数量
+func getPendingApprovalCount(service *AppointmentService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		count, err := service.GetPendingApprovalCount()
+		if err != nil {
+			response.InternalError(c, "获取待审批数量失败")
+			return
+		}
+
+		response.Success(c, map[string]interface{}{
+			"count": count,
+		})
 	}
 }
 
@@ -1146,6 +1165,33 @@ func getDailyStatistics(service *AppointmentService) gin.HandlerFunc {
 		if err != nil {
 			log.Printf("获取每日统计数据失败: %v", err)
 			response.InternalError(c, "获取每日统计数据失败")
+			return
+		}
+
+		response.Success(c, stats)
+	}
+}
+
+// getTimeSlotStatistics 获取指定日期的时间段统计数据
+func getTimeSlotStatistics(service *AppointmentService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		date := c.Query("date")
+		if date == "" {
+			response.BadRequest(c, "缺少日期参数")
+			return
+		}
+
+		// 验证日期格式
+		_, err := time.Parse("2006-01-02", date)
+		if err != nil {
+			response.BadRequest(c, "日期格式错误，应为 YYYY-MM-DD")
+			return
+		}
+
+		stats, err := service.GetTimeSlotStatistics(date)
+		if err != nil {
+			log.Printf("获取时间段统计数据失败: %v", err)
+			response.InternalError(c, "获取时间段统计数据失败")
 			return
 		}
 

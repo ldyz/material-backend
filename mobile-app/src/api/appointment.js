@@ -273,6 +273,15 @@ export function exportAppointments(params) {
   })
 }
 
+// 获取时间段统计数据
+export function getTimeSlotStatistics(date) {
+  return request({
+    url: '/appointments/time-slot-statistics',
+    method: 'GET',
+    params: { date }
+  })
+}
+
 // 工具函数
 
 // 获取时间段标签
@@ -399,4 +408,12 @@ export function getUrgentColor(isUrgent, priority) {
     return 'blue'
   }
   return 'gray'
+}
+
+// 获取待审批数量
+export function getPendingApprovalCount() {
+  return request({
+    url: '/appointments/pending-count',
+    method: 'GET'
+  })
 }

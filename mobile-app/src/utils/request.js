@@ -6,6 +6,38 @@ import { storage } from './storage'
 const isCapacitor = typeof window !== 'undefined' && window.Capacitor
 const baseURL = isCapacitor ? 'https://home.mbed.org.cn:9090/api' : '/api'
 
+// 获取完整的资源URL（头像等）
+export function getAssetUrl(path) {
+  // 如果路径为空，返回默认头像
+  if (!path || path === '' || path === 'null') {
+    console.log('[getAssetUrl] 路径为空，返回默认头像')
+    return getDefaultAvatar()
+  }
+
+  // 如果已经是完整URL，直接返回
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+
+  // 动态检测 Capacitor 环境（确保在运行时检测）
+  const isCapacitorEnv = typeof window !== 'undefined' && window.Capacitor
+
+  // 在 Capacitor 环境中，使用完整的URL
+  if (isCapacitorEnv) {
+    return 'https://home.mbed.org.cn:9090' + path
+  }
+
+  // Web环境直接返回相对路径
+  return path
+}
+
+// 获取默认头像URL
+function getDefaultAvatar() {
+  const isCapacitorEnv = typeof window !== 'undefined' && window.Capacitor
+  const defaultAvatar = '/uploads/avatars/default.png'
+  return isCapacitorEnv ? ('https://home.mbed.org.cn:9090' + defaultAvatar) : defaultAvatar
+}
+
 let router = null
 
 const request = axios.create({

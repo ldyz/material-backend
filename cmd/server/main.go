@@ -208,6 +208,10 @@ func main() {
 	r.Static("/mobile", "./mobile-app/dist")
 	// 移动端更新文件（APK下载）
 	r.Static("/mobile-updates", "./mobile-app-updates")
+	// 版本文件（用于移动端版本检测）
+	r.GET("/version.json", func(c *gin.Context) {
+		c.File("./mobile-app/dist/version.json")
+	})
 
 	// API路由组
 	api := r.Group("/api")
@@ -268,25 +272,33 @@ func main() {
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		// 移动端应用路由回退
+		// 排除静态资源路径和API路径
+		if filepath.HasPrefix(path, "/api") ||
+		   filepath.HasPrefix(path, "/static") ||
+		   filepath.HasPrefix(path, "/assets") ||
+		   filepath.HasPrefix(path, "/uploads") ||
+		   filepath.HasPrefix(path, "/mobile-updates") {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+
+		// 移动端应用路由回退（排除 mobile-updates 和静态资源）
+		// 只对移动端的主路径和没有扩展名的路径返回 index.html
 		if filepath.HasPrefix(path, "/mobile") {
+			// 检查是否请求静态资源（有文件扩展名）
+			ext := filepath.Ext(path)
+			if ext != "" {
+				// 有扩展名，让静态文件路由处理
+				c.AbortWithStatus(http.StatusNotFound)
+				return
+			}
+			// 没有扩展名，返回 index.html（SPA 路由）
 			c.File("./mobile-app/dist/index.html")
 			return
 		}
 
 		// PC端 SPA 路由回退 - 使用新构建的 Vue 3 应用
-		// 排除 API 路径和静态资源路径
-		if !filepath.HasPrefix(path, "/api") &&
-		   !filepath.HasPrefix(path, "/static") &&
-		   !filepath.HasPrefix(path, "/assets") &&
-		   !filepath.HasPrefix(path, "/uploads") &&
-		   !filepath.HasPrefix(path, "/mobile") {
-			c.File("./static/index.html")
-			return
-		}
-
-		// 其他情况返回404
-		c.AbortWithStatus(http.StatusNotFound)
+		c.File("./static/index.html")
 	})
 
 	// 设置Gin运行模式

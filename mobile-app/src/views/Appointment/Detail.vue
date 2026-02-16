@@ -90,25 +90,17 @@
 
       <!-- 审批历史 -->
       <van-cell-group title="审批历史" inset>
-        <van-cell
-          v-for="(log, index) in approvalLogs"
-          :key="index"
-          :title="log.node_name"
-          :value="getActionLabel(log.action)"
-          :label="`${log.approver_name} - ${formatFullDateTime(log.created_at)}`"
-        >
-          <template #label v-if="log.remark">
-            <div class="approval-remark">
-              <span>{{ log.approver_name }} - {{ formatFullDateTime(log.created_at) }}</span>
-              <div class="remark-text">备注：{{ log.remark }}</div>
-            </div>
-          </template>
-        </van-cell>
-        <van-empty v-if="!approvalLogs.length" description="暂无审批记录" />
+        <ApprovalTimeline
+          :key="`timeline-${appointment.id}-${approvalLogs.length}`"
+          :approval-logs="approvalLogs"
+          :workflow-config="workflowConfig"
+          :current-status="appointment.status"
+        />
       </van-cell-group>
 
       <!-- 操作按钮 -->
       <div class="action-buttons">
+        <!-- 草稿状态：显示提交审批按钮 -->
         <van-button
           v-if="appointment.status === 'draft'"
           type="primary"
@@ -117,10 +109,72 @@
         >
           提交审批
         </van-button>
+
+        <!-- 待审批状态：显示审批/拒绝按钮 -->
+        <div v-if="canApprove" class="approve-buttons">
+          <van-button
+            type="success"
+            block
+            @click="showApproveDialog = true"
+          >
+            审批通过
+          </van-button>
+          <van-button
+            type="danger"
+            block
+            @click="showRejectDialog = true"
+            style="margin-top: 10px;"
+          >
+            审批拒绝
+          </van-button>
+        </div>
+
+        <!-- 进行中状态：显示完成作业按钮 -->
+        <van-button
+          v-else-if="appointment.status === 'in_progress'"
+          type="primary"
+          block
+          @click="showCompleteDialog = true"
+        >
+          完成作业
+        </van-button>
       </div>
     </div>
 
     <van-empty v-else description="预约单不存在" />
+
+    <!-- 审批对话框 -->
+    <van-dialog
+      v-model:show="showApproveDialog"
+      title="审批通过"
+      show-cancel-button
+      @confirm="handleApprove"
+    >
+      <van-field
+        v-model="approveComment"
+        type="textarea"
+        placeholder="请输入审批意见（可选）"
+        rows="3"
+        autosize
+      />
+    </van-dialog>
+
+    <!-- 拒绝对话框 -->
+    <van-dialog
+      v-model:show="showRejectDialog"
+      title="审批拒绝"
+      show-cancel-button
+      @confirm="handleReject"
+    >
+      <van-field
+        v-model="rejectReason"
+        type="textarea"
+        placeholder="请输入拒绝原因（必填）"
+        rows="3"
+        autosize
+        :rules="[{ required: true, message: '请输入拒绝原因' }]"
+      />
+    </van-dialog>
 
     <!-- 取消对话框 -->
     <van-dialog
@@ -155,15 +209,18 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showSuccessToast, showFailToast, Dialog } from 'vant'
+import ApprovalTimeline from '@/components/common/ApprovalTimeline.vue'
+import webSocketService from '@/utils/websocket'
 import {
   getAppointmentDetail,
   submitAppointment,
   startWork,
   completeAppointment,
   cancelAppointment,
+  approveAppointment,
   getApprovalHistory,
   getTimeSlotLabel,
   getStatusLabel,
@@ -182,8 +239,28 @@ const approvalLogs = ref([])
 const loading = ref(true)
 const cancelDialogVisible = ref(false)
 const completeDialogVisible = ref(false)
+const showApproveDialog = ref(false)
+
+// 审批流程配置（根据实际业务配置）
+const workflowConfig = [
+  {
+    role: 'project_manager',
+    title: '项目经理审批',
+    order: 1,
+    role_name: '项目经理'
+  },
+  {
+    role: 'supervisor',
+    title: '主管审批',
+    order: 2,
+    role_name: '主管'
+  }
+]
+const showRejectDialog = ref(false)
 const cancelReason = ref('')
 const completionNote = ref('')
+const approveComment = ref('')
+const rejectReason = ref('')
 
 const canEditOrCancel = computed(() => {
   if (!appointment.value) return false
@@ -191,9 +268,178 @@ const canEditOrCancel = computed(() => {
   return status === 'draft' || status === 'pending' || status === 'scheduled'
 })
 
+// 检查是否有审批权限（不能审批自己的预约单）
+const canApprove = computed(() => {
+  if (!appointment.value) return false
+  // 如果是草稿或已完成状态，不能审批
+  if (appointment.value.status !== 'pending') return false
+
+  // 从 localStorage 获取当前用户ID
+  const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}')
+  const currentUserId = userInfo.id || userInfo.user_id
+
+  // 不能审批自己的预约单
+  if (appointment.value.applicant_id === currentUserId) return false
+
+  return true
+})
+
 onMounted(async () => {
   await loadDetail()
   await loadApprovalHistory()
+
+  // 注册 WebSocket 消息监听
+  setupWebSocketListener()
+
+  // 注册页面可见性监听
+  setupVisibilityListener()
+})
+
+// WebSocket 消息处理函数
+function handleWebSocketMessage(data) {
+  console.log('[WebSocket] 收到消息:', data)
+
+  // 处理审批更新消息
+  if (data.type === 'appointment_approval_update') {
+    const updateData = data.data
+    console.log('[WebSocket] 审批更新消息:', updateData)
+
+    // 检查是否是当前预约单的更新
+    if (updateData.appointment_id === parseInt(route.params.id)) {
+      console.log('[WebSocket] 当前预约单有更新，正在刷新审批历史...')
+
+      // 播放提示音（可选）
+      playNotificationSound()
+
+      // 显示 Toast 提示
+      showSuccessToast('审批状态已更新')
+
+      // 刷新预约单详情（状态可能已改变）
+      loadDetail()
+
+      // 刷新审批历史
+      loadApprovalHistory()
+    }
+  }
+}
+
+// 播放提示音
+function playNotificationSound() {
+  try {
+    // 使用 Web Audio API 生成简单的"叮"声
+    if ('AudioContext' in window || 'webkitAudioContext' in window) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext
+      const audioCtx = new AudioContext()
+
+      // 创建振荡器（发声源）
+      const oscillator = audioCtx.createOscillator()
+      const gainNode = audioCtx.createGain()
+
+      // 设置音调（800Hz）和类型（正弦波）
+      oscillator.type = 'sine'
+      oscillator.frequency.value = 800
+
+      // 设置音量（开始时 0.3）
+      gainNode.gain.value = 0.3
+
+      // 连接节点
+      oscillator.connect(gainNode)
+      gainNode.connect(audioCtx.destination)
+
+      // 播放 200ms 的提示音
+      oscillator.start()
+      setTimeout(() => {
+        oscillator.stop()
+        audioCtx.close()
+      }, 200)
+
+      console.log('[提示音] 播放成功')
+    } else {
+      console.log('[提示音] 浏览器不支持 Web Audio API')
+    }
+  } catch (error) {
+    console.log('[提示音] 播放失败:', error)
+  }
+}
+
+// 设置 WebSocket 监听
+function setupWebSocketListener() {
+  if (webSocketService && webSocketService.isConnected()) {
+    // 保存原始的 onmessage 处理器
+    const originalHandler = webSocketService.ws.onmessage
+
+    // 监听消息
+    webSocketService.ws.onmessage = (event) => {
+      // 先调用原始处理（通知等）
+      if (originalHandler) {
+        originalHandler.call(webSocketService.ws, event)
+      }
+
+      // 然后处理我们的消息
+      try {
+        const data = JSON.parse(event.data)
+        handleWebSocketMessage(data)
+      } catch (error) {
+        console.error('[WebSocket] 解析消息失败:', error)
+      }
+    }
+
+    // 监听连接打开（包括重连成功）
+    const originalOnOpen = webSocketService.ws.onopen
+    webSocketService.ws.onopen = (event) => {
+      if (originalOnOpen) {
+        originalOnOpen.call(webSocketService.ws, event)
+      }
+      console.log('[WebSocket] 连接已建立（包括重连），刷新数据...')
+      // 连接建立后刷新数据
+      refreshDataIfNeeded()
+    }
+
+    console.log('[WebSocket] 已注册审批更新监听')
+  } else {
+    console.warn('[WebSocket] 未连接，无法注册监听')
+  }
+}
+
+// 页面可见性检测
+function setupVisibilityListener() {
+  // 监听页面可见性变化
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+
+  // 监听页面获得焦点
+  window.addEventListener('focus', handlePageFocus)
+}
+
+// 处理页面可见性变化
+function handleVisibilityChange() {
+  if (!document.hidden && appointment.value) {
+    console.log('[页面可见] 页面重新可见，刷新数据...')
+    refreshDataIfNeeded()
+  }
+}
+
+// 处理页面获得焦点
+function handlePageFocus() {
+  console.log('[页面焦点] 页面获得焦点，刷新数据...')
+  refreshDataIfNeeded()
+}
+
+// 刷新数据（如果需要）
+function refreshDataIfNeeded() {
+  // 只在有预约单数据时刷新
+  if (appointment.value && route.params.id) {
+    loadDetail()
+    loadApprovalHistory()
+  }
+}
+
+// 清理监听器
+onUnmounted(() => {
+  // 移除页面可见性监听
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.removeEventListener('focus', handlePageFocus)
+
+  console.log('[清理] 已移除所有监听器')
 })
 
 async function loadDetail() {
@@ -213,11 +459,24 @@ async function loadDetail() {
 async function loadApprovalHistory() {
   try {
     const response = await getApprovalHistory(route.params.id)
-    console.log('Approval history response:', response)
-    // response 直接就是 { success: true, data: [...], meta: {...} }
-    approvalLogs.value = response.data || []
+    console.log('[审批历史] 原始响应:', response)
+
+    // 处理不同的响应格式
+    if (response && response.data) {
+      approvalLogs.value = Array.isArray(response.data) ? response.data : []
+      console.log('[审批历史] 更新后的记录数:', approvalLogs.value.length)
+      console.log('[审批历史] 记录详情:', approvalLogs.value)
+    } else if (Array.isArray(response)) {
+      // 如果直接返回数组
+      approvalLogs.value = response
+      console.log('[审批历史] 直接数组格式，记录数:', approvalLogs.value.length)
+    } else {
+      approvalLogs.value = []
+      console.warn('[审批历史] 未知响应格式:', response)
+    }
   } catch (error) {
-    console.error('加载审批历史失败:', error)
+    console.error('[审批历史] 加载失败:', error)
+    showFailToast('加载审批历史失败')
   }
 }
 
@@ -276,6 +535,66 @@ async function handleCancel() {
   }
 }
 
+// 审批通过
+async function handleApprove() {
+  try {
+    console.log('[审批] 开始审批通过流程')
+    const result = await approveAppointment(route.params.id, {
+      action: 'approve',
+      comment: approveComment.value
+    })
+    console.log('[审批] 审批响应:', result)
+
+    showSuccessToast('审批通过')
+    showApproveDialog.value = false
+    approveComment.value = ''
+
+    // 重新加载数据
+    console.log('[审批] 重新加载详情...')
+    await loadDetail()
+
+    console.log('[审批] 重新加载审批历史...')
+    await loadApprovalHistory()
+
+    console.log('[审批] 所有数据更新完成')
+  } catch (error) {
+    console.error('[审批] 审批失败:', error)
+    showFailToast(error.message || '审批失败')
+  }
+}
+
+// 审批拒绝
+async function handleReject() {
+  if (!rejectReason.value.trim()) {
+    showFailToast('请输入拒绝原因')
+    return
+  }
+  try {
+    console.log('[审批] 开始审批拒绝流程')
+    const result = await approveAppointment(route.params.id, {
+      action: 'reject',
+      comment: rejectReason.value
+    })
+    console.log('[审批] 拒绝响应:', result)
+
+    showSuccessToast('已拒绝')
+    showRejectDialog.value = false
+    rejectReason.value = ''
+
+    // 重新加载数据
+    console.log('[审批] 重新加载详情...')
+    await loadDetail()
+
+    console.log('[审批] 重新加载审批历史...')
+    await loadApprovalHistory()
+
+    console.log('[审批] 所有数据更新完成')
+  } catch (error) {
+    console.error('[审批] 拒绝失败:', error)
+    showFailToast(error.message || '拒绝失败')
+  }
+}
+
 function showCompleteDialog() {
   completionNote.value = ''
   completeDialogVisible.value = true
@@ -330,6 +649,12 @@ function getActionLabel(action) {
 
 .action-buttons .van-button {
   margin-bottom: 8px;
+}
+
+.approve-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .approval-remark {

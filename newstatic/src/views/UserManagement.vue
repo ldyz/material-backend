@@ -63,7 +63,20 @@
         <el-table-column prop="username" label="用户名" width="150" />
         <el-table-column prop="full_name" label="姓名" width="120" />
         <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="role" label="角色" width="120" />
+        <el-table-column prop="role" label="角色" width="200">
+          <template #default="scope">
+            <el-tag
+              v-for="role in scope.row.roles"
+              :key="role.id"
+              type="primary"
+              size="small"
+              style="margin-right: 4px; margin-bottom: 4px;"
+            >
+              {{ role.name }}
+            </el-tag>
+            <span v-if="!scope.row.roles || scope.row.roles.length === 0" style="color: #999;">-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="is_active" label="状态" width="100">
           <template #default="scope">
             <el-tag :type="scope.row.is_active ? 'success' : 'danger'" size="small">
@@ -152,19 +165,21 @@
             maxlength="100"
           />
         </el-form-item>
-        <el-form-item label="角色" prop="role">
-          <el-select
-            v-model="form.role"
-            placeholder="请选择角色"
-            style="width: 100%"
-          >
-            <el-option
+        <el-form-item label="角色" prop="role_ids">
+          <el-checkbox-group v-model="form.role_ids">
+            <el-checkbox
               v-for="role in allRoles"
               :key="role.id"
-              :label="role.name"
-              :value="role.name"
-            />
-          </el-select>
+              :label="role.id"
+              :value="role.id"
+              style="margin-right: 20px; margin-bottom: 10px;"
+            >
+              {{ role.name }}
+            </el-checkbox>
+          </el-checkbox-group>
+          <div style="color: #999; font-size: 12px; margin-top: 4px;">
+            可选择多个角色
+          </div>
         </el-form-item>
         <el-form-item label="状态" prop="is_active">
           <el-radio-group v-model="form.is_active">
@@ -242,7 +257,7 @@ const form = reactive({
   password: '',
   full_name: '',
   email: '',
-  role: '',
+  role_ids: [],
   is_active: true
 })
 
@@ -261,8 +276,14 @@ const formRules = {
   email: [
     { type: 'email', message: '邮箱格式不正确', trigger: 'blur' }
   ],
-  role: [
-    { required: true, message: '请选择角色', trigger: 'change' }
+  role_ids: [
+    {
+      required: true,
+      type: 'array',
+      min: 1,
+      message: '请至少选择一个角色',
+      trigger: 'change'
+    }
   ]
 }
 
@@ -311,7 +332,7 @@ const handleEditUser = (row) => {
     username: row.username,
     full_name: row.full_name,
     email: row.email,
-    role: row.role,
+    role_ids: row.roles ? row.roles.map(r => r.id) : [],
     is_active: row.is_active
   })
   isEdit.value = true
@@ -353,7 +374,7 @@ const handleSubmit = async () => {
       username: form.username,
       full_name: form.full_name,
       email: form.email,
-      role: form.role,
+      role_ids: form.role_ids,
       is_active: form.is_active
     }
 
@@ -387,7 +408,7 @@ const resetForm = () => {
     password: '',
     full_name: '',
     email: '',
-    role: '',
+    role_ids: [],
     is_active: true
   })
   if (formRef.value) {

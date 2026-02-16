@@ -282,6 +282,20 @@ type DailyStatisticsResponse struct {
 	TotalWorkers int64           `json:"total_workers"` // 总作业人员数
 }
 
+// TimeSlotStatistics 时间段统计数据
+type TimeSlotStatistics struct {
+	Date        string `json:"date"`        // YYYY-MM-DD
+	TimeSlot    string `json:"time_slot"`   // morning, noon, afternoon, full_day
+	TotalCount  int64  `json:"total_count"` // 该时间段任务数
+	TotalWorkers int64  `json:"total_workers"` // 总作业人员数
+}
+
+// TimeSlotStatisticsResponse 时间段统计响应
+type TimeSlotStatisticsResponse struct {
+	Statistics   []TimeSlotStatistics `json:"statistics"`
+	TotalWorkers int64                `json:"total_workers"` // 总作业人员数
+}
+
 // TimeSlotConstants 时间段常量
 const (
 	TimeSlotMorning   = "morning"

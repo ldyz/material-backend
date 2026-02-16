@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yourorg/material-backend/backend/internal/api/response"
@@ -48,10 +49,15 @@ func (h *Handler) CheckVersion(c *gin.Context) {
 	// 比较版本号
 	hasUpdate := compareVersions(currentVersion, latest.Version)
 
+	// 生成下载 URL，使用带版本号的文件名
+	// 添加时间戳参数避免浏览器缓存
+	downloadURL := fmt.Sprintf("https://home.mbed.org.cn:9090/mobile-updates/%s/material-management-%s.apk?t=%d",
+		platform, latest.Version, time.Now().Unix())
+
 	response.Success(c, VersionCheckResponse{
 		HasUpdate:     hasUpdate,
 		LatestVersion: latest.Version,
-		DownloadURL:   latest.DownloadURL,
+		DownloadURL:   downloadURL,
 		ForceUpdate:   latest.ForceUpdate,
 		UpdateMessage: latest.UpdateMessage,
 		ReleaseNotes:  latest.ReleaseNotes,

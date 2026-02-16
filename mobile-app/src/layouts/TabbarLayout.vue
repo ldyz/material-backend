@@ -16,11 +16,12 @@
     </router-view>
 
     <van-tabbar v-model="activeTab" :safe-area-inset-bottom="true">
-      <van-tabbar-item name="dashboard" icon="wap-home-o">首页</van-tabbar-item>
-      <van-tabbar-item name="plans" icon="orders-o">计划</van-tabbar-item>
-      <van-tabbar-item name="appointments" icon="calendar-o">预约</van-tabbar-item>
-      <van-tabbar-item name="inbound" icon="logistics">入库</van-tabbar-item>
-      <van-tabbar-item name="profile" icon="user-o">我的</van-tabbar-item>
+      <!-- 动态渲染的菜单项 -->
+      <template v-for="item in menuItems" :key="item.name">
+        <van-tabbar-item :name="item.name" :icon="item.icon">
+          {{ item.label }}
+        </van-tabbar-item>
+      </template>
     </van-tabbar>
 
     <!-- 自动更新对话框 -->
@@ -29,7 +30,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAutoUpdate } from '@/composables/useAppUpdate'
 import AppUpdateDialog from '@/components/AppUpdateDialog.vue'
@@ -45,6 +46,43 @@ const { hasUpdate, forceUpdate, performCheck } = useAutoUpdate({
   autoCheck: true,
   checkOnMount: true,
   checkInterval: 24 * 60 * 60 * 1000 // 每24小时检查一次
+})
+
+// 从 localStorage 获取用户信息
+const userInfo = ref(JSON.parse(localStorage.getItem('userInfo') || '{}'))
+const userRole = computed(() => userInfo.value.role || '')
+
+// 根据角色动态生成菜单项
+const menuItems = computed(() => {
+  const role = userRole.value
+
+  // 默认菜单（所有人可见）
+  const defaultMenus = [
+    { name: 'dashboard', label: '首页', icon: 'wap-home-o' },
+    { name: 'appointments', label: '预约', icon: 'calendar-o' },
+    { name: 'profile', label: '我的', icon: 'user-o' }
+  ]
+
+  // 管理员菜单
+  if (role === 'admin' || role === 'project_manager') {
+    return [
+      { name: 'dashboard', label: '首页', icon: 'wap-home-o' },
+      { name: 'appointments', label: '预约管理', icon: 'calendar-o' },
+      { name: 'inbound', label: '入库管理', icon: 'logistics' },
+      { name: 'profile', label: '我的', icon: 'user-o' }
+    ]
+  }
+
+  // 作业人员菜单
+  if (role === 'worker') {
+    return [
+      { name: 'dashboard', label: '首页', icon: 'wap-home-o' },
+      { name: 'profile', label: '我的', icon: 'user-o' }
+    ]
+  }
+
+  // 默认返回普通菜单
+  return defaultMenus
 })
 
 // 监听是否有更新

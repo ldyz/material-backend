@@ -198,6 +198,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 				Email    string `json:"email"`
 				FullName string `json:"full_name"`
 				Role     string `json:"role"`
+				RoleIDs  []uint `json:"role_ids"`
 				IsActive bool   `json:"is_active"`
 			}
 			if err := c.ShouldBindJSON(&req); err != nil {
@@ -217,6 +218,22 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 				response.InternalError(c, err.Error())
 				return
 			}
+
+			 // 如果提供了 role_ids，使用 many2many 关联
+		 if len(req.RoleIDs) > 0 {
+			 var roles []Role
+			 if err := db.Find(&roles, req.RoleIDs).Error; err != nil {
+				 response.InternalError(c, "角色查找失败")
+				 return
+			 }
+			 if err := db.Model(&u).Association("Roles").Append(roles); err != nil {
+				 response.InternalError(c, "角色关联失败")
+				 return
+			 }
+			 // 重新加载用户数据
+			 db.Preload("Roles").First(&u, u.ID)
+		 }
+
 			response.Created(c, u.ToDTO(), "用户创建成功")
 		})
 
@@ -256,7 +273,41 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			if v, ok := req["role"].(string); ok { u.Role = v }
 			if v, ok := req["is_active"].(bool); ok { u.IsActive = v }
 			if v, ok := req["password"].(string); ok && v != "" { u.SetPassword(v) }
+
+			// 处理 role_ids many2many 关联
+			if roleIDs, ok := req["role_ids"].([]interface{}); ok {
+				// 转换为 []uint
+				var ids []uint
+				for _, id := range roleIDs {
+					switch v := id.(type) {
+					case float64:
+						ids = append(ids, uint(v))
+					case int:
+						ids = append(ids, uint(v))
+					case int64:
+						ids = append(ids, uint(v))
+					}
+				}
+
+				// 查找角色
+				var roles []Role
+				if len(ids) > 0 {
+					if err := db.Find(&roles, ids).Error; err != nil {
+						response.InternalError(c, "角色查找失败")
+						return
+					}
+				}
+
+				// 替换关联
+				if err := db.Model(&u).Association("Roles").Replace(roles); err != nil {
+					response.InternalError(c, "角色更新失败")
+					return
+				}
+			}
+
 			db.Save(&u)
+			// 重新加载用户数据以包含更新后的角色
+			db.Preload("Roles").First(&u, u.ID)
 			response.SuccessWithMessage(c, u.ToDTO(), "用户更新成功")
 		})
 

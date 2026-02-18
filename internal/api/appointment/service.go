@@ -52,7 +52,7 @@ func (s *AppointmentService) Create(req CreateAppointmentRequest, applicantID ui
 
 	// 创建预约单
 	appointment := &ConstructionAppointment{
-		ProjectID:           req.ProjectID,
+		ProjectID:           &req.ProjectID, // 转换为指针
 		ApplicantID:         applicantID,
 		ApplicantName:       applicantName,
 		ContactPhone:        req.ContactPhone,

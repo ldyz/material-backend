@@ -41,52 +41,68 @@
 
     <div v-else-if="appointment" class="detail-content">
       <!-- 基本信息 -->
-      <van-cell-group title="基本信息" inset>
-        <van-cell title="预约单号" :value="appointment.appointment_no" />
-        <van-cell title="状态">
-          <template #value>
-            <van-tag :type="getStatusColor(appointment.status)">
-              {{ getStatusLabel(appointment.status) }}
-            </van-tag>
-          </template>
-        </van-cell>
-        <van-cell title="申请人" :value="appointment.applicant_name" />
-        <van-cell title="联系电话" :value="appointment.contact_phone || '-'" />
-        <van-cell title="联系人" :value="appointment.contact_person || '-'" />
-      </van-cell-group>
+      <DetailInfoGroup
+        title="基本信息"
+        :item="appointment"
+        status-type="appointment"
+        :fields="basicFields"
+      />
 
       <!-- 作业信息 -->
-      <van-cell-group title="作业信息" inset>
-        <van-cell title="作业时间" :value="formatDateTime(appointment.work_date, appointment.time_slot)" />
-        <van-cell title="作业地点" :value="appointment.work_location" />
-        <van-cell title="作业内容" :value="appointment.work_content" />
-        <van-cell title="作业类型" :value="appointment.work_type || '-'" />
-      </van-cell-group>
+      <DetailInfoGroup
+        title="作业信息"
+        :item="appointment"
+        :fields="workInfoFields"
+      >
+        <template #field-work_date="{ field, value }">
+          {{ formatDateTime(appointment.work_date, appointment.time_slot) }}
+        </template>
+      </DetailInfoGroup>
 
       <!-- 优先级信息 -->
-      <van-cell-group v-if="appointment.is_urgent || appointment.priority > 0" title="优先级" inset>
-        <van-cell title="是否加急">
-          <template #value>
-            <van-tag v-if="appointment.is_urgent" type="danger">是</van-tag>
-            <van-tag v-else type="default">否</van-tag>
-          </template>
-        </van-cell>
-        <van-cell title="优先级" :value="appointment.priority" />
-        <van-cell v-if="appointment.urgent_reason" title="加急原因" :value="appointment.urgent_reason" />
-      </van-cell-group>
+      <DetailInfoGroup
+        v-if="appointment.is_urgent || appointment.priority > 0"
+        title="优先级"
+        :item="appointment"
+        :fields="priorityFields"
+      >
+        <template #field-is_urgent="{ field, value }">
+          <van-tag v-if="appointment.is_urgent" type="danger">是</van-tag>
+          <van-tag v-else type="default">否</van-tag>
+        </template>
+      </DetailInfoGroup>
 
       <!-- 分配信息 -->
-      <van-cell-group title="分配信息" inset>
-        <van-cell title="作业人员" :value="appointment.assigned_worker_name || '未分配'" />
-      </van-cell-group>
+      <DetailInfoGroup
+        title="分配信息"
+        :item="appointment"
+        :fields="assignmentFields"
+      >
+        <template #field-assigned_worker_name="{ field, value }">
+          {{ appointment.assigned_worker_name || '未分配' }}
+        </template>
+      </DetailInfoGroup>
 
       <!-- 时间信息 -->
-      <van-cell-group title="时间信息" inset>
-        <van-cell title="创建时间" :value="formatFullDateTime(appointment.created_at)" />
-        <van-cell v-if="appointment.submitted_at" title="提交时间" :value="formatFullDateTime(appointment.submitted_at)" />
-        <van-cell v-if="appointment.approved_at" title="审批时间" :value="formatFullDateTime(appointment.approved_at)" />
-        <van-cell v-if="appointment.completed_at" title="完成时间" :value="formatFullDateTime(appointment.completed_at)" />
-      </van-cell-group>
+      <DetailInfoGroup
+        title="时间信息"
+        :item="appointment"
+        :fields="timeFields"
+        :show-empty="false"
+      >
+        <template #field-created_at="{ field, value }">
+          {{ formatFullDateTime(appointment.created_at) }}
+        </template>
+        <template #field-submitted_at="{ field, value }">
+          {{ formatFullDateTime(appointment.submitted_at) }}
+        </template>
+        <template #field-approved_at="{ field, value }">
+          {{ formatFullDateTime(appointment.approved_at) }}
+        </template>
+        <template #field-completed_at="{ field, value }">
+          {{ formatFullDateTime(appointment.completed_at) }}
+        </template>
+      </DetailInfoGroup>
 
       <!-- 审批历史 -->
       <van-cell-group title="审批历史" inset>
@@ -147,17 +163,103 @@
     <van-dialog
       v-model:show="showApproveDialog"
       title="审批通过"
-      show-cancel-button
-      @confirm="handleApprove"
+      :show-confirm-button="false"
     >
-      <van-field
-        v-model="approveComment"
-        type="textarea"
-        placeholder="请输入审批意见（可选）"
-        rows="3"
-        autosize
-      />
+      <van-form @submit="handleApproveSubmit">
+        <!-- 审批意见 -->
+        <van-field
+          v-model="approveComment"
+          type="textarea"
+          placeholder="请输入审批意见（可选）"
+          rows="3"
+          autosize
+        />
+
+        <!-- 分配作业人员开关 -->
+        <van-cell-group title="分配作业人员" inset>
+          <van-field title="立即分配">
+            <template #input>
+              <van-switch v-model="approveForm.assignNow" />
+            </template>
+          </van-field>
+        </van-cell-group>
+
+        <!-- 作业人员选择 -->
+        <van-cell-group v-if="approveForm.assignNow" title="选择作业人员" inset>
+          <van-field
+            readonly
+            clickable
+            :value="selectedWorkerName"
+            placeholder="选择作业人员"
+            @click="showWorkerPicker = true"
+          />
+        </van-cell-group>
+
+        <!-- 修改作业时间开关 -->
+        <van-cell-group title="修改作业时间" inset>
+          <van-field title="调整时间">
+            <template #input>
+              <van-switch v-model="approveForm.reschedule" />
+            </template>
+          </van-field>
+        </van-cell-group>
+
+        <!-- 新作业时间选择 -->
+        <van-cell-group v-if="approveForm.reschedule" title="新作业时间" inset>
+          <van-field
+            readonly
+            clickable
+            :value="newWorkDateLabel"
+            placeholder="选择日期"
+            @click="showDatePicker = true"
+          />
+          <van-field
+            readonly
+            clickable
+            :value="newTimeSlotLabel"
+            placeholder="选择时间段"
+            @click="showTimeSlotPicker = true"
+          />
+          <van-cell title="可用作业人员">
+            <template #value>
+              <van-tag :type="availableWorkersCount > 0 ? 'success' : 'danger'">
+                {{ availableWorkersCount }} 人可用
+              </van-tag>
+            </template>
+          </van-cell>
+        </van-cell-group>
+
+        <!-- 操作按钮 -->
+        <div class="dialog-actions">
+          <van-button plain type="default" @click="showApproveDialog = false">
+            取消
+          </van-button>
+          <van-button type="success" native-type="submit">
+            审批通过
+          </van-button>
+        </div>
+      </van-form>
     </van-dialog>
+
+    <!-- 作业人员选择器 -->
+    <WorkerPicker
+      v-model="showWorkerPicker"
+      title="选择作业人员"
+      :multiple="false"
+      @confirm="onWorkerConfirm"
+    />
+
+    <!-- 日期选择器 -->
+    <van-calendar v-model:show="showDatePicker" @confirm="onDateConfirm" />
+
+    <!-- 时间段选择器 -->
+    <van-popup v-model:show="showTimeSlotPicker" position="bottom">
+      <van-picker
+        :columns="timeSlotColumns"
+        @confirm="onTimeSlotConfirm"
+        @cancel="showTimeSlotPicker = false"
+      />
+    </van-popup>
 
     <!-- 拒绝对话框 -->
     <van-dialog
@@ -209,10 +311,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showSuccessToast, showFailToast, Dialog } from 'vant'
 import ApprovalTimeline from '@/components/common/ApprovalTimeline.vue'
+import WorkerPicker from '@/components/common/WorkerPicker.vue'
+import DetailInfoGroup from '@/components/common/DetailInfoGroup.vue'
+import { formatAppointmentDate, formatDateTime } from '@/composables/useDateTime'
 import webSocketService from '@/utils/websocket'
 import {
   getAppointmentDetail,
@@ -223,12 +328,11 @@ import {
   approveAppointment,
   getApprovalHistory,
   getTimeSlotLabel,
-  getStatusLabel,
-  getStatusColor,
   isEditable,
   isCancellable,
   canStart,
-  canComplete
+  canComplete,
+  getAvailableWorkers
 } from '@/api/appointment'
 
 const router = useRouter()
@@ -241,26 +345,99 @@ const cancelDialogVisible = ref(false)
 const completeDialogVisible = ref(false)
 const showApproveDialog = ref(false)
 
-// 审批流程配置（根据实际业务配置）
-const workflowConfig = [
-  {
-    role: 'project_manager',
-    title: '项目经理审批',
-    order: 1,
-    role_name: '项目经理'
-  },
-  {
-    role: 'supervisor',
-    title: '主管审批',
-    order: 2,
-    role_name: '主管'
-  }
-]
+// 审批流程配置（可选，如果为空则直接使用审批记录）
+const workflowConfig = []
+
 const showRejectDialog = ref(false)
 const cancelReason = ref('')
 const completionNote = ref('')
 const approveComment = ref('')
 const rejectReason = ref('')
+
+// 审批表单数据
+const approveForm = ref({
+  assignNow: false,
+  workerId: null,
+  reschedule: false,
+  newWorkDate: '',
+  newTimeSlot: ''
+})
+
+// 作业人员选择器
+const showWorkerPicker = ref(false)
+const selectedWorkerName = ref('')
+
+// 日期选择器
+const showDatePicker = ref(false)
+const newWorkDateLabel = computed(() => {
+  if (!approveForm.value.newWorkDate) return ''
+  const date = new Date(approveForm.value.newWorkDate)
+  return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+})
+
+// 时间段选择器
+const showTimeSlotPicker = ref(false)
+const timeSlotColumns = [
+  { text: '上午 (8:00-11:30)', value: 'morning' },
+  { text: '中午 (12:00-13:30)', value: 'noon' },
+  { text: '下午 (13:30-16:30)', value: 'afternoon' },
+  { text: '全天', value: 'full_day' }
+]
+const newTimeSlotLabel = computed(() => {
+  if (!approveForm.value.newTimeSlot) return ''
+  return getTimeSlotLabel(approveForm.value.newTimeSlot)
+})
+
+// 可用作业人员数量
+const availableWorkersCount = ref(0)
+
+// DetailInfoGroup 字段配置
+const basicFields = computed(() => [
+  { key: 'appointment_no', label: '预约单号' },
+  { key: 'status', label: '状态', type: 'status' },
+  { key: 'applicant_name', label: '申请人' },
+  { key: 'contact_phone', label: '联系电话', defaultValue: '-' },
+  { key: 'contact_person', label: '联系人', defaultValue: '-' }
+])
+
+const workInfoFields = computed(() => [
+  { key: 'work_date', label: '作业时间', type: 'custom' },
+  { key: 'work_location', label: '作业地点' },
+  { key: 'work_content', label: '作业内容' },
+  { key: 'work_type', label: '作业类型', defaultValue: '-' }
+])
+
+const priorityFields = computed(() => [
+  { key: 'is_urgent', label: '是否加急', type: 'custom' },
+  { key: 'priority', label: '优先级' },
+  { key: 'urgent_reason', label: '加急原因', defaultValue: '-' }
+])
+
+const assignmentFields = computed(() => [
+  { key: 'assigned_worker_name', label: '作业人员', type: 'custom' }
+])
+
+const timeFields = computed(() => [
+  { key: 'created_at', label: '创建时间', type: 'custom' },
+  { key: 'submitted_at', label: '提交时间', type: 'custom' },
+  { key: 'approved_at', label: '审批时间', type: 'custom' },
+  { key: 'completed_at', label: '完成时间', type: 'custom' }
+])
+
+// 当开启分配时，显示选择提示
+watch(() => approveForm.value.assignNow, async (val) => {
+  if (!val) {
+    selectedWorkerName.value = ''
+    approveForm.value.workerId = null
+  }
+})
+
+// 当开启修改时间或日期/时间改变时，加载可用作业人员数量
+watch([() => approveForm.value.reschedule, () => approveForm.value.newWorkDate, () => approveForm.value.newTimeSlot], async () => {
+  if (approveForm.value.reschedule && approveForm.value.newWorkDate && approveForm.value.newTimeSlot) {
+    await loadAvailableWorkersForNewTime()
+  }
+})
 
 const canEditOrCancel = computed(() => {
   if (!appointment.value) return false
@@ -446,7 +623,6 @@ async function loadDetail() {
   try {
     const response = await getAppointmentDetail(route.params.id)
     console.log('Appointment detail response:', response)
-    // response 直接就是 { success: true, data: {...}, meta: {...} }
     appointment.value = response.data
   } catch (error) {
     console.error('加载预约单详情失败:', error)
@@ -535,28 +711,83 @@ async function handleCancel() {
   }
 }
 
-// 审批通过
-async function handleApprove() {
+// 加载新时间段的可用作业人员数量
+async function loadAvailableWorkersForNewTime() {
+  try {
+    const response = await getAvailableWorkers({
+      work_date: approveForm.value.newWorkDate,
+      time_slot: approveForm.value.newTimeSlot
+    })
+    availableWorkersCount.value = (response.data || []).length
+  } catch (error) {
+    console.error('获取可用作业人员数量失败:', error)
+  }
+}
+
+// 作业人员选择确认
+function onWorkerConfirm(workerId, worker) {
+  approveForm.value.workerId = workerId
+  selectedWorkerName.value = worker ? (worker.full_name || worker.username) : ''
+  showWorkerPicker.value = false
+}
+
+// 日期选择确认
+function onDateConfirm(value) {
+  approveForm.value.newWorkDate = value.toISOString().split('T')[0]
+  showDatePicker.value = false
+}
+
+// 时间段选择确认
+function onTimeSlotConfirm({ selectedOptions }) {
+  approveForm.value.newTimeSlot = selectedOptions[0].value
+  showTimeSlotPicker.value = false
+}
+
+// 审批通过表单提交
+async function handleApproveSubmit() {
+  // 验证：如果修改了时间但可用作业人员为0，阻止提交
+  if (approveForm.value.reschedule && availableWorkersCount.value === 0) {
+    showFailToast('所选时间段没有可用作业人员，请选择其他时间')
+    return
+  }
+
+  // 验证：如果开启分配但未选择作业人员
+  if (approveForm.value.assignNow && !approveForm.value.workerId) {
+    showFailToast('请选择作业人员')
+    return
+  }
+
   try {
     console.log('[审批] 开始审批通过流程')
-    const result = await approveAppointment(route.params.id, {
+    const payload = {
       action: 'approve',
-      comment: approveComment.value
-    })
+      comment: approveComment.value,
+      assign_now: approveForm.value.assignNow,
+      worker_id: approveForm.value.workerId,
+      reschedule: approveForm.value.reschedule,
+      new_work_date: approveForm.value.newWorkDate,
+      new_time_slot: approveForm.value.newTimeSlot
+    }
+    const result = await approveAppointment(route.params.id, payload)
     console.log('[审批] 审批响应:', result)
 
     showSuccessToast('审批通过')
     showApproveDialog.value = false
+
+    // 重置表单
     approveComment.value = ''
+    approveForm.value = {
+      assignNow: false,
+      workerId: null,
+      reschedule: false,
+      newWorkDate: '',
+      newTimeSlot: ''
+    }
+    availableWorkersCount.value = 0
 
     // 重新加载数据
-    console.log('[审批] 重新加载详情...')
     await loadDetail()
-
-    console.log('[审批] 重新加载审批历史...')
     await loadApprovalHistory()
-
-    console.log('[审批] 所有数据更新完成')
   } catch (error) {
     console.error('[审批] 审批失败:', error)
     showFailToast(error.message || '审批失败')
@@ -570,25 +801,18 @@ async function handleReject() {
     return
   }
   try {
-    console.log('[审批] 开始审批拒绝流程')
-    const result = await approveAppointment(route.params.id, {
+    await approveAppointment(route.params.id, {
       action: 'reject',
       comment: rejectReason.value
     })
-    console.log('[审批] 拒绝响应:', result)
 
     showSuccessToast('已拒绝')
     showRejectDialog.value = false
     rejectReason.value = ''
 
     // 重新加载数据
-    console.log('[审批] 重新加载详情...')
     await loadDetail()
-
-    console.log('[审批] 重新加载审批历史...')
     await loadApprovalHistory()
-
-    console.log('[审批] 所有数据更新完成')
   } catch (error) {
     console.error('[审批] 拒绝失败:', error)
     showFailToast(error.message || '拒绝失败')
@@ -600,32 +824,10 @@ function showCompleteDialog() {
   completeDialogVisible.value = true
 }
 
-function formatDateTime(dateStr, timeSlot) {
-  const date = new Date(dateStr)
-  const dateStr2 = date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
-  const slot = getTimeSlotLabel(timeSlot)
-  return `${dateStr2} ${slot}`
-}
-
 function formatFullDateTime(dateStr) {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
   return date.toLocaleString('zh-CN')
-}
-
-// 获取审批动作的中文标签
-function getActionLabel(action) {
-  const actionLabels = {
-    'start': '提交',
-    'approve': '通过',
-    'reject': '拒绝',
-    'return': '退回',
-    'comment': '评论',
-    'cancel': '取消',
-    'submit': '提交',
-    'resubmit': '重新提交'
-  }
-  return actionLabels[action] || action
 }
 </script>
 
@@ -657,15 +859,13 @@ function getActionLabel(action) {
   gap: 10px;
 }
 
-.approval-remark {
+.dialog-actions {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: 12px;
+  padding: 16px;
 }
 
-.remark-text {
-  color: #646566;
-  font-size: 12px;
-  margin-top: 4px;
+.dialog-actions .van-button {
+  flex: 1;
 }
 </style>

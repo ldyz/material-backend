@@ -6,37 +6,22 @@
       </template>
     </van-nav-bar>
 
-    <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-      <van-list
-        v-model:loading="loading"
-        :finished="finished"
-        finished-text="没有更多了"
-        @load="onLoad"
-      >
-        <van-empty v-if="!requisitions.length && !loading" description="暂无数据" />
-
-        <van-cell
-          v-for="req in requisitions"
-          :key="req.id"
-          class="req-item"
-          is-link
-          @click="goToDetail(req.id)"
-        >
-          <template #title>
-            <div class="req-title">
-              <van-tag :type="getStatusType(req.status)">
-                {{ getStatusText(req.status) }}
-              </van-tag>
-              <span class="req-number">{{ req.requisition_number }}</span>
-            </div>
-          </template>
-          <template #label>
-            <div>项目：{{ req.project_name || '-' }}</div>
-            <div>日期：{{ formatDate(req.requisition_date) }}</div>
-          </template>
-        </van-cell>
-      </van-list>
-    </van-pull-refresh>
+    <ListContainer
+      v-model:loading="loading"
+      v-model:refreshing="refreshing"
+      :finished="finished"
+      :data="requisitions"
+      @load="onLoad"
+      @refresh="onRefresh"
+    >
+      <ListItemCard
+        v-for="req in requisitions"
+        :key="req.id"
+        :item="req"
+        type="requisition"
+        @click="goToDetail"
+      />
+    </ListContainer>
   </div>
 </template>
 
@@ -44,6 +29,8 @@
 import { ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { getRequisitions } from '@/api/requisition'
+import ListContainer from '@/components/common/ListContainer.vue'
+import ListItemCard from '@/components/common/ListItemCard.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -73,33 +60,6 @@ function refreshData() {
   currentPage.value = 1
   finished.value = false
   loadData()
-}
-
-function getStatusType(status) {
-  const map = {
-    draft: 'default',
-    pending: 'warning',
-    approved: 'primary',
-    rejected: 'danger',
-    issued: 'success'
-  }
-  return map[status] || 'default'
-}
-
-function getStatusText(status) {
-  const map = {
-    draft: '草稿',
-    pending: '待审批',
-    approved: '已批准',
-    rejected: '已拒绝',
-    issued: '已发放'
-  }
-  return map[status] || status
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleDateString('zh-CN')
 }
 
 async function loadData() {
@@ -154,8 +114,8 @@ function onRefresh() {
   loadData()
 }
 
-function goToDetail(id) {
-  router.push(`/requisition/${id}`)
+function goToDetail(req) {
+  router.push(`/requisition/${req.id}`)
 }
 </script>
 
@@ -163,21 +123,5 @@ function goToDetail(id) {
 .req-list {
   min-height: 100vh;
   background-color: #f7f8fa;
-}
-
-.req-item {
-  margin: 12px 16px;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.req-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.req-number {
-  font-weight: bold;
 }
 </style>

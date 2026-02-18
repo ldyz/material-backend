@@ -102,13 +102,12 @@
     <van-empty v-else description="预约单不存在" />
 
     <!-- 作业人员选择器 -->
-    <van-popup v-model:show="showWorkerPicker" position="bottom">
-      <van-picker
-        :columns="workerOptions"
-        @confirm="onWorkerConfirm"
-        @cancel="showWorkerPicker = false"
-      />
-    </van-popup>
+    <WorkerPicker
+      v-model="showWorkerPicker"
+      title="选择作业人员"
+      :multiple="false"
+      @confirm="onWorkerConfirm"
+    />
   </div>
 </template>
 
@@ -116,6 +115,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showSuccessToast, showFailToast, Dialog } from 'vant'
+import WorkerPicker from '@/components/common/WorkerPicker.vue'
 import {
   getAppointmentDetail,
   approveAppointment,
@@ -138,7 +138,6 @@ const assignNow = ref(false)
 const selectedWorkerId = ref(null)
 const workerName = ref('')
 const showWorkerPicker = ref(false)
-const workerOptions = ref([])
 
 const canAssignWorker = computed(() => {
   return appointment.value && appointment.value.status === 'pending'
@@ -148,7 +147,6 @@ onMounted(async () => {
   await loadDetail()
   await loadApprovalHistory()
   await loadCurrentApproval()
-  await loadAvailableWorkers()
 })
 
 async function loadDetail() {
@@ -184,21 +182,11 @@ async function loadCurrentApproval() {
   }
 }
 
-async function loadAvailableWorkers() {
-  if (!appointment.value) return
-  try {
-    const response = await getAvailableWorkers({
-      work_date: appointment.value.work_date,
-      time_slot: appointment.value.time_slot
-    })
-    console.log('Available workers response:', response)
-    workerOptions.value = response.data?.map(worker => ({
-      text: worker.name,
-      value: worker.id
-    })) || []
-  } catch (error) {
-    console.error('加载可用作业人员失败:', error)
-  }
+// 作业人员选择确认
+function onWorkerConfirm(workerId, worker) {
+  selectedWorkerId.value = workerId
+  workerName.value = worker ? (worker.full_name || worker.username) : ''
+  showWorkerPicker.value = false
 }
 
 async function handleApprove() {
@@ -238,12 +226,6 @@ async function handleReject() {
   } finally {
     submitting.value = false
   }
-}
-
-function onWorkerConfirm({ selectedOptions }) {
-  selectedWorkerId.value = selectedOptions[0].value
-  workerName.value = selectedOptions[0].text
-  showWorkerPicker.value = false
 }
 
 function getActionText(action) {

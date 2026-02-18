@@ -87,6 +87,14 @@ const props = defineProps({
   currentStatus: {
     type: String,
     default: ''
+  },
+  /**
+   * 是否显示未激活的节点（还没有审批记录的节点）
+   * 默认为 false，只显示已经有审批记录的节点
+   */
+  showInactiveNodes: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -97,10 +105,21 @@ const props = defineProps({
 const timelineNodes = computed(() => {
   console.log('[ApprovalTimeline] approvalLogs:', props.approvalLogs)
   console.log('[ApprovalTimeline] workflowConfig:', props.workflowConfig)
+  console.log('[ApprovalTimeline] showInactiveNodes:', props.showInactiveNodes)
 
   // 如果没有工作流配置，直接使用审批日志
   if (!props.workflowConfig || props.workflowConfig.length === 0) {
-    const nodes = props.approvalLogs.map(log => {
+    // 过滤掉特殊节点（start、end 等），只显示真正的审批节点
+    const filteredLogs = props.approvalLogs.filter(log => {
+      const nodeKey = (log.node_key || '').toLowerCase()
+      // 过滤掉 start 和 end 节点
+      return nodeKey !== 'start' && nodeKey !== 'end'
+    })
+
+    console.log('[ApprovalTimeline] 过滤前记录数:', props.approvalLogs.length)
+    console.log('[ApprovalTimeline] 过滤后记录数:', filteredLogs.length)
+
+    const nodes = filteredLogs.map(log => {
       const formatted = formatApprovalLog(log)
       return {
         title: formatted.title,
@@ -118,15 +137,23 @@ const timelineNodes = computed(() => {
   // 有工作流配置，合并配置和实际记录
   const nodes = []
 
+  // 过滤掉特殊节点（start、end），只保留真正的审批节点
+  const filteredLogs = props.approvalLogs.filter(log => {
+    const nodeKey = (log.node_key || '').toLowerCase()
+    return nodeKey !== 'start' && nodeKey !== 'end'
+  })
+
   // 先添加"提交"节点（如果有审批记录）
-  if (props.approvalLogs.length > 0) {
-    const firstLog = props.approvalLogs[0]
+  if (filteredLogs.length > 0) {
+    // 查找 start 节点记录（如果存在）
+    const startLog = props.approvalLogs.find(l => (l.node_key || '').toLowerCase() === 'start')
+
     nodes.push({
       title: '提交申请',
       status: 'approved',
-      approver: firstLog.submitter_name || firstLog.actor_name || '申请人',
+      approver: startLog?.approver_name || startLog?.actor_name || filteredLogs[0].approver_name || '申请人',
       approver_role: '申请人',
-      approved_at: firstLog.created_at,
+      approved_at: startLog?.created_at || filteredLogs[0].created_at,
       remark: null,
       order: 0
     })
@@ -134,12 +161,19 @@ const timelineNodes = computed(() => {
 
   // 添加每个审批节点
   props.workflowConfig.forEach(config => {
-    // 查找该节点的审批记录
-    const log = props.approvalLogs.find(l =>
-      l.node_key === config.role ||
-      l.node_name === config.title ||
-      l.node_type === config.role
-    )
+    // 查找该节点的审批记录（在过滤后的日志中查找）
+    const log = filteredLogs.find(l => {
+      // 多种匹配方式：node_key、node_name、node_type
+      const matchesKey = l.node_key === config.role
+      const matchesName = l.node_name === config.title
+      const matchesType = l.node_key === config.role
+
+      const found = matchesKey || matchesName || matchesType
+      if (found) {
+        console.log(`[ApprovalTimeline] 节点匹配: ${config.title} <- ${l.node_name} (key: ${l.node_key})`)
+      }
+      return found
+    })
 
     // 确定节点状态
     let status = 'pending'
@@ -149,14 +183,25 @@ const timelineNodes = computed(() => {
     let remark = null
 
     if (log) {
+      // 有审批记录，使用实际状态
       const formatted = formatApprovalLog(log)
       status = formatted.status
       approver = formatted.approver
       approver_role = formatted.approver_role || approver_role
       approved_at = formatted.approved_at
       remark = formatted.remark
+      console.log(`[ApprovalTimeline] 节点 ${config.title} 有记录，状态: ${status}`)
     } else {
-      // 没有审批记录，检查是否已经被拒绝
+      // 没有审批记录
+      console.log(`[ApprovalTimeline] 节点 ${config.title} 无记录`)
+
+      // 如果 showInactiveNodes 为 false，则跳过这个节点
+      if (!props.showInactiveNodes) {
+        console.log(`[ApprovalTimeline] 跳过未激活节点: ${config.title}`)
+        return // 跳过未激活的节点
+      }
+
+      // 检查是否已经被拒绝
       if (props.currentStatus === 'rejected') {
         // 如果被拒绝了，且当前节点还没有审批记录，说明是前面的节点拒绝的
         status = 'cancelled'

@@ -5,19 +5,12 @@
     <van-loading v-if="loading" type="spinner" vertical />
 
     <div v-else-if="order">
-      <van-cell-group inset title="基本信息">
-        <van-cell title="入库单号" :value="order.order_number" />
-        <van-cell title="项目名称" :value="order.project_name || '-'" />
-        <van-cell title="供应商" :value="order.supplier_name || '-'" />
-        <van-cell title="入库日期" :value="formatDate(order.inbound_date)" />
-        <van-cell title="状态">
-          <template #value>
-            <van-tag :type="getStatusType(order.status)">
-              {{ getStatusText(order.status) }}
-            </van-tag>
-          </template>
-        </van-cell>
-      </van-cell-group>
+      <DetailInfoGroup
+        title="基本信息"
+        :item="order"
+        status-type="inbound"
+        :fields="basicFields"
+      />
 
       <van-cell-group inset title="物料明细">
         <van-empty v-if="!order.items?.length" description="暂无物料" />
@@ -50,10 +43,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { getInboundDetail, resubmitInbound } from '@/api/inbound'
+import DetailInfoGroup from '@/components/common/DetailInfoGroup.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -62,32 +56,13 @@ const loading = ref(true)
 const resubmitting = ref(false)
 const order = ref(null)
 
-function getStatusType(status) {
-  const map = {
-    draft: 'default',
-    pending: 'warning',
-    approved: 'success',
-    rejected: 'danger',
-    completed: 'primary'
-  }
-  return map[status] || 'default'
-}
-
-function getStatusText(status) {
-  const map = {
-    draft: '草稿',
-    pending: '待审批',
-    approved: '已批准',
-    rejected: '已拒绝',
-    completed: '已完成'
-  }
-  return map[status] || status
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleDateString('zh-CN')
-}
+const basicFields = computed(() => [
+  { key: 'order_number', label: '入库单号' },
+  { key: 'project_name', label: '项目名称' },
+  { key: 'supplier_name', label: '供应商' },
+  { key: 'inbound_date', label: '入库日期', type: 'date' },
+  { key: 'status', label: '状态', type: 'status' }
+])
 
 async function loadData() {
   loading.value = true

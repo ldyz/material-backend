@@ -12,49 +12,31 @@
       <van-dropdown-item v-model="urgentFilter" :options="urgentOptions" @change="onFilterChange" />
     </van-dropdown-menu>
 
-    <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-      <van-list
-        v-model:loading="loading"
-        :finished="finished"
-        finished-text="没有更多了"
-        @load="onLoad"
-      >
-        <van-empty v-if="!appointments.length && !loading" description="暂无数据" />
-
-        <van-cell
-          v-for="apt in appointments"
-          :key="apt.id"
-          class="appointment-item"
-          is-link
-          @click="goToDetail(apt.id)"
-        >
-          <template #title>
-            <div class="appointment-title">
-              <van-tag :type="getStatusColor(apt.status)">
-                {{ getStatusLabel(apt.status) }}
-              </van-tag>
-              <span class="appointment-no">{{ apt.appointment_no }}</span>
-              <van-tag v-if="apt.is_urgent" type="danger" size="small">加急</van-tag>
-            </div>
-          </template>
-          <template #label>
-            <div class="appointment-info">
-              <div>作业时间：{{ formatDateTime(apt.work_date, apt.time_slot) }}</div>
-              <div>作业地点：{{ apt.work_location }}</div>
-              <div>作业内容：{{ apt.work_content }}</div>
-              <div v-if="apt.assigned_worker_name">作业人员：{{ apt.assigned_worker_name }}</div>
-            </div>
-          </template>
-        </van-cell>
-      </van-list>
-    </van-pull-refresh>
+    <ListContainer
+      v-model:loading="loading"
+      v-model:refreshing="refreshing"
+      :finished="finished"
+      :data="appointments"
+      @load="onLoad"
+      @refresh="onRefresh"
+    >
+      <ListItemCard
+        v-for="apt in appointments"
+        :key="apt.id"
+        :item="apt"
+        type="appointment"
+        @click="goToDetail"
+      />
+    </ListContainer>
   </div>
 </template>
 
 <script setup>
 import { ref, watch, onMounted, onActivated } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { getAppointments, getTimeSlotLabel, getStatusLabel, getStatusColor } from '@/api/appointment'
+import { getAppointments } from '@/api/appointment'
+import ListContainer from '@/components/common/ListContainer.vue'
+import ListItemCard from '@/components/common/ListItemCard.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -178,15 +160,8 @@ async function loadData() {
   }
 }
 
-function goToDetail(id) {
-  router.push(`/appointment/${id}`)
-}
-
-function formatDateTime(dateStr, timeSlot) {
-  const date = new Date(dateStr)
-  const dateStr2 = date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
-  const slot = getTimeSlotLabel(timeSlot)
-  return `${dateStr2} ${slot}`
+function goToDetail(apt) {
+  router.push(`/appointment/${apt.id}`)
 }
 </script>
 
@@ -194,30 +169,5 @@ function formatDateTime(dateStr, timeSlot) {
 .appointment-list {
   min-height: 100vh;
   background-color: #f5f5f5;
-}
-
-.appointment-item {
-  margin-bottom: 8px;
-}
-
-.appointment-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.appointment-no {
-  font-weight: bold;
-  font-size: 15px;
-}
-
-.appointment-info {
-  margin-top: 8px;
-  font-size: 13px;
-  color: #666;
-}
-
-.appointment-info > div {
-  margin-bottom: 4px;
 }
 </style>

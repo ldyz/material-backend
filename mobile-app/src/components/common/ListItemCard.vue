@@ -4,17 +4,30 @@
       <div class="item-title">
         <StatusTag :status="item.status" :type="type" />
         <span class="item-number">{{ itemNumber }}</span>
+        <van-tag v-if="item.is_urgent" type="danger" size="small">加急</van-tag>
       </div>
     </template>
     <template #label>
       <div class="item-info">
-        <div v-if="item.project_name" class="info-row">
-          <van-icon name="shop-o" size="14" />
-          <span>{{ item.project_name || '-' }}</span>
-        </div>
         <div v-if="itemDate" class="info-row">
           <van-icon name="calendar-o" size="14" />
           <span>{{ itemDate }}</span>
+        </div>
+        <div v-if="type === 'appointment' && item.work_location" class="info-row">
+          <van-icon name="location-o" size="14" />
+          <span>{{ item.work_location }}</span>
+        </div>
+        <div v-if="type === 'appointment' && item.work_content" class="info-row">
+          <van-icon name="notes-o" size="14" />
+          <span>{{ item.work_content }}</span>
+        </div>
+        <div v-if="type === 'appointment' && item.assigned_worker_name" class="info-row">
+          <van-icon name="user-o" size="14" />
+          <span>{{ item.assigned_worker_name }}</span>
+        </div>
+        <div v-if="item.project_name && type !== 'appointment'" class="info-row">
+          <van-icon name="shop-o" size="14" />
+          <span>{{ item.project_name || '-' }}</span>
         </div>
         <div v-if="item.supplier_name" class="info-row">
           <van-icon name="user-o" size="14" />
@@ -24,7 +37,7 @@
           <van-icon name="contact" size="14" />
           <span>申请人：{{ item.applicant_name }}</span>
         </div>
-        <div v-if="item.work_type" class="info-row">
+        <div v-if="item.work_type && type !== 'appointment'" class="info-row">
           <van-icon name="bookmark-o" size="14" />
           <span>{{ item.work_type }}</span>
         </div>
@@ -68,30 +81,42 @@ const emit = defineEmits(['click'])
 
 // 单据编号
 const itemNumber = computed(() => {
-  const numberFields = {
-    inbound: 'order_number',
-    plan: 'plan_number',
-    requisition: 'requisition_number',
-    appointment: 'appointment_number'
+  // 支持多个可能的字段名
+  const numberFieldAliases = {
+    inbound: ['order_number', 'number'],
+    plan: ['plan_number', 'plan_no', 'number'],
+    requisition: ['requisition_number', 'number'],
+    appointment: ['appointment_number', 'appointment_no', 'number']
   }
-  const field = numberFields[props.type] || 'order_number'
-  return props.item[field] || props.item.number || '-'
+  const aliases = numberFieldAliases[props.type] || ['number']
+  for (const field of aliases) {
+    if (props.item[field]) {
+      return props.item[field]
+    }
+  }
+  return '-'
 })
 
 // 日期显示
 const itemDate = computed(() => {
   if (props.type === 'appointment') {
-    return formatAppointmentDate(props.item.appointment_date, props.item.time_slot)
+    const date = props.item.appointment_date || props.item.work_date
+    return formatAppointmentDate(date, props.item.time_slot)
   }
 
-  const dateFields = {
-    inbound: 'inbound_date',
-    plan: 'plan_date',
-    requisition: 'requisition_date'
+  // 支持多个可能的日期字段名
+  const dateFieldAliases = {
+    inbound: ['inbound_date', 'date'],
+    plan: ['plan_date', 'planned_start_date', 'date'],
+    requisition: ['requisition_date', 'date']
   }
-  const field = dateFields[props.type]
-  if (field && props.item[field]) {
-    return formatDate(props.item[field])
+  const aliases = dateFieldAliases[props.type]
+  if (aliases) {
+    for (const field of aliases) {
+      if (props.item[field]) {
+        return formatDate(props.item[field])
+      }
+    }
   }
 
   return null

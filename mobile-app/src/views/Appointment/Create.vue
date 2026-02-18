@@ -9,6 +9,13 @@
     <van-form @submit="handleSubmit">
       <!-- 基本信息 -->
       <van-cell-group title="基本信息" inset>
+        <ProjectSelector
+          v-model="form.project_id"
+          name="project_id"
+          label="项目"
+          placeholder="请选择项目"
+          :required="true"
+        />
         <van-field
           v-model="form.work_location"
           name="work_location"
@@ -319,10 +326,12 @@ import { useRouter } from 'vue-router'
 import { showSuccessToast, showFailToast, showConfirmDialog } from 'vant'
 import { createAppointment, submitAppointment, getTimeSlotOptions, getDailyStatistics, getWorkersList, getTimeSlotStatistics, getAvailableWorkers } from '@/api/appointment'
 import { getAssetUrl } from '@/utils/request'
+import ProjectSelector from '@/components/common/ProjectSelector.vue'
 
 const router = useRouter()
 
 const form = ref({
+  project_id: null,
   work_location: '',
   work_content: '',
   work_type: '',
@@ -536,6 +545,12 @@ async function handleSubmit() {
   try {
     submitting.value = true
 
+    // 验证项目是否已选择
+    if (!form.value.project_id) {
+      showFailToast('请选择项目')
+      return
+    }
+
     // 检查是否有空闲人员
     if (!form.value.is_urgent && !hasAvailableWorkers.value) {
       showFailToast('该日期所有人员已被安排，请选择其他日期或创建加急预约单')
@@ -582,7 +597,7 @@ async function handleSubmit() {
 // 检查表单是否有数据
 function hasFormData() {
   const data = form.value
-  return !!(data.work_location || data.work_content ||
+  return !!(data.project_id || data.work_location || data.work_content ||
     (selectedWorkTypes.value && selectedWorkTypes.value.length > 0) ||
     (data.work_date) || (data.contact_person) ||
     (data.contact_phone))

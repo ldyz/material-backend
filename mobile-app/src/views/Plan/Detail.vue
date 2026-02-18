@@ -5,18 +5,12 @@
     <van-loading v-if="loading" type="spinner" vertical />
 
     <div v-else-if="plan">
-      <van-cell-group inset title="基本信息">
-        <van-cell title="计划单号" :value="plan.plan_no" />
-        <van-cell title="项目名称" :value="plan.project_name || '-'" />
-        <van-cell title="计划日期" :value="formatDate(plan.planned_start_date)" />
-        <van-cell title="状态">
-          <template #value>
-            <van-tag :type="getStatusType(plan.status)">
-              {{ getStatusText(plan.status) }}
-            </van-tag>
-          </template>
-        </van-cell>
-      </van-cell-group>
+      <DetailInfoGroup
+        title="基本信息"
+        :item="plan"
+        status-type="plan"
+        :fields="basicFields"
+      />
 
       <van-cell-group inset title="物料明细">
         <van-empty v-if="!plan.items?.length" description="暂无物料" />
@@ -54,10 +48,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { getPlanDetail, resubmitPlan } from '@/api/material_plan'
+import DetailInfoGroup from '@/components/common/DetailInfoGroup.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -66,36 +61,12 @@ const loading = ref(true)
 const resubmitting = ref(false)
 const plan = ref(null)
 
-function getStatusType(status) {
-  const map = {
-    draft: 'default',
-    pending: 'warning',
-    approved: 'success',
-    rejected: 'danger',
-    active: 'primary',
-    completed: 'success',
-    cancelled: 'info'
-  }
-  return map[status] || 'default'
-}
-
-function getStatusText(status) {
-  const map = {
-    draft: '草稿',
-    pending: '待审批',
-    approved: '已批准',
-    rejected: '已拒绝',
-    active: '进行中',
-    completed: '已完成',
-    cancelled: '已取消'
-  }
-  return map[status] || status
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleDateString('zh-CN')
-}
+const basicFields = computed(() => [
+  { key: 'plan_no', label: '计划单号' },
+  { key: 'project_name', label: '项目名称' },
+  { key: 'planned_start_date', label: '计划日期', type: 'date' },
+  { key: 'status', label: '状态', type: 'status' }
+])
 
 async function loadData() {
   loading.value = true

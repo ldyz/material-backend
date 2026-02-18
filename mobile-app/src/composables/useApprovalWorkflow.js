@@ -11,6 +11,7 @@ const NODE_NAME_MAP = {
 
   // 预约单审批节点
   'foreman_approve': '施工员审批',
+  'pm_approve': '项目经理审批',
   'project_manager_approve': '项目经理审批',
   'supervisor_approve': '主管审批',
   'director_approve': '总监审批',

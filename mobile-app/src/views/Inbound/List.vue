@@ -6,37 +6,22 @@
       </template>
     </van-nav-bar>
 
-    <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-      <van-list
-        v-model:loading="loading"
-        :finished="finished"
-        finished-text="没有更多了"
-        @load="onLoad"
-      >
-        <van-empty v-if="!orders.length && !loading" description="暂无数据" />
-
-        <van-cell
-          v-for="order in orders"
-          :key="order.id"
-          class="order-item"
-          is-link
-          @click="goToDetail(order.id)"
-        >
-          <template #title>
-            <div class="order-title">
-              <van-tag :type="getStatusType(order.status)">
-                {{ getStatusText(order.status) }}
-              </van-tag>
-              <span class="order-number">{{ order.order_number }}</span>
-            </div>
-          </template>
-          <template #label>
-            <div>项目：{{ order.project_name || '-' }}</div>
-            <div>日期：{{ formatDate(order.inbound_date) }}</div>
-          </template>
-        </van-cell>
-      </van-list>
-    </van-pull-refresh>
+    <ListContainer
+      v-model:loading="loading"
+      v-model:refreshing="refreshing"
+      :finished="finished"
+      :data="orders"
+      @load="onLoad"
+      @refresh="onRefresh"
+    >
+      <ListItemCard
+        v-for="order in orders"
+        :key="order.id"
+        :item="order"
+        type="inbound"
+        @click="goToDetail"
+      />
+    </ListContainer>
   </div>
 </template>
 
@@ -44,6 +29,8 @@
 import { ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { getInboundOrders } from '@/api/inbound'
+import ListContainer from '@/components/common/ListContainer.vue'
+import ListItemCard from '@/components/common/ListItemCard.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -71,33 +58,6 @@ function refreshData() {
   currentPage.value = 1
   finished.value = false
   loadData()
-}
-
-function getStatusType(status) {
-  const map = {
-    draft: 'default',
-    pending: 'warning',
-    approved: 'success',
-    rejected: 'danger',
-    completed: 'primary'
-  }
-  return map[status] || 'default'
-}
-
-function getStatusText(status) {
-  const map = {
-    draft: '草稿',
-    pending: '待审批',
-    approved: '已批准',
-    rejected: '已拒绝',
-    completed: '已完成'
-  }
-  return map[status] || status
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleDateString('zh-CN')
 }
 
 async function loadData() {
@@ -148,8 +108,8 @@ function onRefresh() {
   loadData()
 }
 
-function goToDetail(id) {
-  router.push(`/inbound/${id}`)
+function goToDetail(order) {
+  router.push(`/inbound/${order.id}`)
 }
 </script>
 
@@ -157,21 +117,5 @@ function goToDetail(id) {
 .inbound-list {
   min-height: 100vh;
   background-color: #f7f8fa;
-}
-
-.order-item {
-  margin: 12px 16px;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.order-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.order-number {
-  font-weight: bold;
 }
 </style>

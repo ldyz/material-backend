@@ -2,37 +2,22 @@
   <div class="plan-list">
     <van-nav-bar title="物资计划" />
 
-    <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-      <van-list
-        v-model:loading="loading"
-        :finished="finished"
-        finished-text="没有更多了"
-        @load="onLoad"
-      >
-        <van-empty v-if="!plans.length && !loading" description="暂无数据" />
-
-        <van-cell
-          v-for="plan in plans"
-          :key="plan.id"
-          class="plan-item"
-          is-link
-          @click="goToDetail(plan.id)"
-        >
-          <template #title>
-            <div class="plan-title">
-              <van-tag :type="getStatusType(plan.status)">
-                {{ getStatusText(plan.status) }}
-              </van-tag>
-              <span class="plan-number">{{ plan.plan_no }}</span>
-            </div>
-          </template>
-          <template #label>
-            <div>项目：{{ plan.project_name || '-' }}</div>
-            <div>日期：{{ formatDate(plan.planned_start_date) }}</div>
-          </template>
-        </van-cell>
-      </van-list>
-    </van-pull-refresh>
+    <ListContainer
+      v-model:loading="loading"
+      v-model:refreshing="refreshing"
+      :finished="finished"
+      :data="plans"
+      @load="onLoad"
+      @refresh="onRefresh"
+    >
+      <ListItemCard
+        v-for="plan in plans"
+        :key="plan.id"
+        :item="plan"
+        type="plan"
+        @click="goToDetail"
+      />
+    </ListContainer>
   </div>
 </template>
 
@@ -40,6 +25,8 @@
 import { ref, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { getPlans } from '@/api/material_plan'
+import ListContainer from '@/components/common/ListContainer.vue'
+import ListItemCard from '@/components/common/ListItemCard.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -67,37 +54,6 @@ function refreshData() {
   currentPage.value = 1
   finished.value = false
   loadData()
-}
-
-function getStatusType(status) {
-  const map = {
-    draft: 'default',
-    pending: 'warning',
-    approved: 'success',
-    rejected: 'danger',
-    active: 'primary',
-    completed: 'success',
-    cancelled: 'info'
-  }
-  return map[status] || 'default'
-}
-
-function getStatusText(status) {
-  const map = {
-    draft: '草稿',
-    pending: '待审批',
-    approved: '已批准',
-    rejected: '已拒绝',
-    active: '进行中',
-    completed: '已完成',
-    cancelled: '已取消'
-  }
-  return map[status] || status
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleDateString('zh-CN')
 }
 
 async function loadData() {
@@ -148,8 +104,8 @@ function onRefresh() {
   loadData()
 }
 
-function goToDetail(id) {
-  router.push(`/plans/${id}`)
+function goToDetail(plan) {
+  router.push(`/plans/${plan.id}`)
 }
 </script>
 
@@ -157,21 +113,5 @@ function goToDetail(id) {
 .plan-list {
   min-height: 100vh;
   background-color: #f7f8fa;
-}
-
-.plan-item {
-  margin: 12px 16px;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.plan-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.plan-number {
-  font-weight: bold;
 }
 </style>

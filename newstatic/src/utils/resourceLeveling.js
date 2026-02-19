@@ -473,14 +473,110 @@ export async function optimizeTaskSchedule(tasks, resources) {
 
 /**
  * Alias for detectResourceConflicts - detects resource conflicts
+ * Synchronous version for tests
  *
  * @param {Array} tasks - Array of task objects
  * @param {Array} resources - Array of resource objects
  * @param {Object} calendar - Calendar object (optional)
- * @returns {Promise<Array>} Array of conflict objects
+ * @returns {Array} Array of conflict objects
  */
-export async function detectConflicts(tasks, resources, calendar) {
-  return await detectResourceConflicts(tasks, resources)
+export function detectConflicts(tasks, resources, calendar) {
+  // Return empty array for invalid inputs
+  if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
+    return []
+  }
+
+  if (!resources || !Array.isArray(resources) || resources.length === 0) {
+    return []
+  }
+
+  const conflicts = []
+  const resourceMap = new Map()
+
+  // Build resource map
+  resources.forEach(resource => {
+    resourceMap.set(resource.id, {
+      ...resource,
+      allocations: []
+    })
+  })
+
+  // Track allocations by resource and date
+  const allocationsByResourceAndDate = new Map()
+
+  // Process each task's resource assignments
+  tasks.forEach(task => {
+    if (!task.resources || !Array.isArray(task.resources)) {
+      return
+    }
+
+    const startDate = new Date(task.start_date || task.start || task.startDate)
+    const endDate = new Date(task.end_date || task.end || task.endDate)
+
+    // Check for zero duration (milestone)
+    if (endDate <= startDate) {
+      return // Skip zero-duration tasks for conflict detection
+    }
+
+    const days = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24))
+
+    task.resources.forEach(assignment => {
+      const resourceId = assignment.resource_id || assignment.resourceId
+      const allocation = assignment.units || assignment.percentage || 100 // Percentage allocation
+
+      // Track daily allocation
+      let currentDate = new Date(startDate)
+      while (currentDate < endDate) {
+        const dateKey = `${resourceId}:${currentDate.toISOString().split('T')[0]}`
+
+        if (!allocationsByResourceAndDate.has(dateKey)) {
+          allocationsByResourceAndDate.set(dateKey, {
+            resourceId,
+            date: new Date(currentDate),
+            tasks: [],
+            totalAllocation: 0
+          })
+        }
+
+        const dailyAllocation = allocationsByResourceAndDate.get(dateKey)
+        dailyAllocation.tasks.push({
+          taskId: task.id,
+          taskName: task.name,
+          allocation
+        })
+        dailyAllocation.totalAllocation += allocation
+
+        currentDate.setDate(currentDate.getDate() + 1)
+      }
+    })
+  })
+
+  // Check for overallocation (over 100%)
+  allocationsByResourceAndDate.forEach((allocation, key) => {
+    const resource = resourceMap.get(allocation.resourceId)
+    if (!resource) return
+
+    const capacity = resource.capacity || resource.dailyHours || 8 * 100 // Convert to percentage
+
+    if (allocation.totalAllocation > capacity) {
+      conflicts.push({
+        resourceId: allocation.resourceId,
+        resourceName: resource.name,
+        date: allocation.date,
+        totalAllocation: allocation.totalAllocation,
+        capacity,
+        overallocation: allocation.totalAllocation - capacity,
+        severity: Math.min(1, (allocation.totalAllocation - capacity) / capacity),
+        affectedTasks: allocation.tasks.map(t => ({
+          taskId: t.taskId,
+          taskName: t.taskName,
+          allocation: t.allocation
+        }))
+      })
+    }
+  })
+
+  return conflicts
 }
 
 /**
@@ -520,7 +616,15 @@ export function calculateAllocation(tasks, resource, calendar) {
   tasksArray.forEach(task => {
     const startDate = new Date(task.start_date || task.start)
     const endDate = new Date(task.end_date || task.end)
-    const days = Math.max(1, Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)))
+
+    // Calculate days - handle zero duration (milestones)
+    const rawDays = (endDate - startDate) / (1000 * 60 * 60 * 24)
+    const days = Math.max(0, rawDays) // Can be 0 for milestones
+
+    // Skip tasks with zero duration (milestones don't consume resources)
+    if (days <= 0) {
+      return
+    }
 
     // Find resource assignment for this task
     const assignment = task.resources?.find(r => r.resource_id === resource.id || r.resourceId === resource.id)
@@ -542,9 +646,20 @@ export function calculateAllocation(tasks, resource, calendar) {
 
   // Calculate allocation percentage
   const resourceCapacity = resource.capacity || resource.dailyHours || 8
-  totalCapacity = resourceCapacity * tasksArray.length
 
-  const allocation = totalHours > 0 ? (totalHours / totalCapacity) * 100 : 0
+  // For zero hours (milestones or no matching resources), return 0
+  if (totalHours === 0) {
+    return {
+      hours: 0,
+      capacity: resourceCapacity,
+      percentage: 0,
+      tasks: taskAllocations,
+      isOverallocated: false
+    }
+  }
+
+  totalCapacity = resourceCapacity * tasksArray.length
+  const allocation = (totalHours / totalCapacity) * 100
 
   return {
     hours: totalHours,
@@ -619,4 +734,59 @@ export async function getOverallocatedResources(tasks, resources) {
   })
 
   return overallocated
+}
+
+/**
+ * Suggests resource leveling actions to resolve conflicts
+ *
+ * @param {Array} tasks - Array of task objects
+ * @param {Array} resources - Array of resource objects
+ * @param {Object} calendar - Calendar object (optional)
+ * @returns {Array} Array of suggested actions
+ */
+export function suggestLevelingActions(tasks, resources, calendar) {
+  const conflicts = detectConflicts(tasks, resources, calendar)
+  const actions = []
+
+  conflicts.forEach(conflict => {
+    // Suggest delaying tasks
+    conflict.affectedTasks.forEach(task => {
+      actions.push({
+        type: 'delay',
+        taskId: task.taskId,
+        taskName: task.taskName,
+        resourceId: conflict.resourceId,
+        resourceName: conflict.resourceName,
+        reason: `Delay task to reduce ${conflict.resourceName} overallocation of ${conflict.overallocation.toFixed(1)}%`,
+        impact: 'medium',
+        estimatedDelay: 1 // days
+      })
+    })
+
+    // Suggest reassigning resources
+    actions.push({
+      type: 'reassign',
+      resourceId: conflict.resourceId,
+      resourceName: conflict.resourceName,
+      reason: `Reassign some work from ${conflict.resourceName} to available resources`,
+      impact: 'low'
+    })
+
+    // Suggest splitting tasks
+    conflict.affectedTasks.forEach(task => {
+      if (task.allocation > 50) {
+        actions.push({
+          type: 'split',
+          taskId: task.taskId,
+          taskName: task.taskName,
+          resourceId: conflict.resourceId,
+          resourceName: conflict.resourceName,
+          reason: `Split task into smaller parts to reduce concurrent allocation`,
+          impact: 'low'
+        })
+      }
+    })
+  })
+
+  return actions
 }

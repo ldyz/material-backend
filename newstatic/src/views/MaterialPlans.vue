@@ -570,11 +570,14 @@ import {
   DataAnalysis,
   Upload
 } from '@element-plus/icons-vue'
+import { defineAsyncComponent } from 'vue'
 import Dialog from '@/components/common/Dialog.vue'
 import TableToolbar from '@/components/common/TableToolbar.vue'
-import PlanDetailDialog from './PlanDetailDialog.vue'
-import ExcelImportMapper from '@/components/common/ExcelImportMapper.vue'
 import ProjectSelector from '@/components/common/ProjectSelector.vue'
+
+// Dynamic imports for dialog components
+const PlanDetailDialog = defineAsyncComponent(() => import('./PlanDetailDialog.vue'))
+const ExcelImportMapper = defineAsyncComponent(() => import('@/components/common/ExcelImportMapper.vue'))
 
 const authStore = useAuthStore()
 const planStore = usePlanStore()

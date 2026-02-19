@@ -412,14 +412,16 @@ import {
   Folder,
   MagicStick
 } from '@element-plus/icons-vue'
+import { defineAsyncComponent } from 'vue'
 import Dialog from '@/components/common/Dialog.vue'
 import TableToolbar from '@/components/common/TableToolbar.vue'
 import ViewSwitcher from '@/components/progress/ViewSwitcher.vue'
-import GanttChart from '@/components/progress/GanttChart.vue'
-// GanttChart 现在指向重构版本 GanttChartRefactored.vue
-import NetworkDiagram from '@/components/progress/NetworkDiagram.vue'
-import ProjectScheduleList from '@/components/progress/ProjectScheduleList.vue'
-import CreateScheduleDialog from '@/components/progress/CreateScheduleDialog.vue'
+
+// Dynamic imports for large components
+const GanttChart = defineAsyncComponent(() => import('@/components/progress/GanttChart.vue'))
+const NetworkDiagram = defineAsyncComponent(() => import('@/components/progress/NetworkDiagram.vue'))
+const ProjectScheduleList = defineAsyncComponent(() => import('@/components/progress/ProjectScheduleList.vue'))
+const CreateScheduleDialog = defineAsyncComponent(() => import('@/components/progress/CreateScheduleDialog.vue'))
 // import AIPlanGenerator from '@/components/progress/AIPlanGenerator.vue'
 
 const authStore = useAuthStore()

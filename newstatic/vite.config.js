@@ -24,14 +24,71 @@ export default defineConfig({
     emptyOutDir: true,
     assetsDir: 'assets',
     sourcemap: false,
+    chunkSizeWarningLimit: 1000, // Increase limit to 1000KB
     rollupOptions: {
       output: {
-        manualChunks: {
-          'element-plus': ['element-plus'],
-          'vue-vendor': ['vue', 'vue-router', 'pinia'],
-          'editor': ['quill', '@vueup/vue-quill'],
-          'charts': ['chart.js', 'vue-chartjs'],
+        manualChunks(id) {
+          // Vendor chunks
+          if (id.includes('node_modules')) {
+            // Element Plus
+            if (id.includes('element-plus')) {
+              return 'element-plus'
+            }
+
+            // Vue ecosystem
+            if (id.includes('vue/') || id.includes('@vue') || id.includes('pinia') || id.includes('vue-router')) {
+              return 'vue-vendor'
+            }
+
+            // Editor (Quill)
+            if (id.includes('quill')) {
+              return 'editor'
+            }
+
+            // Charts
+            if (id.includes('chart.js') || id.includes('vue-chartjs')) {
+              return 'charts'
+            }
+
+            // PDF export libraries - split separately
+            if (id.includes('jspdf')) {
+              return 'pdf-export'
+            }
+
+            if (id.includes('html2canvas')) {
+              return 'pdf-export'
+            }
+
+            // Date utilities
+            if (id.includes('date-fns')) {
+              return 'date-utils'
+            }
+
+            // Virtual scroller
+            if (id.includes('vue-virtual-scroller')) {
+              return 'virtual-scroller'
+            }
+
+            // Other utilities
+            if (id.includes('lodash-es')) {
+              return 'lodash'
+            }
+
+            if (id.includes('axios')) {
+              return 'http'
+            }
+
+            // Node_modules polyfills
+            if (id.includes('core-js') || id.includes('regenerator-runtime')) {
+              return 'polyfills'
+            }
+
+            return 'vendor'
+          }
         },
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]'
       },
     },
   },

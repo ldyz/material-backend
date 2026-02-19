@@ -267,14 +267,18 @@ import {
   Search, Refresh, Plus, Download, View, Edit, Delete, Check,
   Calendar, User
 } from '@element-plus/icons-vue'
+import { defineAsyncComponent } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import TableToolbar from '@/components/common/TableToolbar.vue'
 import ProjectSelector from '@/components/common/ProjectSelector.vue'
-import AppointmentDialog from '@/components/Appointment/AppointmentDialog.vue'
-import AppointmentDetailDialog from '@/components/Appointment/AppointmentDetailDialog.vue'
-import AppointmentApproveDialog from '@/components/Appointment/AppointmentApproveDialog.vue'
-import AppointmentAssignDialog from '@/components/Appointment/AppointmentAssignDialog.vue'
-import AppointmentCalendarDialog from '@/components/Appointment/AppointmentCalendarDialog.vue'
+
+// Dynamic imports for dialog components
+const AppointmentDialog = defineAsyncComponent(() => import('@/components/Appointment/AppointmentDialog.vue'))
+const AppointmentDetailDialog = defineAsyncComponent(() => import('@/components/Appointment/AppointmentDetailDialog.vue'))
+const AppointmentApproveDialog = defineAsyncComponent(() => import('@/components/Appointment/AppointmentApproveDialog.vue'))
+const AppointmentAssignDialog = defineAsyncComponent(() => import('@/components/Appointment/AppointmentAssignDialog.vue'))
+const AppointmentCalendarDialog = defineAsyncComponent(() => import('@/components/Appointment/AppointmentCalendarDialog.vue'))
+
 import { appointmentApi, projectApi } from '@/api'
 
 const router = useRouter()

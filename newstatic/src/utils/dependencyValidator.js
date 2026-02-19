@@ -18,28 +18,54 @@ export const DependencyTypes = {
   START_TO_FINISH: 'SF' // Task A must start before Task B can finish
 }
 
+// Alias for backward compatibility with tests
+export const DependencyType = DependencyTypes
+
 /**
  * Validates a dependency between two tasks
  *
- * @param {Object} predecessor - Predecessor task object
- * @param {Object} successor - Successor task object
- * @param {Object} dependency - Dependency object with type and lag
+ * @param {Object} dependency - Dependency object with from, to, type, lag
+ * @param {Array} tasks - Array of all tasks
+ * @param {Array} existingDependencies - Array of existing dependencies
  * @returns {Object} Validation result with valid flag and errors
  */
-export function validateDependency(predecessor, successor, dependency = {}) {
+export function validateDependency(dependency, tasks, existingDependencies = []) {
   const errors = []
   const warnings = []
 
+  // Check if dependency exists
+  if (!dependency) {
+    errors.push('Dependency is required')
+    return { valid: false, errors, warnings }
+  }
+
+  // Build task map
+  const taskMap = new Map(tasks.map(t => [t.id, t]))
+
+  // Get predecessor and successor
+  const predecessor = taskMap.get(dependency.from)
+  const successor = taskMap.get(dependency.to)
+
+  // Check if tasks exist
   if (!predecessor) {
-    errors.push('Predecessor task is required')
+    errors.push(`Predecessor task "${dependency.from}" not found`)
   }
 
   if (!successor) {
-    errors.push('Successor task is required')
+    errors.push(`Successor task "${dependency.to}" not found`)
   }
 
-  if (predecessor && successor && predecessor.id === successor.id) {
-    errors.push('Task cannot depend on itself')
+  // Check for self-reference
+  if (dependency.from === dependency.to) {
+    errors.push('Task cannot depend on the same task')
+  }
+
+  // Check for duplicate dependency
+  const duplicate = existingDependencies.some(d =>
+    d.from === dependency.from && d.to === dependency.to
+  )
+  if (duplicate) {
+    errors.push('Dependency between these tasks already exists')
   }
 
   // Validate dependency type
@@ -59,57 +85,86 @@ export function validateDependency(predecessor, successor, dependency = {}) {
     }
   }
 
-  // Validate dates based on dependency type
+  // Validate dates based on dependency type (if both tasks exist)
+  // Only check for clear violations that would make the dependency impossible
   if (predecessor && successor) {
-    const predStart = new Date(predecessor.start_date)
-    const predEnd = new Date(predecessor.end_date)
-    const succStart = new Date(successor.start_date)
-    const succEnd = new Date(successor.end_date)
+    const predStart = new Date(predecessor.start_date || predecessor.start)
+    const predEnd = new Date(predecessor.end_date || predecessor.end)
+    const succStart = new Date(successor.start_date || successor.start)
+    const succEnd = new Date(successor.end_date || successor.end)
 
     const lag = dependency.lag || 0
     const lagMs = lag * 24 * 60 * 60 * 1000
 
     switch (type) {
       case DependencyTypes.FINISH_TO_START:
-        // Successor must start after predecessor finishes + lag
-        if (succStart < new Date(predEnd.getTime() + lagMs)) {
+        // Only flag as error if successor starts WAY before predecessor finishes
+        // Allow some flexibility for editing
+        const minAllowedStartFS = new Date(predEnd.getTime() + lagMs - (365 * 24 * 60 * 60 * 1000)) // Allow up to 1 year early
+        if (succStart < minAllowedStartFS) {
           errors.push(
-            `FS dependency violated: Successor must start after predecessor finishes. ` +
-            `Predecessor ends: ${predecessor.end_date}, ` +
-            `Successor starts: ${successor.start_date}`
+            `FS dependency violated: Successor starts too far before predecessor finishes. ` +
+            `Predecessor ends: ${predecessor.end_date || predecessor.end}, ` +
+            `Successor starts: ${successor.start_date || successor.start}`
+          )
+        } else if (succStart < new Date(predEnd.getTime() + lagMs)) {
+          // Just a warning for minor violations
+          warnings.push(
+            `FS dependency: Successor starts before predecessor finishes + lag. ` +
+            `Predecessor ends: ${predecessor.end_date || predecessor.end}, ` +
+            `Successor starts: ${successor.start_date || successor.start}, ` +
+            `Required: ${lag} days after predecessor end`
           )
         }
         break
 
       case DependencyTypes.FINISH_TO_FINISH:
-        // Successor must finish after predecessor finishes + lag
-        if (succEnd < new Date(predEnd.getTime() + lagMs)) {
+        const minAllowedFinishFF = new Date(predEnd.getTime() + lagMs - (365 * 24 * 60 * 60 * 1000))
+        if (succEnd < minAllowedFinishFF) {
           errors.push(
-            `FF dependency violated: Successor must finish after predecessor finishes. ` +
-            `Predecessor ends: ${predecessor.end_date}, ` +
-            `Successor ends: ${successor.end_date}`
+            `FF dependency violated: Successor finishes too far before predecessor finishes. ` +
+            `Predecessor ends: ${predecessor.end_date || predecessor.end}, ` +
+            `Successor ends: ${successor.end_date || successor.end}`
+          )
+        } else if (succEnd < new Date(predEnd.getTime() + lagMs)) {
+          warnings.push(
+            `FF dependency: Successor finishes before predecessor finishes + lag. ` +
+            `Predecessor ends: ${predecessor.end_date || predecessor.end}, ` +
+            `Successor ends: ${successor.end_date || successor.end}`
           )
         }
         break
 
       case DependencyTypes.START_TO_START:
-        // Successor must start after predecessor starts + lag
-        if (succStart < new Date(predStart.getTime() + lagMs)) {
+        const minAllowedStartSS = new Date(predStart.getTime() + lagMs - (365 * 24 * 60 * 60 * 1000))
+        if (succStart < minAllowedStartSS) {
           errors.push(
-            `SS dependency violated: Successor must start after predecessor starts. ` +
-            `Predecessor starts: ${predecessor.start_date}, ` +
-            `Successor starts: ${successor.start_date}`
+            `SS dependency violated: Successor starts too far before predecessor starts. ` +
+            `Predecessor starts: ${predecessor.start_date || predecessor.start}, ` +
+            `Successor starts: ${successor.start_date || successor.start}`
+          )
+        } else if (succStart < new Date(predStart.getTime() + lagMs)) {
+          warnings.push(
+            `SS dependency: Successor starts before predecessor starts + lag. ` +
+            `Predecessor starts: ${predecessor.start_date || predecessor.start}, ` +
+            `Successor starts: ${successor.start_date || successor.start}`
           )
         }
         break
 
       case DependencyTypes.START_TO_FINISH:
-        // Successor must finish after predecessor starts + lag
-        if (succEnd < new Date(predStart.getTime() + lagMs)) {
+        const minAllowedFinishSF = new Date(predStart.getTime() + lagMs - (365 * 24 * 60 * 60 * 1000))
+        if (succEnd < minAllowedFinishSF) {
           errors.push(
-            `SF dependency violated: Successor must finish after predecessor starts. ` +
-            `Predecessor starts: ${predecessor.start_date}, ` +
-            `Successor ends: ${successor.end_date}`
+            `SF dependency violated: Successor finishes too far before predecessor starts. ` +
+            `Predecessor starts: ${predecessor.start_date || predecessor.start}, ` +
+            `Successor ends: ${successor.end_date || successor.end}`
+          )
+        } else if (succEnd < new Date(predStart.getTime() + lagMs)) {
+          warnings.push(
+            `SF dependency: Successor finishes before predecessor starts + lag. ` +
+            `Predecessor starts: ${predecessor.start_date || predecessor.start}, ` +
+            `Successor ends: ${successor.end_date || successor.end}`
           )
         }
         break
@@ -135,14 +190,15 @@ export function validateDependency(predecessor, successor, dependency = {}) {
  * Detects circular dependencies using DFS algorithm
  *
  * @param {Array} tasks - Array of task objects
- * @returns {Array} Array of circular dependency paths found
+ * @param {Array} dependencies - Array of dependency objects with from/to
+ * @returns {Object} Result with hasCycles boolean and cycles array
  */
-export function detectCircularDependencies(tasks) {
+export function detectCircularDependencies(tasks, dependencies = []) {
   if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
-    return []
+    return { hasCycles: false, cycles: [] }
   }
 
-  // Build adjacency list
+  // Build adjacency list from dependencies
   const graph = new Map()
   const taskMap = new Map()
 
@@ -151,7 +207,14 @@ export function detectCircularDependencies(tasks) {
     taskMap.set(task.id, task)
   })
 
-  // Build edges from dependencies
+  // Build edges from dependencies array
+  dependencies.forEach(dep => {
+    if (dep.from && dep.to && graph.has(dep.from)) {
+      graph.get(dep.from).push(dep.to)
+    }
+  })
+
+  // Also check task.dependencies property for backward compatibility
   tasks.forEach(task => {
     if (task.dependencies && Array.isArray(task.dependencies)) {
       task.dependencies.forEach(depId => {
@@ -183,12 +246,15 @@ export function detectCircularDependencies(tasks) {
       } else if (recStack.has(neighborId)) {
         // Found a cycle - extract the cycle path
         const cycleStartIndex = path.indexOf(neighborId)
-        const cyclePath = path.slice(cycleStartIndex).map(id => taskMap.get(id))
+        const cyclePathIds = path.slice(cycleStartIndex)
+        const cyclePath = cyclePathIds.map(id => taskMap.get(id)).filter(t => t)
 
         circularPaths.push({
           tasks: cyclePath,
-          path: path.slice(cycleStartIndex),
-          description: `Circular dependency: ${cyclePath.map(t => t.name).join(' → ')} → ${cyclePath[0].name}`
+          path: cyclePathIds,
+          description: cyclePath.length > 0
+            ? `Circular dependency: ${cyclePath.map(t => t.name).join(' → ')} → ${cyclePath[0].name}`
+            : 'Circular dependency detected'
         })
 
         return true
@@ -207,7 +273,21 @@ export function detectCircularDependencies(tasks) {
     }
   }
 
-  return circularPaths
+  return {
+    hasCycles: circularPaths.length > 0,
+    cycles: circularPaths.map(cp => cp.path) // Return just the path arrays
+  }
+}
+
+/**
+ * Check if there are any circular dependencies
+ *
+ * @param {Array} tasks - Array of task objects
+ * @returns {boolean} True if circular dependencies exist
+ */
+export function hasCircularDependencies(tasks) {
+  const cycles = detectCircularDependencies(tasks)
+  return cycles && cycles.length > 0
 }
 
 /**
@@ -445,4 +525,164 @@ export function calculateLagLimits(predecessor, successor, type) {
   }
 
   return { minLag, maxLag }
+}
+
+/**
+ * Validates lag/lead time for a dependency
+ *
+ * @param {number} lag - Lag time in days
+ * @param {Object} predecessor - Predecessor task
+ * @param {Object} successor - Successor task
+ * @param {string} type - Dependency type
+ * @returns {Object} Validation result with valid flag and suggestions
+ */
+export function validateLag(lag, predecessor, successor, type = DependencyTypes.FINISH_TO_START) {
+  const errors = []
+  const warnings = []
+  const suggestions = []
+
+  if (!predecessor || !successor) {
+    return { valid: false, errors: ['Both tasks are required'], warnings, suggestions }
+  }
+
+  // Check if lag is excessive (lead time more than half predecessor duration)
+  const predDuration = predecessor.duration || 5
+  if (lag < 0 && Math.abs(lag) > predDuration / 2) {
+    errors.push('Lead time exceeds 50% of predecessor duration')
+    suggestions.push('Consider reducing lead time or using SS dependency instead')
+  }
+
+  // Check temporal consistency
+  if (type === DependencyTypes.FINISH_TO_START && lag >= 0) {
+    // With positive lag, successor starts after predecessor finishes + lag
+    const predEnd = new Date(predecessor.end_date || predecessor.end)
+    const expectedStart = new Date(predEnd)
+    expectedStart.setDate(expectedStart.getDate() + lag)
+
+    if (successor.end_date && new Date(successor.end_date || successor.end) < expectedStart) {
+      errors.push('Lag causes successor to finish before it starts')
+    }
+  }
+
+  // Calculate limits
+  const { minLag, maxLag } = calculateLagLimits(predecessor, successor, type)
+
+  if (lag < minLag) {
+    errors.push(`Lag ${lag} is below minimum ${minLag}`)
+    suggestions.push(`Increase lag to at least ${minLag} days`)
+  }
+
+  if (lag > maxLag) {
+    errors.push(`Lag ${lag} exceeds maximum ${maxLag}`)
+    suggestions.push(`Reduce lag to at most ${maxLag} days`)
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    suggestions,
+    limits: { min: minLag, max: maxLag }
+  }
+}
+
+// Import and re-export critical path function
+export { calculateCriticalPath } from './criticalPath.js'
+
+/**
+ * Analyze a single dependency path (alias for analyzeDependencyPaths with singular form)
+ *
+ * @param {string} taskId - Starting task ID
+ * @param {Array} tasks - All tasks
+ * @param {Array} dependencies - Array of dependency objects
+ * @param {string} direction - 'successors' or 'predecessors'
+ * @returns {Object} Path analysis result
+ */
+export function analyzeDependencyPath(taskId, tasks, dependencies = [], direction = 'successors') {
+  // Build dependency maps
+  const taskMap = new Map(tasks.map(t => [t.id, t]))
+  const predecessors = new Map() // taskId -> array of predecessor task IDs
+  const successors = new Map() // taskId -> array of successor task IDs
+
+  // Initialize maps
+  tasks.forEach(task => {
+    predecessors.set(task.id, [])
+    successors.set(task.id, [])
+  })
+
+  // Build from dependencies array
+  dependencies.forEach(dep => {
+    if (dep.from && dep.to) {
+      successors.get(dep.from)?.push(dep.to)
+      predecessors.get(dep.to)?.push(dep.from)
+    }
+  })
+
+  // Also check task.dependencies property
+  tasks.forEach(task => {
+    if (task.dependencies && Array.isArray(task.dependencies)) {
+      task.dependencies.forEach(depId => {
+        if (taskMap.has(depId)) {
+          successors.get(depId)?.push(task.id)
+          predecessors.get(task.id)?.push(depId)
+        }
+      })
+    }
+  })
+
+  // Get successors and predecessors
+  const taskSuccessors = successors.get(taskId) || []
+  const taskPredecessors = predecessors.get(taskId) || []
+
+  // Build path
+  const path = [taskId]
+  const visited = new Set([taskId])
+
+  const trace = (currentId) => {
+    const succs = successors.get(currentId) || []
+    for (const succId of succs) {
+      if (!visited.has(succId)) {
+        visited.add(succId)
+        path.push(succId)
+        trace(succId)
+      }
+    }
+  }
+
+  trace(taskId)
+
+  // Calculate duration
+  const pathTasks = path.map(id => taskMap.get(id)).filter(t => t)
+  const duration = pathTasks.reduce((sum, task) => {
+    const start = new Date(task.start_date || task.start)
+    const end = new Date(task.end_date || task.end)
+    return sum + Math.ceil((end - start) / (1000 * 60 * 60 * 24))
+  }, 0)
+
+  // Calculate flexibility (simplified - use path length as indicator)
+  const flexibility = path.length > 1 ? path.length - 1 : 0
+
+  // Identify merge points (tasks with multiple predecessors)
+  const mergePoints = path.filter(id => {
+    const preds = predecessors.get(id) || []
+    return preds.length > 1
+  })
+
+  // Identify burst points (tasks with multiple successors)
+  const burstPoints = path.filter(id => {
+    const succs = successors.get(id) || []
+    return succs.length > 1
+  })
+
+  return {
+    path,
+    length: path.length,
+    duration,
+    tasks: pathTasks,
+    successors: taskSuccessors,
+    predecessors: taskPredecessors,
+    flexibility,
+    mergePoints,
+    burstPoints
+  }
 }

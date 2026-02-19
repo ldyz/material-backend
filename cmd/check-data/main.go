@@ -33,7 +33,7 @@ func main() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 
-	fmt.Println("========== 库存数据完整性检查 ==========\n")
+	fmt.Println("========== 库存数据完整性检查 ==========")
 
 	// 1. 统计总库存数
 	var totalStocks int64

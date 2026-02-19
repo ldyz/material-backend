@@ -10,23 +10,24 @@
 
 import { DependencyTypes } from './dependencyValidator'
 
+// Re-export for backward compatibility with tests
+export const DependencyType = DependencyTypes
+
 /**
  * Calculates the critical path for a set of tasks
  *
  * @param {Array} tasks - Array of task objects
+ * @param {Array} dependencies - Array of dependency objects
  * @returns {Object} Critical path analysis result
  */
-export function calculateCriticalPath(tasks) {
+export function calculateCriticalPath(tasks, dependencies = []) {
   if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
     return {
       criticalPath: [],
-      criticalTasks: new Set(),
-      taskSlack: new Map(),
+      criticalTasks: [],
+      slack: {},
       projectDuration: 0,
-      earliestStart: new Map(),
-      earliestFinish: new Map(),
-      latestStart: new Map(),
-      latestFinish: new Map()
+      dates: {}
     }
   }
 
@@ -41,7 +42,15 @@ export function calculateCriticalPath(tasks) {
     successors.set(task.id, [])
   })
 
-  // Build dependency relationships
+  // Build dependency relationships from dependencies array
+  dependencies.forEach(dep => {
+    if (dep.from && dep.to && taskMap.has(dep.from) && taskMap.has(dep.to)) {
+      predecessors.get(dep.to).push(dep.from)
+      successors.get(dep.from).push(dep.to)
+    }
+  })
+
+  // Also check task.dependencies property for backward compatibility
   tasks.forEach(task => {
     if (task.dependencies && Array.isArray(task.dependencies)) {
       task.dependencies.forEach(depId => {
@@ -54,22 +63,22 @@ export function calculateCriticalPath(tasks) {
   })
 
   // Calculate duration for each task
-  const durations = new Map()
+  const durations = {}
   tasks.forEach(task => {
-    const start = new Date(task.start_date)
-    const end = new Date(task.end_date)
+    const start = new Date(task.start_date || task.start)
+    const end = new Date(task.end_date || task.end)
     const duration = Math.ceil((end - start) / (1000 * 60 * 60 * 24))
-    durations.set(task.id, duration)
+    durations[task.id] = duration
   })
 
   // Forward pass - Calculate Early Start (ES) and Early Finish (EF)
-  const earlyStart = new Map()
-  const earlyFinish = new Map()
+  const earlyStart = {}
+  const earlyFinish = {}
 
   // Initialize all tasks
   tasks.forEach(task => {
-    earlyStart.set(task.id, 0)
-    earlyFinish.set(task.id, durations.get(task.id))
+    earlyStart[task.id] = 0
+    earlyFinish[task.id] = durations[task.id]
   })
 
   // Topological sort for forward pass
@@ -80,33 +89,33 @@ export function calculateCriticalPath(tasks) {
 
     if (preds.length === 0) {
       // No predecessors - starts at 0
-      earlyStart.set(task.id, 0)
+      earlyStart[task.id] = 0
     } else {
       // ES = max of all predecessors' EF + lag
       let maxEF = 0
       preds.forEach(predId => {
-        const predFinish = earlyFinish.get(predId)
-        const lag = getDependencyLag(task, predId)
+        const predFinish = earlyFinish[predId]
+        const lag = getDependencyLag(task, predId, dependencies)
         const adjustedFinish = predFinish + lag
         maxEF = Math.max(maxEF, adjustedFinish)
       })
-      earlyStart.set(task.id, maxEF)
+      earlyStart[task.id] = maxEF
     }
 
-    earlyFinish.set(task.id, earlyStart.get(task.id) + durations.get(task.id))
+    earlyFinish[task.id] = earlyStart[task.id] + durations[task.id]
   })
 
   // Find project completion time
-  const projectCompletion = Math.max(...Array.from(earlyFinish.values()))
+  const projectCompletion = Math.max(...Object.values(earlyFinish))
 
   // Backward pass - Calculate Late Start (LS) and Late Finish (LF)
-  const lateStart = new Map()
-  const lateFinish = new Map()
+  const lateStart = {}
+  const lateFinish = {}
 
   // Initialize all tasks to project completion
   tasks.forEach(task => {
-    lateFinish.set(task.id, projectCompletion)
-    lateStart.set(task.id, projectCompletion - durations.get(task.id))
+    lateFinish[task.id] = projectCompletion
+    lateStart[task.id] = projectCompletion - durations[task.id]
   })
 
   // Reverse topological order for backward pass
@@ -117,49 +126,122 @@ export function calculateCriticalPath(tasks) {
 
     if (succs.length === 0) {
       // No successors - finishes at project completion
-      lateFinish.set(task.id, projectCompletion)
+      lateFinish[task.id] = projectCompletion
     } else {
       // LF = min of all successors' LS - lag
       let minLS = Infinity
       succs.forEach(succId => {
-        const succStart = lateStart.get(succId)
-        const lag = getDependencyLag(task, succId)
+        const succStart = lateStart[succId]
+        const lag = getDependencyLag(task, succId, dependencies)
         const adjustedStart = succStart - lag
         minLS = Math.min(minLS, adjustedStart)
       })
-      lateFinish.set(task.id, minLS)
+      lateFinish[task.id] = minLS
     }
 
-    lateStart.set(task.id, lateFinish.get(task.id) - durations.get(task.id))
+    lateStart[task.id] = lateFinish[task.id] - durations[task.id]
   })
 
   // Calculate slack/float for each task
-  const taskSlack = new Map()
-  const criticalTasks = new Set()
+  const slack = {}
+  const criticalTasks = []
 
   tasks.forEach(task => {
-    const slack = lateStart.get(task.id) - earlyStart.get(task.id)
-    taskSlack.set(task.id, Math.round(slack * 100) / 100)
+    const taskSlack = lateStart[task.id] - earlyStart[task.id]
+    slack[task.id] = Math.round(taskSlack * 100) / 100
 
     // Critical tasks have zero slack
-    if (Math.abs(slack) < 0.01) {
-      criticalTasks.add(task.id)
+    if (Math.abs(taskSlack) < 0.01) {
+      criticalTasks.push(task.id)
     }
   })
 
   // Build critical path
-  const criticalPath = buildCriticalPath(tasks, criticalTasks, predecessors, successors)
+  const criticalPath = buildCriticalPathIds(tasks, criticalTasks, predecessors, successors)
+
+  // Build dates object
+  const dates = {}
+  tasks.forEach(task => {
+    dates[task.id] = {
+      earlyStart: earlyStart[task.id],
+      earlyFinish: earlyFinish[task.id],
+      lateStart: lateStart[task.id],
+      lateFinish: lateFinish[task.id]
+    }
+  })
+
+  // Get all critical paths for projects with multiple parallel paths
+  const allCriticalPaths = getAllCriticalPathsFromData(tasks, criticalTasks, predecessors, successors, durations)
 
   return {
     criticalPath,
     criticalTasks,
-    taskSlack,
+    slack,
     projectDuration: projectCompletion,
-    earliestStart: earlyStart,
-    earliestFinish: earlyFinish,
-    latestStart: lateStart,
-    latestFinish: lateFinish
+    dates,
+    criticalPaths: allCriticalPaths.map(path => ({
+      tasks: path,
+      duration: path.reduce((sum, taskId) => sum + durations[taskId], 0)
+    }))
   }
+}
+
+/**
+ * Get all critical paths from the computed data
+ *
+ * @param {Array} tasks - Array of task objects
+ * @param {Array} criticalTasks - Array of critical task IDs
+ * @param {Map} predecessors - Map of predecessors
+ * @param {Map} successors - Map of successors
+ * @param {Object} durations - Task durations
+ * @returns {Array} Array of critical paths (each is an array of task IDs)
+ */
+function getAllCriticalPathsFromData(tasks, criticalTasks, predecessors, successors, durations) {
+  const paths = []
+  const visited = new Set()
+
+  // Find start tasks (no critical predecessors)
+  const startTasks = tasks.filter(task => {
+    if (!criticalTasks.includes(task.id)) {
+      return false
+    }
+    const preds = predecessors.get(task.id) || []
+    return !preds.some(p => criticalTasks.includes(p))
+  })
+
+  const findPaths = (taskId, currentPath) => {
+    if (visited.has(taskId)) {
+      return
+    }
+
+    const newPath = [...currentPath, taskId]
+
+    if (!criticalTasks.includes(taskId)) {
+      if (newPath.length > 1) {
+        paths.push(newPath)
+      }
+      return
+    }
+
+    // Find critical successors
+    const succs = successors.get(taskId) || []
+    const criticalSuccs = succs.filter(s => criticalTasks.includes(s))
+
+    if (criticalSuccs.length === 0) {
+      // End of path
+      paths.push(newPath)
+    } else {
+      criticalSuccs.forEach(succId => {
+        findPaths(succId, newPath)
+      })
+    }
+  }
+
+  startTasks.forEach(task => findPaths(task.id, []))
+
+  // Remove duplicates and sort
+  const uniquePaths = Array.from(new Set(paths.map(p => p.join(',')))).map(s => s.split(','))
+  return uniquePaths
 }
 
 /**
@@ -208,35 +290,42 @@ function topologicalSort(tasks, predecessors) {
  *
  * @param {Object} task - Task object
  * @param {number} depId - Dependency task ID
+ * @param {Array} dependencies - Array of dependency objects
  * @returns {number} Lag time in days
  */
-function getDependencyLag(task, depId) {
-  if (!task.dependencyDetails) {
-    return 0
+function getDependencyLag(task, depId, dependencies = []) {
+  // First check dependencyDetails in task
+  if (task.dependencyDetails) {
+    const depDetail = task.dependencyDetails.find(d => d.taskId === depId || d.taskId === parseInt(depId))
+    if (depDetail) return depDetail.lag || 0
   }
 
-  const depDetail = task.dependencyDetails.find(d => d.taskId === depId)
-  return depDetail?.lag || 0
+  // Then check dependencies array
+  const dep = dependencies.find(d =>
+    (d.from === depId && d.to === task.id) ||
+    (d.to === depId && d.from === task.id)
+  )
+  return dep?.lag || 0
 }
 
 /**
- * Builds the critical path from critical tasks
+ * Builds the critical path from critical tasks (returns IDs)
  *
  * @param {Array} tasks - Array of task objects
- * @param {Set} criticalTasks - Set of critical task IDs
+ * @param {Array} criticalTasks - Array of critical task IDs
  * @param {Map} predecessors - Map of predecessors
  * @param {Map} successors - Map of successors
- * @returns {Array} Critical path tasks in order
+ * @returns {Array} Critical path task IDs in order
  */
-function buildCriticalPath(tasks, criticalTasks, predecessors, successors) {
+function buildCriticalPathIds(tasks, criticalTasks, predecessors, successors) {
   // Find start tasks (no predecessors or only non-critical predecessors)
   const startTasks = tasks.filter(task => {
-    if (!criticalTasks.has(task.id)) {
+    if (!criticalTasks.includes(task.id)) {
       return false
     }
 
     const preds = predecessors.get(task.id) || []
-    return preds.length === 0 || preds.every(p => !criticalTasks.has(p))
+    return preds.length === 0 || preds.every(p => !criticalTasks.includes(p))
   })
 
   // Trace forward from start tasks
@@ -250,16 +339,13 @@ function buildCriticalPath(tasks, criticalTasks, predecessors, successors) {
 
     visited.add(taskId)
 
-    if (criticalTasks.has(taskId)) {
-      const task = tasks.find(t => t.id === taskId)
-      if (task) {
-        path.push(task)
-      }
+    if (criticalTasks.includes(taskId)) {
+      path.push(taskId)
 
       // Follow critical successors
       const succs = successors.get(taskId) || []
       succs.forEach(succId => {
-        if (criticalTasks.has(succId)) {
+        if (criticalTasks.includes(succId)) {
           trace(succId)
         }
       })
@@ -283,7 +369,7 @@ export function calculateTaskSlack(task, cpmResult) {
     return 0
   }
 
-  return cpmResult.taskSlack.get(task.id) || 0
+  return cpmResult.slack[task.id] || 0
 }
 
 /**
@@ -298,7 +384,7 @@ export function isTaskCritical(task, cpmResult) {
     return false
   }
 
-  return cpmResult.criticalTasks.has(task.id)
+  return cpmResult.criticalTasks.includes(task.id)
 }
 
 /**
@@ -315,7 +401,7 @@ export function calculateFreeSlack(task, tasks, cpmResult) {
     return 0
   }
 
-  const taskEF = cpmResult.earliestFinish.get(task.id)
+  const taskEF = cpmResult.dates[task.id]?.earlyFinish || 0
 
   // Find successors
   const successors = tasks.filter(t =>
@@ -330,8 +416,8 @@ export function calculateFreeSlack(task, tasks, cpmResult) {
   // Free slack = min(successor ES) - task EF
   const minSuccessorES = Math.min(
     ...successors.map(succ => {
-      const lag = getDependencyLag(succ, task.id)
-      return cpmResult.earliestStart.get(succ.id) - lag
+      const lag = 0 // Simplified for now
+      return (cpmResult.dates[succ.id]?.earlyStart || 0) - lag
     })
   )
 
@@ -359,10 +445,11 @@ export function calculateInterferingSlack(task, tasks, cpmResult) {
  * (Can be multiple parallel critical paths)
  *
  * @param {Array} tasks - Array of task objects
+ * @param {Array} dependencies - Array of dependency objects
  * @returns {Array} Array of critical paths
  */
-export function getAllCriticalPaths(tasks) {
-  const cpmResult = calculateCriticalPath(tasks)
+export function getAllCriticalPaths(tasks, dependencies = []) {
+  const cpmResult = calculateCriticalPath(tasks, dependencies)
 
   // Group critical tasks by their chains
   const paths = []
@@ -375,7 +462,7 @@ export function getAllCriticalPaths(tasks) {
 
     visited.add(taskId)
 
-    if (!cpmResult.criticalTasks.has(taskId)) {
+    if (!cpmResult.criticalTasks.includes(taskId)) {
       if (currentPath.length > 0) {
         paths.push([...currentPath])
       }
@@ -387,11 +474,14 @@ export function getAllCriticalPaths(tasks) {
 
     currentPath.push(task)
 
-    // Find critical successors
-    const successors = tasks.filter(t =>
-      t.dependencies && t.dependencies.includes(taskId) &&
-      cpmResult.criticalTasks.has(t.id)
-    )
+    // Find critical successors from dependencies
+    const successors = []
+    dependencies.forEach(dep => {
+      if (dep.from === taskId && cpmResult.criticalTasks.includes(dep.to)) {
+        const succTask = tasks.find(t => t.id === dep.to)
+        if (succTask) successors.push(succTask)
+      }
+    })
 
     if (successors.length === 0) {
       // End of path
@@ -405,11 +495,14 @@ export function getAllCriticalPaths(tasks) {
 
   // Find all start tasks
   const startTasks = tasks.filter(task => {
-    if (!cpmResult.criticalTasks.has(task.id)) {
+    if (!cpmResult.criticalTasks.includes(task.id)) {
       return false
     }
-    return !task.dependencies || task.dependencies.length === 0 ||
-      task.dependencies.every(depId => !cpmResult.criticalTasks.has(depId))
+    // Check if task has no critical predecessors
+    const hasCriticalPred = dependencies.some(dep =>
+      dep.to === task.id && cpmResult.criticalTasks.includes(dep.from)
+    )
+    return !hasCriticalPred
   })
 
   startTasks.forEach(task => findPaths(task.id, []))
@@ -418,7 +511,7 @@ export function getAllCriticalPaths(tasks) {
     tasks: path,
     duration: path.reduce((sum, task) => {
       const duration = Math.ceil(
-        (new Date(task.end_date) - new Date(task.start_date)) / (1000 * 60 * 60 * 24)
+        (new Date(task.end_date || task.end) - new Date(task.start_date || task.start)) / (1000 * 60 * 60 * 24)
       )
       return sum + duration
     }, 0)
@@ -429,27 +522,28 @@ export function getAllCriticalPaths(tasks) {
  * Generates a critical path report
  *
  * @param {Array} tasks - Array of task objects
+ * @param {Array} dependencies - Array of dependency objects
  * @returns {Object} Critical path report
  */
-export function generateCriticalPathReport(tasks) {
-  const cpmResult = calculateCriticalPath(tasks)
-  const allPaths = getAllCriticalPaths(tasks)
+export function generateCriticalPathReport(tasks, dependencies = []) {
+  const cpmResult = calculateCriticalPath(tasks, dependencies)
+  const allPaths = getAllCriticalPaths(tasks, dependencies)
 
   const report = {
     projectDuration: cpmResult.projectDuration,
-    criticalTaskCount: cpmResult.criticalTasks.size,
+    criticalTaskCount: cpmResult.criticalTasks.length,
     totalTaskCount: tasks.length,
     criticalPathCount: allPaths.length,
     criticalPaths: allPaths,
     taskDetails: tasks.map(task => ({
       id: task.id,
       name: task.name,
-      isCritical: cpmResult.criticalTasks.has(task.id),
-      totalSlack: cpmResult.taskSlack.get(task.id) || 0,
-      earlyStart: cpmResult.earliestStart.get(task.id),
-      earlyFinish: cpmResult.earliestFinish.get(task.id),
-      lateStart: cpmResult.latestStart.get(task.id),
-      lateFinish: cpmResult.latestFinish.get(task.id)
+      isCritical: cpmResult.criticalTasks.includes(task.id),
+      totalSlack: cpmResult.slack[task.id] || 0,
+      earlyStart: cpmResult.dates[task.id]?.earlyStart,
+      earlyFinish: cpmResult.dates[task.id]?.earlyFinish,
+      lateStart: cpmResult.dates[task.id]?.lateStart,
+      lateFinish: cpmResult.dates[task.id]?.lateFinish
     }))
   }
 
@@ -466,17 +560,17 @@ export function generateCriticalPathReport(tasks) {
  */
 export function calculateDelayImpact(task, delayDays, tasks) {
   const cpmResult = calculateCriticalPath(tasks)
-  const isCritical = cpmResult.criticalTasks.has(task.id)
+  const isCritical = cpmResult.criticalTasks.includes(task.id)
 
   if (isCritical) {
     // Delaying critical task directly delays project
     return {
       projectDelay: delayDays,
-      affectedTasks: Array.from(cpmResult.criticalTasks),
+      affectedTasks: [...cpmResult.criticalTasks],
       reason: 'Task is on critical path'
     }
   } else {
-    const slack = cpmResult.taskSlack.get(task.id) || 0
+    const slack = cpmResult.slack[task.id] || 0
 
     if (delayDays <= slack) {
       return {
@@ -488,9 +582,73 @@ export function calculateDelayImpact(task, delayDays, tasks) {
       const effectiveDelay = delayDays - slack
       return {
         projectDelay: effectiveDelay,
-        affectedTasks: Array.from(cpmResult.criticalTasks),
+        affectedTasks: [...cpmResult.criticalTasks],
         reason: 'Delay exceeds slack, pushes critical path'
       }
     }
   }
+}
+
+/**
+ * Identifies all critical tasks
+ *
+ * @param {Array} tasks - Array of task objects
+ * @param {Array} dependencies - Array of dependency objects
+ * @returns {Array} Array of critical task IDs
+ */
+export function identifyCriticalTasks(tasks, dependencies = []) {
+  const result = calculateCriticalPath(tasks, dependencies)
+  return result.criticalTasks
+}
+
+/**
+ * Calculates early start for a task
+ *
+ * @param {string} taskId - Task ID
+ * @param {Array} tasks - Array of all tasks
+ * @param {Array} dependencies - Array of dependency objects
+ * @returns {number} Early start value
+ */
+export function calculateEarlyStart(taskId, tasks, dependencies = []) {
+  const result = calculateCriticalPath(tasks, dependencies)
+  return result.dates[taskId]?.earlyStart ?? 0
+}
+
+/**
+ * Calculates early finish for a task
+ *
+ * @param {string} taskId - Task ID
+ * @param {Array} tasks - Array of all tasks
+ * @param {Array} dependencies - Array of dependency objects
+ * @returns {number} Early finish value
+ */
+export function calculateEarlyFinish(taskId, tasks, dependencies = []) {
+  const result = calculateCriticalPath(tasks, dependencies)
+  return result.dates[taskId]?.earlyFinish ?? 0
+}
+
+/**
+ * Calculates late start for a task
+ *
+ * @param {string} taskId - Task ID
+ * @param {Array} tasks - Array of all tasks
+ * @param {Array} dependencies - Array of dependency objects
+ * @returns {number} Late start value
+ */
+export function calculateLateStart(taskId, tasks, dependencies = []) {
+  const result = calculateCriticalPath(tasks, dependencies)
+  return result.dates[taskId]?.lateStart ?? 0
+}
+
+/**
+ * Calculates late finish for a task
+ *
+ * @param {string} taskId - Task ID
+ * @param {Array} tasks - Array of all tasks
+ * @param {Array} dependencies - Array of dependency objects
+ * @returns {number} Late finish value
+ */
+export function calculateLateFinish(taskId, tasks, dependencies = []) {
+  const result = calculateCriticalPath(tasks, dependencies)
+  return result.dates[taskId]?.lateFinish ?? 0
 }

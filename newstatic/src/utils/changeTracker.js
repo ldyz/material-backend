@@ -146,6 +146,55 @@ class ChangeTracker {
   }
 
   /**
+   * Track changes between two task arrays
+   *
+   * @param {Array} oldTasks - Previous task array
+   * @param {Array} newTasks - New task array
+   * @param {number} userId - User ID who made the changes
+   * @param {number} projectId - Project ID (optional)
+   * @returns {Array<ChangeEntry>} Array of change entries
+   *
+   * @example
+   * const changes = tracker.trackChanges(oldTasks, newTasks, 1, 456)
+   */
+  trackChanges(oldTasks, newTasks, userId = null, projectId = null) {
+    const changes = []
+    const oldMap = new Map()
+    const newMap = new Map()
+
+    // Create maps for O(1) lookup
+    oldTasks?.forEach(task => oldMap.set(task.id || task._id, task))
+    newTasks?.forEach(task => newMap.set(task.id || task._id, task))
+
+    // Detect new and modified tasks
+    newMap.forEach((newTask, id) => {
+      const oldTask = oldMap.get(id)
+      if (!oldTask) {
+        // New task
+        const change = this.trackCreate('task', id, newTask, userId, projectId)
+        if (change) changes.push(change)
+      } else {
+        // Check for modifications
+        const diff = this._diffObjects(oldTask, newTask)
+        if (diff.modified.length > 0 || diff.added.length > 0 || diff.removed.length > 0) {
+          const change = this.trackUpdate('task', id, oldTask, newTask, userId, projectId)
+          if (change) changes.push(change)
+        }
+      }
+    })
+
+    // Detect deleted tasks
+    oldMap.forEach((oldTask, id) => {
+      if (!newMap.has(id)) {
+        const change = this.trackDelete('task', id, oldTask, userId, projectId)
+        if (change) changes.push(change)
+      }
+    })
+
+    return changes
+  }
+
+  /**
    * Generate diff between two objects
    *
    * @param {object} before - Before state
@@ -412,5 +461,325 @@ class ChangeTracker {
 
 // Create singleton instance
 const changeTracker = new ChangeTracker()
+
+// Change Type Enum
+export const ChangeType = {
+  CREATE: 'CREATE',
+  UPDATE: 'UPDATE',
+  DELETE: 'DELETE'
+}
+
+/**
+ * Track changes between two task arrays (simplified version for tests)
+ *
+ * @param {Array} oldTasks - Previous task array
+ * @param {Array} newTasks - New task array
+ * @param {number} userId - User ID who made the changes
+ * @returns {Array} Array of change entries with simplified format
+ */
+export function trackChanges(oldTasks, newTasks, userId = null) {
+  const changes = []
+  const oldMap = new Map()
+  const newMap = new Map()
+
+  // Create maps for O(1) lookup
+  oldTasks?.forEach(task => oldMap.set(task.id || task._id, task))
+  newTasks?.forEach(task => newMap.set(task.id || task._id, task))
+
+  // Detect new and modified tasks
+  newMap.forEach((newTask, id) => {
+    const oldTask = oldMap.get(id)
+    if (!oldTask) {
+      // New task
+      changes.push({
+        entityId: id,
+        type: ChangeType.CREATE,
+        timestamp: Date.now(),
+        changes: newTask
+      })
+    } else {
+      // Check for modifications
+      const modifiedFields = []
+      const fieldChanges = {}
+
+      // Check all fields in both old and new
+      const allKeys = new Set([...Object.keys(oldTask), ...Object.keys(newTask)])
+      allKeys.forEach(key => {
+        if (key !== 'id' && key !== '_id') {
+          const oldVal = oldTask[key]
+          const newVal = newTask[key]
+
+          if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+            modifiedFields.push(key)
+            fieldChanges[key] = {
+              from: oldVal,
+              to: newVal
+            }
+          }
+        }
+      })
+
+      if (modifiedFields.length > 0) {
+        changes.push({
+          entityId: id,
+          type: ChangeType.UPDATE,
+          timestamp: Date.now(),
+          changes: fieldChanges
+        })
+      }
+    }
+  })
+
+  // Detect deleted tasks
+  oldMap.forEach((oldTask, id) => {
+    if (!newMap.has(id)) {
+      changes.push({
+        entityId: id,
+        type: ChangeType.DELETE,
+        timestamp: Date.now(),
+        changes: oldTask
+      })
+    }
+  })
+
+  return changes
+}
+
+/**
+ * Generate diff in various formats
+ *
+ * @param {Array} changes - Array of changes
+ * @param {string} format - Format: 'text', 'html', 'markdown', 'json'
+ * @returns {string} Formatted diff
+ */
+export function generateDiff(changes, format = 'text') {
+  if (!changes || changes.length === 0) {
+    return format === 'json' ? '[]' : 'No changes'
+  }
+
+  switch (format) {
+    case 'json':
+      return JSON.stringify(changes, null, 2)
+
+    case 'html':
+      return changes.map(change => {
+        const lines = []
+        lines.push(`<div class="change change-${change.type.toLowerCase()}">`)
+        lines.push(`  <h4>Entity: ${change.entityId}</h4>`)
+        lines.push(`  <p>Type: ${change.type}</p>`)
+
+        if (change.type === ChangeType.UPDATE) {
+          lines.push('  <ul>')
+          Object.entries(change.changes).forEach(([field, values]) => {
+            lines.push(`    <li><strong>${field}</strong>: ${JSON.stringify(values.from)} → ${JSON.stringify(values.to)}</li>`)
+          })
+          lines.push('  </ul>')
+        }
+
+        lines.push('</div>')
+        return lines.join('\n')
+      }).join('\n')
+
+    case 'markdown':
+      return changes.map(change => {
+        const lines = []
+        lines.push(`## Change: ${change.entityId}`)
+        lines.push(`**Type:** ${change.type}`)
+
+        if (change.type === ChangeType.UPDATE) {
+          lines.push('\n**Field Changes:**')
+          Object.entries(change.changes).forEach(([field, values]) => {
+            lines.push(`- **${field}**: \`${JSON.stringify(values.from)}\` → \`${JSON.stringify(values.to)}\``)
+          })
+        }
+
+        return lines.join('\n')
+      }).join('\n\n')
+
+    default: // text
+      return changes.map(change => {
+        const lines = []
+        lines.push(`${change.type}: ${change.entityId}`)
+
+        if (change.type === ChangeType.UPDATE) {
+          Object.entries(change.changes).forEach(([field, values]) => {
+            lines.push(`  ${field} changed from ${JSON.stringify(values.from)} to ${JSON.stringify(values.to)}`)
+          })
+        }
+
+        return lines.join('\n')
+      }).join('\n\n')
+  }
+}
+
+/**
+ * Compress changes by grouping related changes
+ *
+ * @param {Array} changes - Array of changes
+ * @returns {Array} Compressed changes
+ */
+export function compressChanges(changes) {
+  if (!changes || changes.length === 0) {
+    return []
+  }
+
+  // Group by entity
+  const grouped = new Map()
+
+  changes.forEach(change => {
+    if (!grouped.has(change.entityId)) {
+      grouped.set(change.entityId, [])
+    }
+    grouped.get(change.entityId).push(change)
+  })
+
+  // For each entity, keep only the latest change of each type
+  const compressed = []
+  grouped.forEach((entityChanges, entityId) => {
+    // Filter out redundant changes
+    const filtered = entityChanges.filter((change, index, self) => {
+      // Remove if there's a later change of same type
+      const laterChanges = entityChanges.slice(index + 1)
+      return !laterChanges.some(c => c.type === change.type)
+    })
+
+    compressed.push(...filtered)
+  })
+
+  return compressed.sort((a, b) => a.timestamp - b.timestamp)
+}
+
+/**
+ * Calculate the impact of changes
+ *
+ * @param {Array} changes - Array of changes
+ * @param {Array} tasks - All tasks
+ * @returns {Object} Impact analysis
+ */
+export function calculateChangeImpact(changes, tasks) {
+  if (!changes || changes.length === 0) {
+    return {
+      severity: 'none',
+      affectedTasks: [],
+      dateImpact: false,
+      dependencyImpact: false,
+      resourceImpact: false,
+      costImpact: 0,
+      estimatedDelay: 0
+    }
+  }
+
+  const affectedTasks = new Set()
+  let dateImpact = false
+  let dependencyImpact = false
+  let resourceImpact = false
+  let maxDelay = 0
+
+  changes.forEach(change => {
+    affectedTasks.add(change.entityId)
+
+    if (change.type === ChangeType.UPDATE) {
+      const hasDateChange = Object.keys(change.changes).some(key =>
+        key.includes('start') || key.includes('end') || key.includes('date')
+      )
+      const hasDependencyChange = Object.keys(change.changes).some(key =>
+        key.includes('depend') || key.includes('predecessor') || key.includes('successor')
+      )
+      const hasResourceChange = Object.keys(change.changes).some(key =>
+        key.includes('assignee') || key.includes('resource')
+      )
+
+      if (hasDateChange) {
+        dateImpact = true
+        // Estimate delay from date changes
+        Object.entries(change.changes).forEach(([field, values]) => {
+          if ((field.includes('start') || field.includes('end')) && values.from && values.to) {
+            const from = new Date(values.from)
+            const to = new Date(values.to)
+            const delay = Math.abs((to - from) / (1000 * 60 * 60 * 24))
+            maxDelay = Math.max(maxDelay, delay)
+          }
+        })
+      }
+
+      if (hasDependencyChange) dependencyImpact = true
+      if (hasResourceChange) resourceImpact = true
+    }
+  })
+
+  // Calculate severity
+  let severity = 'low'
+  if (dateImpact && maxDelay > 7) severity = 'high'
+  else if ((dateImpact || dependencyImpact) && affectedTasks.size > 3) severity = 'medium'
+  else if (affectedTasks.size > 5) severity = 'medium'
+
+  return {
+    severity,
+    affectedTasks: Array.from(affectedTasks),
+    dateImpact,
+    dependencyImpact,
+    resourceImpact,
+    costImpact: maxDelay * 1000, // Rough estimate
+    estimatedDelay: maxDelay
+  }
+}
+
+/**
+ * Import changes from external data
+ *
+ * @param {string} data - Data to import
+ * @param {string} format - Format: 'json' or 'csv'
+ * @returns {Array} Imported changes
+ */
+export function importChanges(data, format = 'json') {
+  try {
+    if (format === 'json') {
+      const parsed = JSON.parse(data)
+      if (Array.isArray(parsed)) {
+        return parsed
+      }
+      return []
+    } else if (format === 'csv') {
+      // Simple CSV parsing
+      const lines = data.split('\n')
+      const headers = lines[0].split(',')
+      return lines.slice(1).map(line => {
+        const values = line.split(',')
+        const change = {}
+        headers.forEach((header, index) => {
+          change[header.trim()] = values[index]?.trim().replace(/"/g, '')
+        })
+        return change
+      }).filter(c => c.entityId)
+    }
+    return []
+  } catch (error) {
+    console.error('Import error:', error)
+    return []
+  }
+}
+
+// Named exports for easier testing
+export const exportChanges = (changes, format = 'json', options = {}) => {
+  const result = changeTracker.exportChanges(changes, format)
+
+  if (options.includeMetadata) {
+    const parsed = format === 'json' ? JSON.parse(result) : { data: result }
+    return JSON.stringify({
+      metadata: {
+        exportedBy: options.exportedBy,
+        exportDate: options.exportDate || new Date().toISOString(),
+        changeCount: changes.length
+      },
+      changes: parsed
+    }, null, 2)
+  }
+
+  return result
+}
+
+export const getChanges = () => changeTracker.getChanges()
+export const clearChanges = () => changeTracker.clearChanges()
+export const getStatistics = () => changeTracker.getStatistics()
 
 export default changeTracker

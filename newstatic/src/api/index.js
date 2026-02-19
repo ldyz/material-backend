@@ -4342,3 +4342,168 @@ export const appointmentApi = {
   }
 }
 
+/**
+ * 日历相关 API 接口
+ *
+ * 提供项目日历管理功能，包括工作日、节假日、例外时间等
+ *
+ * @namespace calendarApi
+ */
+export const calendarApi = {
+  /**
+   * 获取日历列表
+   *
+   * @param {number} projectId - 项目ID
+   * @returns {Promise} 返回日历列表
+   */
+  list(projectId) {
+    return request({
+      url: '/calendars',
+      method: 'GET',
+      params: { project_id: projectId }
+    })
+  },
+
+  /**
+   * 创建日历
+   *
+   * @param {Object} data - 日历数据
+   * @returns {Promise} 返回创建的日历
+   */
+  create(data) {
+    return request({
+      url: '/calendars',
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 更新日历
+   *
+   * @param {number} id - 日历ID
+   * @param {Object} data - 更新数据
+   * @returns {Promise} 返回更新后的日历
+   */
+  update(id, data) {
+    return request({
+      url: `/calendars/${id}`,
+      method: 'PUT',
+      data
+    })
+  },
+
+  /**
+   * 删除日历
+   *
+   * @param {number} id - 日历ID
+   * @returns {Promise} 返回删除结果
+   */
+  delete(id) {
+    return request({
+      url: `/calendars/${id}`,
+      method: 'DELETE'
+    })
+  },
+
+  /**
+   * 设置项目日历
+   *
+   * @param {number} calendarId - 日历ID
+   * @returns {Promise} 返回设置结果
+   */
+  setProjectCalendar(calendarId) {
+    return request({
+      url: `/calendars/${calendarId}/set-project`,
+      method: 'POST'
+    })
+  },
+
+  /**
+   * 为任务分配日历
+   *
+   * @param {number} taskId - 任务ID
+   * @param {number} calendarId - 日历ID
+   * @returns {Promise} 返回分配结果
+   */
+  assignTaskCalendar(taskId, calendarId) {
+    return request({
+      url: `/calendars/assign-task`,
+      method: 'POST',
+      data: { task_id: taskId, calendar_id: calendarId }
+    })
+  },
+
+  /**
+   * 移除任务日历
+   *
+   * @param {number} taskId - 任务ID
+   * @returns {Promise} 返回移除结果
+   */
+  removeTaskCalendar(taskId) {
+    return request({
+      url: `/calendars/remove-task`,
+      method: 'POST',
+      data: { task_id: taskId }
+    })
+  },
+
+  /**
+   * 添加节假日
+   *
+   * @param {number} calendarId - 日历ID
+   * @param {Object} holiday - 节假日数据
+   * @returns {Promise} 返回添加的节假日
+   */
+  addHoliday(calendarId, holiday) {
+    return request({
+      url: `/calendars/${calendarId}/holidays`,
+      method: 'POST',
+      data: holiday
+    })
+  },
+
+  /**
+   * 移除节假日
+   *
+   * @param {number} calendarId - 日历ID
+   * @param {number} holidayId - 节假日ID
+   * @returns {Promise} 返回移除结果
+   */
+  removeHoliday(calendarId, holidayId) {
+    return request({
+      url: `/calendars/${calendarId}/holidays/${holidayId}`,
+      method: 'DELETE'
+    })
+  },
+
+  /**
+   * 添加例外时间
+   *
+   * @param {number} calendarId - 日历ID
+   * @param {Object} exception - 例外时间数据
+   * @returns {Promise} 返回添加的例外时间
+   */
+  addException(calendarId, exception) {
+    return request({
+      url: `/calendars/${calendarId}/exceptions`,
+      method: 'POST',
+      data: exception
+    })
+  },
+
+  /**
+   * 移除例外时间
+   *
+   * @param {number} calendarId - 日历ID
+   * @param {number} exceptionId - 例外时间ID
+   * @returns {Promise} 返回移除结果
+   */
+  removeException(calendarId, exceptionId) {
+    return request({
+      url: `/calendars/${calendarId}/exceptions/${exceptionId}`,
+      method: 'DELETE'
+    })
+  }
+}
+

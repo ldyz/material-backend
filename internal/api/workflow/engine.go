@@ -21,7 +21,7 @@ func NewEngine(db *gorm.DB) *Engine {
 }
 
 // StartWorkflow 启动工作流
-func (e *Engine) StartWorkflow(workflowID uint, businessType string, businessID uint, businessNo string, initiatorID uint, initiatorName string) (*WorkflowInstance, error) {
+func (e *Engine) StartWorkflow(workflowID uint, businessType string, businessID uint, businessNo string, initiatorID uint, initiatorName string, projectID *uint) (*WorkflowInstance, error) {
 	// 1. 获取工作流定义
 	var workflow WorkflowDefinition
 	if err := e.db.Preload("Nodes").Preload("Nodes.Approvers").Preload("Edges").First(&workflow, workflowID).Error; err != nil {
@@ -42,6 +42,7 @@ func (e *Engine) StartWorkflow(workflowID uint, businessType string, businessID 
 		Status:        InstanceStatusPending,
 		InitiatorID:   initiatorID,
 		InitiatorName: initiatorName,
+		ProjectID:     projectID, // 存储项目ID
 		StartedAt:     time.Now(),
 	}
 
@@ -593,6 +594,43 @@ func (e *Engine) createApprovalTasks(instance *WorkflowInstance, node *WorkflowN
 				}
 				tasks = append(tasks, task)
 			}
+
+		case ApproverTypeProjectRole:
+			// 从项目关联用户中筛选特定角色
+			// approver.ApproverID 存储的是角色ID
+			// instance.ProjectID 是项目ID
+			if instance.ProjectID == nil {
+				fmt.Printf("警告：工作流实例 %d 没有关联项目，无法使用项目角色审批\n", instance.ID)
+				continue
+			}
+
+			users, err := e.getUsersByProjectAndRole(*instance.ProjectID, approver.ApproverID)
+			if err != nil {
+				fmt.Printf("获取项目 %d 角色 %d 的用户失败: %v\n", *instance.ProjectID, approver.ApproverID, err)
+				continue
+			}
+
+			if len(users) == 0 {
+				fmt.Printf("警告：项目 %d 中没有角色 %d 的用户\n", *instance.ProjectID, approver.ApproverID)
+			}
+
+			for _, user := range users {
+				task := WorkflowPendingTask{
+					InstanceID:   instance.ID,
+					NodeID:       node.ID,
+					NodeKey:      node.NodeKey,
+					NodeName:     node.NodeName,
+					BusinessType: instance.BusinessType,
+					BusinessID:   instance.BusinessID,
+					BusinessNo:   instance.BusinessNo,
+					ApproverID:   user.ID,
+					ApproverName: user.FullName,
+					Status:       TaskStatusPending,
+					IsParallel:   node.ApprovalType == ApprovalTypeParallel,
+					ArrivedAt:    now,
+				}
+				tasks = append(tasks, task)
+			}
 		}
 	}
 
@@ -894,6 +932,18 @@ func (e *Engine) getUserSuperior(userID uint) (*auth.User, error) {
 	// 这里简化处理，实际可能需要根据组织架构查询
 	// 暂时返回空，可以根据实际业务逻辑实现
 	return nil, nil
+}
+
+// getUsersByProjectAndRole 获取项目中拥有指定角色的所有用户
+func (e *Engine) getUsersByProjectAndRole(projectID uint, roleID int) ([]auth.User, error) {
+	var users []auth.User
+	err := e.db.Raw(`
+		SELECT DISTINCT u.* FROM users u
+		INNER JOIN user_roles ur ON u.id = ur.user_id
+		INNER JOIN user_projects up ON u.id = up.user_id
+		WHERE up.project_id = ? AND ur.role_id = ?
+	`, projectID, roleID).Find(&users).Error
+	return users, err
 }
 
 // getBusinessTypeName 获取业务类型的显示名称

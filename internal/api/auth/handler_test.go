@@ -49,9 +49,14 @@ func TestLoginAndMeFlow(t *testing.T) {
 	}
 	var resp map[string]any
 	json.Unmarshal(r.Body.Bytes(), &resp)
-	token, ok := resp["token"].(string)
+	// Token is in meta.token
+	meta, ok := resp["meta"].(map[string]any)
+	if !ok {
+		t.Fatalf("no meta in response: %v", resp)
+	}
+	token, ok := meta["token"].(string)
 	if !ok || token == "" {
-		t.Fatalf("no token returned")
+		t.Fatalf("no token returned, got: %v", meta)
 	}
 	// call /me
 	req2 := httptest.NewRequest("GET", "/api/auth/me", nil)

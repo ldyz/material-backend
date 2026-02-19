@@ -34,6 +34,7 @@ import { ref, watch, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAutoUpdate } from '@/composables/useAppUpdate'
 import AppUpdateDialog from '@/components/AppUpdateDialog.vue'
+import { canManageAppointments, isWorker } from '@/utils/roleUtils'
 
 const router = useRouter()
 const route = useRoute()
@@ -50,12 +51,9 @@ const { hasUpdate, forceUpdate, performCheck } = useAutoUpdate({
 
 // 从 localStorage 获取用户信息
 const userInfo = ref(JSON.parse(localStorage.getItem('userInfo') || '{}'))
-const userRole = computed(() => userInfo.value.role || '')
 
 // 根据角色动态生成菜单项
 const menuItems = computed(() => {
-  const role = userRole.value
-
   // 默认菜单（所有人可见）
   const defaultMenus = [
     { name: 'dashboard', label: '首页', icon: 'wap-home-o' },
@@ -63,8 +61,8 @@ const menuItems = computed(() => {
     { name: 'profile', label: '我的', icon: 'user-o' }
   ]
 
-  // 管理员菜单
-  if (role === 'admin' || role === 'project_manager') {
+  // 管理员/项目经理菜单
+  if (canManageAppointments(userInfo.value)) {
     return [
       { name: 'dashboard', label: '首页', icon: 'wap-home-o' },
       { name: 'appointments', label: '预约管理', icon: 'calendar-o' },
@@ -74,7 +72,7 @@ const menuItems = computed(() => {
   }
 
   // 作业人员菜单
-  if (role === 'worker') {
+  if (isWorker(userInfo.value)) {
     return [
       { name: 'dashboard', label: '首页', icon: 'wap-home-o' },
       { name: 'profile', label: '我的', icon: 'user-o' }

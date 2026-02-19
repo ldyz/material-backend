@@ -1,0 +1,8 @@
+{
+  "platform": "android",
+  "version": "1.0.9",
+  "download_url": "https://home.mbed.org.cn:9090/mobile-updates/material-management-1.0.9.apk",
+  "update_message": "发现新版本 1.0.9，立即更新",
+  "release_notes": "版本 1.0.9 更新：\n- 修复关于页面版本显示\n- 添加发布日期显示\n- 优化用户体验",
+  "published_at": "2026-02-13T13:50:00Z"
+}

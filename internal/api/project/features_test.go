@@ -56,7 +56,8 @@ func TestProjectFilters(t *testing.T) {
 	if r.Code != 200 { t.Fatalf("expected 200, got %d body:%s", r.Code, r.Body.String()) }
 	var resp map[string]any
 	json.Unmarshal(r.Body.Bytes(), &resp)
-	projects := resp["projects"].([]any)
+	projects, ok := resp["data"].([]any)
+	if !ok { t.Fatalf("expected data array in response, got: %v", resp) }
 	if len(projects) != 2 { t.Fatalf("expected 2 active projects, got %d", len(projects)) }
 
 	// filter by manager=Bob
@@ -67,7 +68,8 @@ func TestProjectFilters(t *testing.T) {
 	if r2.Code != 200 { t.Fatalf("expected 200, got %d body:%s", r2.Code, r2.Body.String()) }
 	var resp2 map[string]any
 	json.Unmarshal(r2.Body.Bytes(), &resp2)
-	projects2 := resp2["projects"].([]any)
+	projects2, ok := resp2["data"].([]any)
+	if !ok { t.Fatalf("expected data array in response, got: %v", resp2) }
 	if len(projects2) != 1 { t.Fatalf("expected 1 Bob project, got %d", len(projects2)) }
 }
 
@@ -89,7 +91,8 @@ func TestProjectCodeGeneration(t *testing.T) {
 		if r.Code != 201 { t.Fatalf("create failed: %d %s", r.Code, r.Body.String()) }
 		var cres map[string]any
 		json.Unmarshal(r.Body.Bytes(), &cres)
-		proj := cres["project"].(map[string]any)
+		proj, ok := cres["data"].(map[string]any)
+		if !ok { t.Fatalf("expected data in response: %v", cres) }
 		if proj["code"] == nil || proj["code"] == "" { t.Fatalf("expected code generated, got empty") }
 	}
 	// ensure uniqueness among non-empty codes (ignore legacy empty codes created directly in tests)

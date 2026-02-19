@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/gin-gonic/gin"
@@ -205,6 +206,29 @@ func main() {
 	r.Static("/assets", "./static/assets")
 	r.Static("/uploads", "./static/uploads")  // 上传文件访问路径
 	// 移动端应用（生产模式使用构建后的 dist，开发模式可配置源码目录）
+	// 添加缓存控制中间件，确保 index.html 和 JS 文件不被缓存
+	r.Use(func(c *gin.Context) {
+		// 只处理 /mobile 路径
+		if !strings.HasPrefix(c.Request.URL.Path, "/mobile") {
+			c.Next()
+			return
+		}
+
+		// 设置缓存控制头
+		// index.html 和 version.json 不缓存
+		// JS/CSS 文件使用短缓存（1小时）
+		if c.Request.URL.Path == "/mobile/index.html" ||
+		   c.Request.URL.Path == "/mobile/version.json" {
+			c.Header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+		} else if strings.HasSuffix(c.Request.URL.Path, ".js") ||
+		          strings.HasSuffix(c.Request.URL.Path, ".css") {
+			c.Header("Cache-Control", "public, max-age=3600") // 1小时
+		} else {
+			c.Header("Cache-Control", "public, max-age=86400") // 24小时
+		}
+
+		c.Next()
+	})
 	r.Static("/mobile", "./mobile-app/dist")
 	// 移动端更新文件（APK下载）
 	r.Static("/mobile-updates", "./mobile-app-updates")
@@ -228,7 +252,7 @@ func main() {
 				})
 				return
 			}
-			
+
 			err = sqlDB.Ping()
 			if err != nil {
 				c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -238,7 +262,7 @@ func main() {
 				})
 				return
 			}
-			
+
 			// 返回健康状态
 			c.JSON(http.StatusOK, gin.H{
 				"status":  "ok",
@@ -246,7 +270,6 @@ func main() {
 				"database": "PostgreSQL",
 			})
 		})
-		
 		auth.RegisterRoutes(api, dbConn)
 		project.RegisterRoutes(api, dbConn)
 		material.RegisterRoutes(api, dbConn)

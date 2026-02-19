@@ -58,7 +58,20 @@ type PlanMaterialItem struct {
 }
 
 // ListMaterials retrieves plan material items with filters and pagination
+// If PlanID is provided, queries material_plan_items (plan view)
+// Otherwise, queries material_master (catalog view)
 func (s *Service) ListMaterials(params ListQueryParams) ([]PlanMaterialItem, int64, error) {
+	// If PlanID is specified, query material_plan_items (plan view)
+	if params.PlanID > 0 || params.ProjectID > 0 {
+		return s.listPlanMaterials(params)
+	}
+
+	// Otherwise, query material_master (catalog view)
+	return s.listMaterialMaster(params)
+}
+
+// listPlanMaterials queries material_plan_items for plan-related data
+func (s *Service) listPlanMaterials(params ListQueryParams) ([]PlanMaterialItem, int64, error) {
 	var results []PlanMaterialItem
 	var total int64
 
@@ -224,6 +237,63 @@ func (s *Service) ListMaterials(params ListQueryParams) ([]PlanMaterialItem, int
 	return results, total, nil
 }
 
+// listMaterialMaster queries material_master for catalog data
+func (s *Service) listMaterialMaster(params ListQueryParams) ([]PlanMaterialItem, int64, error) {
+	var results []PlanMaterialItem
+	var total int64
+
+	// Build query for material_master
+	query := s.db.Model(&Material{})
+
+	// Apply filters
+	if params.Search != "" {
+		search := "%" + params.Search + "%"
+		query = query.Where("name LIKE ? OR specification LIKE ? OR code LIKE ? OR category LIKE ?",
+			search, search, search, search)
+	}
+	if params.Name != "" {
+		query = query.Where("name LIKE ?", "%"+params.Name+"%")
+	}
+	if params.Specification != "" {
+		query = query.Where("specification LIKE ?", "%"+params.Specification+"%")
+	}
+	if params.Category != "" {
+		query = query.Where("category LIKE ?", "%"+params.Category+"%")
+	}
+
+	// Get total count
+	query.Count(&total)
+
+	// Pagination
+	offset := (params.Page - 1) * params.PageSize
+	var materials []Material
+	query.Offset(offset).Limit(params.PageSize).Order("id DESC").Find(&materials)
+
+	// Convert to PlanMaterialItem format
+	for _, m := range materials {
+		code := ""
+		if m.Code != nil {
+			code = *m.Code
+		}
+		item := PlanMaterialItem{
+			MaterialID:    m.ID,
+			MaterialCode:  code,
+			MaterialName:  m.Name,
+			Specification: m.Specification,
+			Material:      m.Material,
+			Unit:          m.Unit,
+			Category:      m.Category,
+			Remark:        m.Description,
+			// Set default values for plan-specific fields
+			PlannedQuantity: 0,
+			UnitPrice:       0,
+		}
+		results = append(results, item)
+	}
+
+	return results, total, nil
+}
+
 // GetMaterial retrieves a material by ID
 func (s *Service) GetMaterial(id uint) (*Material, error) {
 	var m Material
@@ -339,6 +409,12 @@ func (s *Service) UpdateMaterial(id uint, updates map[string]any) (*Material, er
 			m.ProjectID = nil
 		}
 		delete(updates, "project_id")
+	}
+
+	// Filter out virtual fields (fields that are not in database)
+	virtualFields := []string{"quantity", "price", "material", "spec"}
+	for _, field := range virtualFields {
+		delete(updates, field)
 	}
 
 	// Apply other updates

@@ -130,7 +130,7 @@ func (w *WorkerCalendar) ToDTO() map[string]any {
 
 // CreateAppointmentRequest 创建预约单请求
 type CreateAppointmentRequest struct {
-	ProjectID          *uint  `json:"project_id"`
+	ProjectID          uint   `json:"project_id" binding:"required"`
 	ContactPhone       string `json:"contact_phone"`
 	ContactPerson      string `json:"contact_person"`
 	WorkDate           string `json:"work_date" binding:"required"`
@@ -216,10 +216,15 @@ type BatchCreateAppointmentRequest struct {
 
 // ApproveAppointmentRequest 审批预约请求
 type ApproveAppointmentRequest struct {
-	Action    string `json:"action" binding:"required,oneof=approve reject"`
-	Comment   string `json:"comment"`
-	AssignNow bool   `json:"assign_now"` // 是否立即分配作业人员
-	WorkerID  *uint  `json:"worker_id"`  // 指定的作业人员ID
+	Action       string `json:"action" binding:"required,oneof=approve reject"`
+	Comment      string `json:"comment"`
+	AssignNow    bool   `json:"assign_now"` // 是否立即分配作业人员
+	WorkerID     *uint  `json:"worker_id"`  // 指定的作业人员ID
+
+	// 作业时间修改
+	Reschedule   bool   `json:"reschedule"`    // 是否修改作业时间
+	NewWorkDate  string `json:"new_work_date"` // 新作业日期 (YYYY-MM-DD)
+	NewTimeSlot  string `json:"new_time_slot"` // 新时间段 (morning/noon/afternoon/full_day)
 }
 
 // CompleteAppointmentRequest 完成预约请求

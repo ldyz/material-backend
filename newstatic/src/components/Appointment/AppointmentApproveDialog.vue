@@ -101,6 +101,54 @@
         </el-form>
       </el-card>
 
+      <!-- 修改作业时间 -->
+      <el-card v-if="appointment" class="reschedule-time" shadow="never">
+        <template #header>
+          <span>修改作业时间</span>
+        </template>
+        <el-form label-width="120px">
+          <el-form-item label="调整时间">
+            <el-switch v-model="reschedule" />
+            <span style="margin-left: 8px; color: #999; font-size: 12px">
+              审批通过后使用新时间
+            </span>
+          </el-form-item>
+
+          <template v-if="reschedule">
+            <el-form-item label="新作业日期" required>
+              <el-date-picker
+                v-model="newWorkDate"
+                type="date"
+                placeholder="选择日期"
+                format="YYYY-MM-DD"
+                value-format="YYYY-MM-DD"
+                :disabled-date="disablePastDates"
+                @change="handleDateChange"
+              />
+            </el-form-item>
+
+            <el-form-item label="新时间段" required>
+              <el-select
+                v-model="newTimeSlot"
+                placeholder="选择时间段"
+                @change="handleTimeSlotChange"
+              >
+                <el-option label="上午 (8:00-11:30)" value="morning" />
+                <el-option label="中午 (12:00-13:30)" value="noon" />
+                <el-option label="下午 (13:30-16:30)" value="afternoon" />
+                <el-option label="全天" value="full_day" />
+              </el-select>
+            </el-form-item>
+
+            <el-form-item label="可用作业人员">
+              <el-tag :type="availableWorkersCount > 0 ? 'success' : 'danger'">
+                {{ availableWorkersCount }} 人可用
+              </el-tag>
+            </el-form-item>
+          </template>
+        </el-form>
+      </el-card>
+
       <!-- 审批表单 -->
       <el-form ref="formRef" :model="formData" label-width="100px">
         <el-form-item label="审批意见">
@@ -154,6 +202,12 @@ const availableWorkers = ref([])
 const assignNow = ref(false)
 const selectedWorkerId = ref(null)
 
+// 修改作业时间相关
+const reschedule = ref(false)
+const newWorkDate = ref('')
+const newTimeSlot = ref('')
+const availableWorkersCount = ref(0)
+
 const formData = ref({
   comment: ''
 })
@@ -178,6 +232,13 @@ watch(assignNow, async (val) => {
   } else {
     availableWorkers.value = []
     selectedWorkerId.value = null
+  }
+})
+
+// 当开启修改时间或日期/时间改变时，加载可用作业人员数量
+watch([reschedule, newWorkDate, newTimeSlot], async () => {
+  if (reschedule.value && newWorkDate.value && newTimeSlot.value) {
+    await loadAvailableWorkersForNewTime()
   }
 })
 
@@ -210,9 +271,46 @@ async function loadAvailableWorkers() {
   }
 }
 
+async function loadAvailableWorkersForNewTime() {
+  try {
+    const { data } = await appointmentApi.getAvailableWorkers({
+      work_date: newWorkDate.value,
+      time_slot: newTimeSlot.value
+    })
+    availableWorkersCount.value = (data.data || []).length
+  } catch (error) {
+    console.error('获取可用作业人员数量失败:', error)
+  }
+}
+
+// 禁用过去的日期
+function disablePastDates(time) {
+  return time.getTime() < Date.now() - 24 * 60 * 60 * 1000
+}
+
+function handleDateChange() {
+  // 日期改变时重新计算可用作业人员数量
+  if (newTimeSlot.value) {
+    loadAvailableWorkersForNewTime()
+  }
+}
+
+function handleTimeSlotChange() {
+  // 时间段改变时重新计算可用作业人员数量
+  if (newWorkDate.value) {
+    loadAvailableWorkersForNewTime()
+  }
+}
+
 async function handleApprove() {
   try {
-    // 验证
+    // 验证：如果修改了时间但可用作业人员为0，阻止提交
+    if (reschedule.value && availableWorkersCount.value === 0) {
+      ElMessage.error('所选时间段没有可用作业人员，请选择其他时间')
+      return
+    }
+
+    // 验证：如果开启分配但未选择作业人员
     if (assignNow.value && !selectedWorkerId.value) {
       ElMessage.warning('请选择作业人员')
       return
@@ -227,7 +325,10 @@ async function handleApprove() {
       action: 'approve',
       comment: formData.value.comment,
       assign_now: assignNow.value,
-      worker_id: selectedWorkerId.value
+      worker_id: selectedWorkerId.value,
+      reschedule: reschedule.value,
+      new_work_date: newWorkDate.value,
+      new_time_slot: newTimeSlot.value
     })
 
     ElMessage.success('审批成功')
@@ -273,6 +374,10 @@ function handleClose() {
   assignNow.value = false
   selectedWorkerId.value = null
   availableWorkers.value = []
+  reschedule.value = false
+  newWorkDate.value = ''
+  newTimeSlot.value = ''
+  availableWorkersCount.value = 0
 }
 
 function formatDateTime(dateStr, timeSlot) {
@@ -309,7 +414,8 @@ function getStatusLabel(status) {
 
 .appointment-info,
 .current-approval,
-.assign-worker {
+.assign-worker,
+.reschedule-time {
   margin-bottom: 16px;
 }
 

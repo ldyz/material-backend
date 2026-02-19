@@ -230,6 +230,12 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 				 response.InternalError(c, "角色关联失败")
 				 return
 			 }
+			 // 同步更新 role 字段（使用第一个角色名称作为兼容性字段）
+			 if len(roles) > 0 && u.Role == "" {
+				 // 根据角色名称设置兼容的 role 字段值
+				 u.Role = mapRoleNameToCode(roles[0].Name)
+				 db.Save(&u)
+			 }
 			 // 重新加载用户数据
 			 db.Preload("Roles").First(&u, u.ID)
 		 }
@@ -302,6 +308,13 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 				if err := db.Model(&u).Association("Roles").Replace(roles); err != nil {
 					response.InternalError(c, "角色更新失败")
 					return
+				}
+
+				// 同步更新 role 字段（使用第一个角色名称作为兼容性字段）
+				if len(roles) > 0 {
+					u.Role = mapRoleNameToCode(roles[0].Name)
+				} else {
+					u.Role = ""
 				}
 			}
 
@@ -584,5 +597,33 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 			response.Success(c, data)
 		})
+	}
+}
+
+// mapRoleNameToCode 将角色名称映射为代码（用于移动端兼容）
+func mapRoleNameToCode(roleName string) string {
+	// 映射中文名称到代码
+	switch roleName {
+	case "施工员":
+		return "foreman" // 施工员负责审批
+	case "作业人员":
+		return "worker" // 作业人员负责执行施工
+	case "项目经理":
+		return "project_manager"
+	case "admin":
+		return "admin"
+	case "管理员":
+		return "admin"
+	case "保管员":
+		return "keeper"
+	case "材料员":
+		return "material_staff"
+	case "分包材料员":
+		return "subcontractor_material_staff"
+	case "预约管理员":
+		return "appointment_admin"
+	default:
+		// 如果是英文代码，直接返回
+		return roleName
 	}
 }

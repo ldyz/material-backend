@@ -177,12 +177,12 @@ import { showToast } from 'vant'
 import { getPendingApprovalCount } from '@/api/appointment'
 import StatusTag from '@/components/common/StatusTag.vue'
 import { formatAppointmentDate } from '@/composables/useDateTime'
+import { canManageAppointments, isWorker } from '@/utils/roleUtils'
 
 const router = useRouter()
 
 // 用户信息
 const userInfo = ref(JSON.parse(localStorage.getItem('userInfo') || '{}'))
-const userRole = computed(() => userInfo.value.role || '')
 
 // 显示名称
 const displayName = computed(() => {
@@ -227,15 +227,15 @@ const systemNotice = ref('欢迎使用化建仪表移动端！如有问题请联
 
 // 权限控制
 const canAccessApprovals = computed(() => {
-  return ['admin', 'project_manager'].includes(userRole.value)
+  return canManageAppointments(userInfo.value)
 })
 
 const canCreateAppointments = computed(() => {
-  return ['admin', 'project_manager', 'worker'].includes(userRole.value)
+  return canManageAppointments(userInfo.value) || isWorker(userInfo.value)
 })
 
 const canAccessInbound = computed(() => {
-  return ['admin', 'project_manager'].includes(userRole.value)
+  return canManageAppointments(userInfo.value)
 })
 
 // 页面加载

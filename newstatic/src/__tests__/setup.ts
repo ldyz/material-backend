@@ -63,6 +63,52 @@ global.console = {
   error: vi.fn(),
 }
 
+// Create calendarApi mock
+const createCalendarApiMock = () => ({
+  create: vi.fn().mockResolvedValue({ data: { id: 'cal-1', name: 'Test Calendar' } }),
+  update: vi.fn().mockResolvedValue({ data: { id: 'cal-1', name: 'Updated Calendar' } }),
+  delete: vi.fn().mockResolvedValue({}),
+  addHoliday: vi.fn().mockResolvedValue({ data: { date: '2024-01-01', name: 'Holiday' } }),
+  removeHoliday: vi.fn().mockResolvedValue({}),
+  list: vi.fn().mockResolvedValue({ data: [] }),
+  setProjectCalendar: vi.fn().mockResolvedValue({}),
+  assignTaskCalendar: vi.fn().mockResolvedValue({}),
+  removeTaskCalendar: vi.fn().mockResolvedValue({}),
+  addException: vi.fn().mockResolvedValue({}),
+  removeException: vi.fn().mockResolvedValue({})
+})
+
+// Mock API modules
+vi.mock('@/api/index.js', () => ({
+  authApi: {},
+  userApi: {},
+  materialApi: {},
+  projectApi: {},
+  stockApi: {},
+  inboundApi: {},
+  calendarApi: createCalendarApiMock()
+}))
+
+// Also mock for @/api alias
+vi.mock('@/api', () => ({
+  authApi: {},
+  userApi: {},
+  materialApi: {},
+  projectApi: {},
+  stockApi: {},
+  inboundApi: {},
+  calendarApi: createCalendarApiMock(),
+  default: {
+    authApi: {},
+    userApi: {},
+    materialApi: {},
+    projectApi: {},
+    stockApi: {},
+    inboundApi: {},
+    calendarApi: createCalendarApiMock()
+  }
+}))
+
 // Reset mocks before each test
 beforeEach(() => {
   vi.clearAllMocks()

@@ -68,6 +68,7 @@ type WorkflowInstance struct {
 	Status        string    `gorm:"size:20;default:'pending';index" json:"status"` // 'pending', 'approved', 'rejected', 'cancelled'
 	InitiatorID   uint      `gorm:"not null" json:"initiator_id"`
 	InitiatorName string    `gorm:"size:100;not null" json:"initiator_name"`
+	ProjectID     *uint     `gorm:"index" json:"project_id"` // 关联项目ID，用于项目角色审批
 	StartedAt     time.Time `json:"started_at"`
 	FinishedAt    *time.Time `json:"finished_at,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -183,6 +184,7 @@ const (
 	ApproverTypeRole       = "role"       // 角色
 	ApproverTypeDepartment = "department" // 部门
 	ApproverTypeSuperior   = "superior"   // 上级
+	ApproverTypeProjectRole = "project_role" // 项目+角色组合（从项目关联用户中筛选特定角色）
 )
 
 // ToDTO 转换为DTO格式

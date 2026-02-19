@@ -63,6 +63,7 @@ func (s *WorkflowService) StartApprovalWorkflow(appointmentID uint, workflowID u
 		appointment.AppointmentNo,
 		appointment.ApplicantID,
 		appointment.ApplicantName,
+		appointment.ProjectID, // 传递项目ID
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("启动工作流失败: %w", err)
@@ -84,6 +85,27 @@ func (s *WorkflowService) ProcessApproval(instanceID uint, approverID uint, appr
 	if req.AssignNow && req.WorkerID != nil {
 		extraData["assign_worker"] = true
 		extraData["worker_id"] = *req.WorkerID
+	}
+
+	// 处理作业时间修改
+	if req.Reschedule {
+		if req.NewWorkDate != "" {
+			extraData["new_work_date"] = req.NewWorkDate
+		}
+		if req.NewTimeSlot != "" {
+			extraData["new_time_slot"] = req.NewTimeSlot
+		}
+
+		// 验证：如果修改了作业时间，检查是否有可用作业人员
+		if req.NewWorkDate != "" && req.NewTimeSlot != "" {
+			availableCount, err := s.appointmentService.calendarService.GetAvailableWorkersCount(req.NewWorkDate, req.NewTimeSlot)
+			if err != nil {
+				return fmt.Errorf("检查可用作业人员失败: %w", err)
+			}
+			if availableCount == 0 {
+				return errors.New("所选时间段没有可用作业人员，请选择其他时间")
+			}
+		}
 	}
 
 	// 处理审批
@@ -130,6 +152,22 @@ func (s *WorkflowService) updateAppointmentStatusByWorkflow(instance *workflow.W
 		now := time.Now()
 		appointment.ApprovedAt = &now
 
+		// 处理作业时间修改
+		var oldTime string
+		if newWorkDate, ok := extraData["new_work_date"].(string); ok {
+			oldTime = s.formatAppointmentTime(appointment.WorkDate.Format("2006-01-02"), appointment.TimeSlot)
+			newDate, err := time.Parse("2006-01-02", newWorkDate)
+			if err == nil {
+				appointment.WorkDate = newDate
+			}
+		}
+		if newTimeSlot, ok := extraData["new_time_slot"].(string); ok {
+			if oldTime == "" {
+				oldTime = s.formatAppointmentTime(appointment.WorkDate.Format("2006-01-02"), appointment.TimeSlot)
+			}
+			appointment.TimeSlot = newTimeSlot
+		}
+
 		// 如果指定了作业人员，立即分配
 		if workerID, ok := extraData["worker_id"].(uint); ok && workerID != 0 {
 			appointment.AssignedWorkerID = &workerID
@@ -144,8 +182,12 @@ func (s *WorkflowService) updateAppointmentStatusByWorkflow(instance *workflow.W
 			return err
 		}
 
-		// 预约日历
+		// 重新预约日历（如果修改了时间）
 		if appointment.AssignedWorkerID != nil {
+			// 如果修改了时间，先清除旧的日历预约
+			if oldTime != "" {
+				s.appointmentService.calendarService.ClearAppointmentCalendar(appointment.ID)
+			}
 			if _, err := s.appointmentService.AssignWorker(appointment.ID, *appointment.AssignedWorkerID, appointment.AssignedWorkerName); err != nil {
 				// 日历预约失败不影响状态更新
 				fmt.Printf("Warning: failed to book calendar: %v\n", err)
@@ -154,6 +196,12 @@ func (s *WorkflowService) updateAppointmentStatusByWorkflow(instance *workflow.W
 
 		// 通知申请人和作业人员
 		s.notifyAppointmentApproved(&appointment)
+
+		// 如果修改了时间，发送额外通知
+		if oldTime != "" {
+			newTime := s.formatAppointmentTime(appointment.WorkDate.Format("2006-01-02"), appointment.TimeSlot)
+			s.notifyTimeChanged(&appointment, oldTime, newTime)
+		}
 
 	case workflow.InstanceStatusRejected:
 		// 工作流拒绝
@@ -168,6 +216,34 @@ func (s *WorkflowService) updateAppointmentStatusByWorkflow(instance *workflow.W
 	}
 
 	return s.db.Save(&appointment).Error
+}
+
+// formatAppointmentTime 格式化作业时间显示
+func (s *WorkflowService) formatAppointmentTime(dateStr, timeSlot string) string {
+	slotLabel := GetTimeSlotLabel(timeSlot)
+	return fmt.Sprintf("%s %s", dateStr, slotLabel)
+}
+
+// notifyTimeChanged 通知作业时间已变更
+func (s *WorkflowService) notifyTimeChanged(appointment *ConstructionAppointment, oldTime, newTime string) {
+	title := "预约时间已变更"
+	content := fmt.Sprintf("您的预约单 %s 作业时间已从 %s 调整为 %s",
+		appointment.AppointmentNo, oldTime, newTime)
+
+	notificationData := map[string]interface{}{
+		"appointment_id": appointment.ID,
+		"appointment_no": appointment.AppointmentNo,
+		"old_time":       oldTime,
+		"new_time":       newTime,
+		"work_date":      appointment.WorkDate.Format("2006-01-02"),
+		"time_slot":      appointment.TimeSlot,
+		"work_location":  appointment.WorkLocation,
+		"work_content":   appointment.WorkContent,
+	}
+
+	if err := notification.CreateNotification(s.db, appointment.ApplicantID, notification.TypeAppointmentApprove, title, content, notificationData); err != nil {
+		fmt.Printf("通知时间变更失败: %v\n", err)
+	}
 }
 
 // getDefaultWorkflowID 获取默认工作流ID
@@ -242,12 +318,36 @@ func (s *WorkflowService) GetApprovalHistory(appointmentID uint) ([]map[string]a
 		return nil, err
 	}
 
+	// 获取所有节点信息并建立映射
+	var nodes []workflow.WorkflowNode
+	nodeMap := make(map[string]string) // node_key -> node_name
+
+	if len(logs) > 0 {
+		// 获取工作流定义
+		var instance workflow.WorkflowInstance
+		if err := s.db.Preload("Workflow").First(&instance, logs[0].InstanceID).Error; err == nil {
+			// 获取该工作流的所有节点
+			if err := s.db.Where("workflow_id = ?", instance.WorkflowID).Find(&nodes).Error; err == nil {
+				for _, node := range nodes {
+					nodeMap[node.NodeKey] = node.NodeName
+				}
+			}
+		}
+	}
+
 	// 转换为DTO
 	result := make([]map[string]any, len(logs))
 	for i, log := range logs {
+		// 获取节点名称，优先使用 node_name，如果没有则使用 node_key
+		nodeName := log.NodeKey
+		if name, ok := nodeMap[log.NodeKey]; ok && name != "" {
+			nodeName = name
+		}
+
 		result[i] = map[string]any{
 			"id":            log.ID,
-			"node_name":     log.NodeKey,
+			"node_key":      log.NodeKey,
+			"node_name":     nodeName,
 			"action":        log.Action,
 			"approver_id":   log.ActorID,
 			"approver_name": log.ActorName,

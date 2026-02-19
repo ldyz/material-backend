@@ -413,3 +413,45 @@ func (s *CalendarService) GetConflictingAppointments(workerID uint, workDate tim
 	err := query.Find(&appointments).Error
 	return appointments, err
 }
+
+// GetAvailableWorkersCount 获取指定时间段可用作业人员数量
+func (s *CalendarService) GetAvailableWorkersCount(workDateStr, timeSlot string) (int, error) {
+	workDate, err := time.Parse("2006-01-02", workDateStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid work_date format: %w", err)
+	}
+
+	// 获取所有作业人员及其可用状态
+	workers, err := s.GetAllWorkersWithAvailability(workDate, timeSlot)
+	if err != nil {
+		return 0, err
+	}
+
+	// 计算可用人数
+	count := 0
+	for _, w := range workers {
+		if w.IsAvailable {
+			count++
+		}
+	}
+
+	return count, nil
+}
+
+// ClearAppointmentCalendar 清除预约单关联的所有日历记录
+func (s *CalendarService) ClearAppointmentCalendar(appointmentID uint) error {
+	// 查找该预约单关联的所有日历记录
+	var calendars []WorkerCalendar
+	if err := s.db.Where("appointment_id = ?", appointmentID).Find(&calendars).Error; err != nil {
+		return err
+	}
+
+	// 释放所有关联的日历
+	for _, cal := range calendars {
+		if err := s.ReleaseCalendar(cal.WorkerID, cal.CalendarDate, cal.TimeSlot); err != nil {
+			fmt.Printf("Warning: failed to release calendar for worker %d: %v\n", cal.WorkerID, err)
+		}
+	}
+
+	return nil
+}

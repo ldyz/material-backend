@@ -466,3 +466,157 @@ export async function optimizeTaskSchedule(tasks, resources) {
     adjustDependencies: true
   })
 }
+
+// ============================================================
+// ALIAS FUNCTIONS FOR TEST COMPATIBILITY
+// ============================================================
+
+/**
+ * Alias for detectResourceConflicts - detects resource conflicts
+ *
+ * @param {Array} tasks - Array of task objects
+ * @param {Array} resources - Array of resource objects
+ * @param {Object} calendar - Calendar object (optional)
+ * @returns {Promise<Array>} Array of conflict objects
+ */
+export async function detectConflicts(tasks, resources, calendar) {
+  return await detectResourceConflicts(tasks, resources)
+}
+
+/**
+ * Alias for applyResourceLeveling - levels resources
+ *
+ * @param {Array} tasks - Array of task objects
+ * @param {Array} resources - Array of resource objects
+ * @param {Array} conflicts - Array of conflict objects
+ * @param {Object} calendar - Calendar object (optional)
+ * @returns {Promise<Array>} Leveled tasks array
+ */
+export async function levelResources(tasks, resources, conflicts, calendar) {
+  return await applyResourceLeveling(tasks, resources, {
+    priority: 'priority',
+    range: 'all',
+    allowSplitting: false,
+    adjustDependencies: true
+  })
+}
+
+/**
+ * Calculates resource allocation for a task or all tasks
+ *
+ * @param {Array|Object} tasks - Task object or array of tasks
+ * @param {Object} resource - Resource object
+ * @param {Object} calendar - Calendar object (optional)
+ * @returns {Object} Allocation data with hours, percentage, etc.
+ */
+export function calculateAllocation(tasks, resource, calendar) {
+  // Handle single task
+  const tasksArray = Array.isArray(tasks) ? tasks : [tasks]
+
+  let totalHours = 0
+  let totalCapacity = 0
+  const taskAllocations = []
+
+  tasksArray.forEach(task => {
+    const startDate = new Date(task.start_date || task.start)
+    const endDate = new Date(task.end_date || task.end)
+    const days = Math.max(1, Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)))
+
+    // Find resource assignment for this task
+    const assignment = task.resources?.find(r => r.resource_id === resource.id || r.resourceId === resource.id)
+    const units = assignment?.units || assignment?.percentage || 100
+    const dailyHours = (units / 100) * 8 // Assume 8-hour workday
+
+    const taskHours = days * dailyHours
+    totalHours += taskHours
+
+    taskAllocations.push({
+      taskId: task.id,
+      taskName: task.name,
+      days,
+      units,
+      dailyHours,
+      totalHours: taskHours
+    })
+  })
+
+  // Calculate allocation percentage
+  const resourceCapacity = resource.capacity || resource.dailyHours || 8
+  totalCapacity = resourceCapacity * tasksArray.length
+
+  const allocation = totalHours > 0 ? (totalHours / totalCapacity) * 100 : 0
+
+  return {
+    hours: totalHours,
+    capacity: totalCapacity,
+    percentage: Math.min(100, Math.round(allocation * 100) / 100),
+    tasks: taskAllocations,
+    isOverallocated: allocation > 100
+  }
+}
+
+/**
+ * Calculates resource load for a resource over time
+ *
+ * @param {Array} tasks - Array of task objects
+ * @param {Object} resource - Resource object
+ * @param {Object} calendar - Calendar object (optional)
+ * @returns {Array} Array of daily load data
+ */
+export function calculateResourceLoad(tasks, resource, calendar) {
+  const loadByDate = new Map()
+
+  tasks.forEach(task => {
+    const assignment = task.resources?.find(r => r.resource_id === resource.id || r.resourceId === resource.id)
+    if (!assignment) return
+
+    const startDate = new Date(task.start_date || task.start)
+    const endDate = new Date(task.end_date || task.end)
+    const units = assignment?.units || assignment?.percentage || 100
+    const dailyHours = (units / 100) * 8
+
+    let currentDate = new Date(startDate)
+    while (currentDate <= endDate) {
+      const dateKey = currentDate.toISOString().split('T')[0]
+      const current = loadByDate.get(dateKey) || 0
+      loadByDate.set(dateKey, current + dailyHours)
+
+      currentDate.setDate(currentDate.getDate() + 1)
+    }
+  })
+
+  // Convert map to array
+  return Array.from(loadByDate.entries()).map(([date, hours]) => ({
+    date,
+    hours,
+    percentage: Math.round((hours / 8) * 100) // Assume 8-hour capacity
+  }))
+}
+
+/**
+ * Gets overallocated resources
+ *
+ * @param {Array} tasks - Array of task objects
+ * @param {Array} resources - Array of resource objects
+ * @returns {Promise<Array>} Array of overallocated resources
+ */
+export async function getOverallocatedResources(tasks, resources) {
+  const overallocated = []
+  const overallocation = await calculateResourceOverallocation(tasks, resources)
+
+  overallocation.forEach(item => {
+    if (item.overallocation > 0) {
+      const resource = resources.find(r => r.id === item.resourceId)
+      if (resource) {
+        overallocated.push({
+          ...resource,
+          overallocation: item.overallocation,
+          peakLoad: item.peakLoad,
+          capacity: item.capacity
+        })
+      }
+    }
+  })
+
+  return overallocated
+}

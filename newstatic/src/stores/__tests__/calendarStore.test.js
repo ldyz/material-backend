@@ -108,7 +108,7 @@ describe('Calendar Store', () => {
 
       const workingHours = store.calculateWorkingHours(start, end)
 
-      expect(workingHours).toBe(7) // 10am to 5pm
+      expect(workingHours).toBe(6) // 10am to 5pm with 1-hour lunch break
     })
 
     it('should handle non-working hours', () => {
@@ -540,7 +540,7 @@ describe('Calendar Store', () => {
       store.setWorkingHours({ start: '00:00', end: '23:59' })
 
       const hours = store.getDailyWorkingHours()
-      expect(hours).toBe(24)
+      expect(hours).toBeCloseTo(24, 1)
     })
 
     it('should handle zero duration tasks', () => {

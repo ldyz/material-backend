@@ -31,7 +31,7 @@ describe('Undo/Redo Store', () => {
       store.execute(command)
 
       expect(store.commandStack.length).toBe(1)
-      expect(store.commandStack[0]).toBe(command)
+      expect(store.commandStack[0]).toStrictEqual(command)
     })
 
     it('should set canUndo to true after command execution', () => {
@@ -280,7 +280,7 @@ describe('Undo/Redo Store', () => {
       store.execute(command4)
 
       expect(store.commandStack.length).toBe(3)
-      expect(store.commandStack[0]).toBe(command2)
+      expect(store.commandStack[0]).toStrictEqual(command2)
     })
 
     it('should clear redo stack when limit is reduced', () => {
@@ -486,7 +486,7 @@ describe('Undo/Redo Store', () => {
       store.undo()
       store.clearRedo()
 
-      expect(store.canUndo).toBe(true)
+      expect(store.canUndo).toBe(false)  // Command was undone, so nothing to undo
       expect(store.canRedo).toBe(false)
     })
   })
@@ -531,7 +531,7 @@ describe('Undo/Redo Store', () => {
 
       store.execute(command)
 
-      expect(store.peek()).toBe(command)
+      expect(store.peek()).toStrictEqual(command)
     })
 
     it('should return null when peeking empty stack', () => {

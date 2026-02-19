@@ -3,6 +3,7 @@ package auth
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yourorg/material-backend/backend/internal/api/response"
@@ -30,6 +31,15 @@ func GetCurrentUser(c *gin.Context, db *gorm.DB) (*User, error) {
 	if err := db.Preload("Roles").First(&user, id).Error; err != nil {
 		return nil, err
 	}
+
+	// Fix: If Roles is empty, load role based on role field for backward compatibility
+	if len(user.Roles) == 0 && user.Role != "" {
+		var role Role
+		if err := db.Where("LOWER(name) = ?", strings.ToLower(user.Role)).First(&role).Error; err == nil {
+			user.Roles = []Role{role}
+		}
+	}
+
 	return &user, nil
 }
 

@@ -128,7 +128,7 @@
         显示选项
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item @click="$emit('toggle-dependencies')">
+            <el-dropdown-item v-if="chartViewMode === 'gantt'" @click="$emit('toggle-dependencies')">
               <el-icon class="dropdown-icon" :class="{ 'is-active': showDependencies }"><Connection /></el-icon>
               显示依赖关系
             </el-dropdown-item>
@@ -136,13 +136,39 @@
               <el-icon class="dropdown-icon" :class="{ 'is-active': showCriticalPath }"><Flag /></el-icon>
               显示关键路径
             </el-dropdown-item>
-            <el-dropdown-item @click="$emit('toggle-baseline')">
+            <el-dropdown-item v-if="chartViewMode === 'gantt'" @click="$emit('toggle-baseline')">
               <el-icon class="dropdown-icon" :class="{ 'is-active': showBaseline }"><Bottom /></el-icon>
               显示基线对比
+            </el-dropdown-item>
+            <el-dropdown-item v-if="chartViewMode === 'network'" @click="$emit('toggle-network-time-params')">
+              <el-icon class="dropdown-icon" :class="{ 'is-active': $attrs.showNetworkTimeParams }"><Timer /></el-icon>
+              显示时间参数
+            </el-dropdown-item>
+            <el-dropdown-item v-if="chartViewMode === 'network'" @click="$emit('toggle-network-task-names')">
+              <el-icon class="dropdown-icon" :class="{ 'is-active': $attrs.showNetworkTaskNames }"><Document /></el-icon>
+              显示任务名称
+            </el-dropdown-item>
+            <el-dropdown-item v-if="chartViewMode === 'network'" @click="$emit('toggle-network-slack')">
+              <el-icon class="dropdown-icon" :class="{ 'is-active': $attrs.showNetworkSlack }"><Clock /></el-icon>
+              显示时差信息
             </el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
+
+      <!-- 网络图布局选项 -->
+      <el-select
+        v-if="chartViewMode === 'network'"
+        :model-value="$attrs.networkLayoutMode"
+        @change="$emit('network-layout-change', $event)"
+        size="small"
+        style="width: 120px; margin-left: 12px"
+        placeholder="布局方式"
+      >
+        <el-option label="自动布局" value="auto"></el-option>
+        <el-option label="从左到右" value="left-right"></el-option>
+        <el-option label="从上到下" value="top-down"></el-option>
+      </el-select>
 
       <!-- 资源库管理 -->
       <el-button type="success" size="small" @click="$emit('open-resource-management')" style="margin-left: 12px">
@@ -237,7 +263,9 @@ import {
   DocumentChecked,
   Setting,
   FullScreen,
-  Close
+  Close,
+  Timer,
+  Clock
 } from '@element-plus/icons-vue'
 
 import { computed } from 'vue'

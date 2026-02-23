@@ -22,6 +22,10 @@
       :date-display-format="state.dateDisplayFormat"
       :pan-mode="state.panMode"
       :chart-view-mode="chartViewMode"
+      :show-network-time-params="networkShowTimeParams"
+      :show-network-task-names="networkShowTaskNames"
+      :show-network-slack="networkShowSlack"
+      :network-layout-mode="networkLayoutMode"
       @navigate-date="navigateDate"
       @go-today="goToToday"
       @zoom-in="zoomIn"
@@ -52,91 +56,15 @@
       @toggle-select-mode="toggleSelectMode"
       @toggle-view-mode="handleToggleViewMode"
       @add-task="handleCreateTask"
+      @toggle-network-time-params="networkShowTimeParams = !networkShowTimeParams"
+      @toggle-network-task-names="networkShowTaskNames = !networkShowTaskNames"
+      @toggle-network-slack="networkShowSlack = !networkShowSlack"
+      @network-layout-change="networkLayoutMode = $event"
     />
 
     <!-- 统计信息 -->
     <GanttStats v-if="chartViewMode === 'gantt'" :stats="taskStats" />
-
-    <!-- 网络图工具栏（仅在网络图模式显示） -->
-    <div v-if="chartViewMode === 'network'" class="network-toolbar">
-      <!-- 工具模式切换 -->
-      <el-button-group size="small" title="工具模式" style="margin-right: 12px">
-        <el-button
-          @click="networkToolMode = 'select'"
-          :type="networkToolMode === 'select' ? 'primary' : 'default'"
-          title="选择模式"
-        >
-          <el-icon>
-            <svg viewBox="0 0 1024 1024" width="14" height="14">
-              <path d="M896 448H560V112c0-17.7-14.3-32-32-32s-32 14.3-32 32v336H160c-17.7 0-32 14.3-32 32s14.3 32 32 32h336v336c0 17.7 14.3 32 32 32s32-14.3 32-32V512h336c17.7 0 32-14.3 32-32s-14.3-32-32-32z" fill="currentColor"></path>
-            </svg>
-          </el-icon>
-        </el-button>
-        <el-button
-          @click="networkToolMode = 'pan'"
-          :type="networkToolMode === 'pan' ? 'primary' : 'default'"
-          title="平移工具"
-        >
-          <el-icon>
-            <svg viewBox="0 0 1024 1024" width="14" height="14">
-              <path d="M768 256h-64V128c0-17.7-14.3-32-32-32s-32 14.3-32 32v128H384V128c0-17.7-14.3-32-32-32s-32 14.3-32 32v128h-64c-17.7 0-32 14.3-32 32s14.3 32 32 32h64v416c0 17.7 14.3 32 32 32h256v128c0 17.7 14.3 32 32 32s32-14.3 32-32V768h64c17.7 0 32-14.3 32-32s-14.3-32-32-32h-64V320h64c17.7 0 32-14.3 32-32s-14.3-32-32-32z" fill="currentColor"></path>
-            </svg>
-          </el-icon>
-        </el-button>
-      </el-button-group>
-
-      <!-- 缩放控制 -->
-      <el-button-group size="small">
-        <el-button @click="networkZoomOut" title="缩小">
-          <el-icon><ZoomOut /></el-icon>
-        </el-button>
-        <el-button @click="networkZoomReset" title="重置">
-          {{ Math.round(dayWidth) }}px
-        </el-button>
-        <el-button @click="networkZoomIn" title="放大">
-          <el-icon><ZoomIn /></el-icon>
-        </el-button>
-      </el-button-group>
-
-      <!-- 视图选项 -->
-      <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
-        <el-checkbox v-model="showCriticalPath" size="small">关键路径</el-checkbox>
-        <el-checkbox v-model="networkShowTimeParams" size="small">时间参数</el-checkbox>
-        <el-checkbox v-model="networkShowTaskNames" size="small">任务名称</el-checkbox>
-        <el-checkbox v-model="networkShowSlack" size="small">时差信息</el-checkbox>
-
-        <!-- 布局方式 -->
-        <el-select
-          v-model="networkLayoutMode"
-          size="small"
-          style="width: 120px"
-        >
-          <el-option label="自动布局" value="auto" />
-          <el-option label="从左到右" value="left-right" />
-          <el-option label="从上到下" value="top-down" />
-        </el-select>
-      </div>
-    </div>
-
-    <!-- 网络图统计信息（仅在网络图模式显示） -->
-    <div v-if="chartViewMode === 'network'" class="network-stats">
-      <div class="stat-item">
-        <span class="stat-label">事件节点</span>
-        <span class="stat-value">{{ networkStats.nodes }}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">活动(任务)</span>
-        <span class="stat-value">{{ networkStats.activities }}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">关键路径</span>
-        <span class="stat-value critical">{{ networkStats.criticalActivities }}/{{ networkStats.activities }}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">总工期</span>
-        <span class="stat-value">{{ Math.round(networkStats.totalDuration * 10) / 10 }}天</span>
-      </div>
-    </div>
+    <GanttStats v-else-if="chartViewMode === 'network'" :stats="networkStatsDisplay" />
 
     <!-- 甘特图容器 -->
     <div
@@ -558,6 +486,23 @@ const networkStats = computed(() => {
     activities,
     criticalActivities,
     totalDuration: totalDays
+  }
+})
+
+// 网络图统计信息显示格式（适配 GanttStats 组件）
+const networkStatsDisplay = computed(() => {
+  const stats = networkStats.value
+  const completed = formattedTasks.value.filter(t => t.status === 'completed').length
+  const inProgress = formattedTasks.value.filter(t => t.status === 'in_progress').length
+
+  return {
+    total: stats.activities,
+    completed,
+    inProgress,
+    notStarted: stats.activities - completed - inProgress,
+    delayed: 0,
+    critical: stats.criticalActivities,
+    progressRate: stats.activities > 0 ? Math.round((completed / stats.activities) * 100) : 0
   }
 })
 
@@ -2175,46 +2120,5 @@ watch(chartViewMode, (newMode) => {
 .gantt-body > *:last-child {
   flex: 1;
   overflow: auto;
-}
-
-/* ==================== 网络图视图样式 ==================== */
-.network-toolbar {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  background: #fff;
-  border-bottom: 1px solid #dcdfe6;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.network-stats {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 12px 16px;
-  background: #f5f7fa;
-  border-bottom: 1px solid #dcdfe6;
-  flex-wrap: wrap;
-}
-
-.network-stats .stat-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.network-stats .stat-label {
-  color: #909399;
-}
-
-.network-stats .stat-value {
-  font-weight: bold;
-  color: #303133;
-}
-
-.network-stats .stat-value.critical {
-  color: #f56c6c;
 }
 </style>

@@ -379,7 +379,8 @@ const emit = defineEmits([
   'dependency-create',
   'mousemove',
   'task-dragged',
-  'zoom-change'
+  'zoom-change',
+  'scroll'
 ])
 
 const timelineRef = ref(null)
@@ -550,6 +551,16 @@ onMounted(() => {
 
   if (timelineRef.value?.parentElement) {
     resizeObserver.observe(timelineRef.value.parentElement)
+
+    // 监听父容器滚动事件，同步到时间轴头部
+    const scrollHandler = () => {
+      const scrollParent = timelineRef.value?.parentElement
+      if (scrollParent) {
+        emit('scroll', { scrollLeft: scrollParent.scrollLeft })
+      }
+    }
+    scrollParent.addEventListener('scroll', scrollHandler)
+    timelineRef.value._scrollHandler = scrollHandler
   }
 
   // 保存observer引用以便清理
@@ -564,6 +575,11 @@ onUnmounted(() => {
   // 清理ResizeObserver
   if (timelineRef.value?._resizeObserver) {
     timelineRef.value._resizeObserver.disconnect()
+  }
+
+  // 清理滚动监听器
+  if (timelineRef.value?.parentElement && timelineRef.value._scrollHandler) {
+    timelineRef.value.parentElement.removeEventListener('scroll', timelineRef.value._scrollHandler)
   }
 })
 

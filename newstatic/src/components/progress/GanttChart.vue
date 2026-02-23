@@ -182,7 +182,7 @@
           :timeline-quarters="timelineQuarters"
           :day-width="dayWidth"
           :today-position="todayPosition"
-          :pan-offset="chartViewMode === 'network' ? networkPanX : 0"
+          :pan-offset="chartViewMode === 'network' ? networkPanX : -timelinePanX"
         />
       </div>
 
@@ -246,6 +246,7 @@
           @task-dragged="handleTaskDragged"
           @context-menu="handleContextMenu"
           @zoom-change="handleTimelineZoom"
+          @scroll="handleTimelineScroll"
           ref="taskTimelineRef"
         />
 
@@ -528,6 +529,7 @@ const networkShowTaskNames = ref(true)
 const networkShowSlack = ref(false)
 const networkLayoutMode = ref('auto')
 const networkPanX = ref(0) // 网络图水平平移偏移量
+const timelinePanX = ref(0) // 甘特图滚动偏移量
 
 // 网络图统计信息
 const networkStats = computed(() => {
@@ -1315,6 +1317,11 @@ const handleNetworkPan = (pan) => {
   networkPanX.value = pan.x
 }
 
+// 甘特图滚动处理（同步时间轴）
+const handleTimelineScroll = (scroll) => {
+  timelinePanX.value = scroll.scrollLeft
+}
+
 // 右键菜单命令处理
 const handleContextMenuEdit = (task) => handleTaskDblClick(task)
 
@@ -2008,11 +2015,14 @@ watch(
   }
 )
 
-// 监听视图模式切换，重置网络图平移状态
+// 监听视图模式切换，重置平移状态
 watch(chartViewMode, (newMode) => {
   if (newMode === 'gantt') {
-    // 切换到甘特图模式时，重置平移偏移
+    // 切换到甘特图模式时，重置网络图平移偏移
     networkPanX.value = 0
+  } else if (newMode === 'network') {
+    // 切换到网络图模式时，重置甘特图滚动偏移
+    timelinePanX.value = 0
   }
 })
 </script>

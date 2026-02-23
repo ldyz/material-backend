@@ -65,46 +65,67 @@ func (c *Constraint) ApplyToTask(task *Task) error {
 		}
 	}
 
+	// Initialize pointers if nil
+	if task.StartDate == nil {
+		now := time.Now()
+		task.StartDate = &now
+	}
+	if task.EndDate == nil {
+		now := time.Now()
+		task.EndDate = &now
+	}
+
 	// Calculate task duration
-	duration := task.EndDate.Sub(task.StartDate)
+	duration := task.EndDate.Sub(*task.StartDate)
+
+	// Helper to set date pointer
+	setDate := func(target **time.Time, val time.Time) {
+		*target = &val
+	}
 
 	switch c.Type {
 	case ConstraintMustStartOn:
 		// Task must start exactly on constraint date
-		task.StartDate = c.Date
-		task.EndDate = c.Date.Add(duration)
+		setDate(&task.StartDate, c.Date)
+		endDate := c.Date.Add(duration)
+		setDate(&task.EndDate, endDate)
 
 	case ConstraintMustFinishOn:
 		// Task must finish exactly on constraint date
-		task.EndDate = c.Date
-		task.StartDate = c.Date.Add(-duration)
+		setDate(&task.EndDate, c.Date)
+		startDate := c.Date.Add(-duration)
+		setDate(&task.StartDate, startDate)
 
 	case ConstraintStartNoEarlierThan:
 		// Task cannot start before constraint date
 		if task.StartDate.Before(c.Date) {
-			task.StartDate = c.Date
-			task.EndDate = c.Date.Add(duration)
+			setDate(&task.StartDate, c.Date)
+			endDate := c.Date.Add(duration)
+			setDate(&task.EndDate, endDate)
 		}
 
 	case ConstraintStartNoLaterThan:
 		// Task cannot start after constraint date
 		if task.StartDate.After(c.Date) {
-			task.StartDate = c.Date
-			task.EndDate = c.Date.Add(duration)
+			setDate(&task.StartDate, c.Date)
+			endDate := c.Date.Add(duration)
+			setDate(&task.EndDate, endDate)
 		}
 
 	case ConstraintFinishNoEarlierThan:
 		// Task cannot finish before constraint date
 		if task.EndDate.Before(c.Date) {
-			task.EndDate = c.Date
-			task.StartDate = c.Date.Add(-duration)
+			setDate(&task.EndDate, c.Date)
+			startDate := c.Date.Add(-duration)
+			setDate(&task.StartDate, startDate)
 		}
 
 	case ConstraintFinishNoLaterThan:
 		// Task cannot finish after constraint date
 		if task.EndDate.After(c.Date) {
-			task.EndDate = c.Date
-			task.StartDate = c.Date.Add(-duration)
+			setDate(&task.EndDate, c.Date)
+			startDate := c.Date.Add(-duration)
+			setDate(&task.StartDate, startDate)
 		}
 	}
 
@@ -113,16 +134,16 @@ func (c *Constraint) ApplyToTask(task *Task) error {
 
 // IsSatisfied checks if the task satisfies the constraint
 func (c *Constraint) IsSatisfied(task *Task) bool {
-	if task == nil {
+	if task == nil || task.StartDate == nil || task.EndDate == nil {
 		return false
 	}
 
 	switch c.Type {
 	case ConstraintMustStartOn:
-		return task.StartDate.Equal(c.Date)
+		return task.StartDate.Equal(c.Date) || task.StartDate.Format("2006-01-02") == c.Date.Format("2006-01-02")
 
 	case ConstraintMustFinishOn:
-		return task.EndDate.Equal(c.Date)
+		return task.EndDate.Equal(c.Date) || task.EndDate.Format("2006-01-02") == c.Date.Format("2006-01-02")
 
 	case ConstraintStartNoEarlierThan:
 		return !task.StartDate.Before(c.Date)

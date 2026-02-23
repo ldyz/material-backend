@@ -87,6 +87,7 @@ type Node struct {
 // Activity 活动数据
 type Activity struct {
 	ID            string        `json:"id"`
+	TaskID        uint          `json:"task_id,omitempty"` // 数字类型的任务ID，用于前端显示
 	Name          string        `json:"name"`
 	Duration      float64       `json:"duration"`
 	FromNode      string        `json:"from_node"`

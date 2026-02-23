@@ -202,9 +202,9 @@ func main() {
 	r.Use(middleware.ValidateJSON(10<<20)) // 10MB
 
 	// 设置静态文件服务
-	r.Static("/static", "./static")
-	r.Static("/assets", "./static/assets")
-	r.Static("/uploads", "./static/uploads")  // 上传文件访问路径
+	r.Static("/static", "./newstatic/dist")
+	r.Static("/assets", "./newstatic/dist/assets")
+	r.Static("/uploads", "./static/uploads")  // 上传文件访问路径（保留在原位置）
 	// 移动端应用（生产模式使用构建后的 dist，开发模式可配置源码目录）
 	// 添加缓存控制中间件，确保 index.html 和 JS 文件不被缓存
 	r.Use(func(c *gin.Context) {
@@ -321,7 +321,7 @@ func main() {
 		}
 
 		// PC端 SPA 路由回退 - 使用新构建的 Vue 3 应用
-		c.File("./static/index.html")
+		c.File("./newstatic/dist/index.html")
 	})
 
 	// 设置Gin运行模式

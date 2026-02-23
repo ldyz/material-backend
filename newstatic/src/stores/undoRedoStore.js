@@ -369,10 +369,49 @@ export const useUndoRedoStore = defineStore('undoRedo', () => {
   }
 
   const getCommandHistory = () => {
-    return commandStack.value.map(cmd => ({
+    return commandStack.value.map((cmd, index) => ({
+      index,
       description: cmd.description || (cmd.getDescription ? cmd.getDescription() : 'Unknown'),
       canUndo: cmd.canUndo ? cmd.canUndo() : true
     }))
+  }
+
+  /**
+   * Undo to a specific position in the history
+   * @param {number} targetIndex - The target index to undo to (0 = clear all, stackSize - 1 = undo one)
+   */
+  const undoTo = async (targetIndex) => {
+    const targetCount = commandStack.value.length - targetIndex
+    if (targetCount <= 0 || targetCount > commandStack.value.length) {
+      return null
+    }
+
+    let lastError = null
+    for (let i = 0; i < targetCount; i++) {
+      try {
+        await undo()
+      } catch (error) {
+        lastError = error
+        break
+      }
+    }
+
+    return lastError || { success: true }
+  }
+
+  /**
+   * Get detailed command info at specific index
+   */
+  const getCommandAt = (index) => {
+    if (index < 0 || index >= commandStack.value.length) {
+      return null
+    }
+    const cmd = commandStack.value[index]
+    return {
+      index,
+      description: cmd.description || (cmd.getDescription ? cmd.getDescription() : 'Unknown'),
+      canUndo: cmd.canUndo ? cmd.canUndo() : true
+    }
   }
 
   return {
@@ -392,6 +431,7 @@ export const useUndoRedoStore = defineStore('undoRedo', () => {
     execute,
     undo,
     redo,
+    undoTo,
     clear,
     clearUndo,
     clearRedo,
@@ -399,7 +439,8 @@ export const useUndoRedoStore = defineStore('undoRedo', () => {
     createMacro,
     executeBatch,
     peek,
-    getCommandHistory
+    getCommandHistory,
+    getCommandAt
   }
 })
 

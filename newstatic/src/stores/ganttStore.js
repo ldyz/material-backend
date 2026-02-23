@@ -4,6 +4,7 @@
  */
 
 import { reactive, computed, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { progressApi } from '@/api'
 import eventBus, { GanttEvents } from '@/utils/eventBus'
 import { formatDate, addDays, diffDays } from '@/utils/dateFormat'
@@ -45,19 +46,62 @@ const state = reactive({
 
   // 缩放配置
   dayWidth: 40,
-  rowHeight: 60,
-  taskHeight: 32,
+  rowHeight: 50,
+  taskHeight: 24,
   VIEW_CONFIG: {
-    day: { minWidth: 40, maxWidth: 80, default: 40, label: '日' },
-    week: { minWidth: 20, maxWidth: 40, default: 28, label: '周' },
-    month: { minWidth: 8, maxWidth: 20, default: 12, label: '月' },
-    quarter: { minWidth: 3, maxWidth: 8, default: 5, label: '季' }
+    day: { minWidth: 20, maxWidth: 100, default: 40, label: '日' },
+    'month-day': { minWidth: 20, maxWidth: 100, default: 40, label: '月/日' },
+    'year-month-day': { minWidth: 20, maxWidth: 100, default: 40, label: '年/月/日' },
+    'year-month': { minWidth: 30, maxWidth: 150, default: 60, label: '年/月' },
+    week: { minWidth: 20, maxWidth: 80, default: 40, label: '周' },
+    month: { minWidth: 15, maxWidth: 60, default: 30, label: '月' },
+    quarter: { minWidth: 10, maxWidth: 50, default: 25, label: '季' }
+  },
+
+  // 时间轴格式预设配置
+  TIMELINE_FORMATS: {
+    'day': { label: '日期', layers: 1, format: ['day'] },
+    'month-day': { label: '月/日', layers: 2, format: ['month', 'day'] },
+    'year-month': { label: '年/月', layers: 2, format: ['year', 'month'] },
+    'year-month-day': { label: '年/月/日', layers: 3, format: ['year', 'month', 'day'] },
+    'week': { label: '周', layers: 1, format: ['week'] },
+    'month': { label: '月', layers: 1, format: ['month'] },
+    'quarter': { label: '季度', layers: 1, format: ['quarter'] }
+  },
+
+  // 日期显示格式预设
+  DATE_FORMATS: {
+    'all': { label: '全部', interval: 1 },
+    'odd': { label: '奇数 (1,3,5)', interval: 2 },
+    'interval3': { label: '间隔3天 (1,4,7)', interval: 3 },
+    'interval5': { label: '间隔5天 (1,6,11)', interval: 5 },
+    'first': { label: '每月1号', interval: 'first' }
   },
 
   // 显示选项
   showDependencies: true,
   showCriticalPath: true,
   showBaseline: false,
+  showTaskList: true, // 显示任务列表
+
+  // 时间轴格式配置
+  timelineFormat: 'month-day', // 时间轴头部显示格式
+  // 时间轴格式预设：
+  // - 'day': 单层 - 只显示日期
+  // - 'month-day': 双层 - 上月、下日（默认）
+  // - 'year-month': 双层 - 上年、下月
+  // - 'year-month-day': 三层 - 年月日
+  // - 'week': 单层 - 只显示周
+  // - 'month': 单层 - 只显示月
+  // - 'quarter': 单层 - 只显示季度
+  // 日期显示格式：
+  // - 'all': 显示所有日期 1 2 3 4 5...
+  // - 'odd': 只显示奇数 1 3 5 7...
+  // - 'interval2': 间隔2天 1 3 5 7... (等同于odd)
+  // - 'interval3': 间隔3天 1 4 7 10...
+  // - 'interval5': 间隔5天 1 6 11 16...
+  // - 'first': 每月1号
+  dateDisplayFormat: 'all', // 日期显示格式
 
   // 搜索和筛选
   searchKeyword: '',
@@ -113,6 +157,10 @@ const state = reactive({
   pendingDependencyCreations: [],
   pendingDependencyDeletions: [],
 
+  // 平移模式（手形工具）
+  panMode: false,
+  scrollLeft: 0, // 时间轴横向滚动位置
+
   // 加载状态
   loading: false,
   saving: false,
@@ -150,6 +198,8 @@ const getters = {
     if (state.filteredTasks.length === 0) return []
 
     const tasks = state.filteredTasks
+    console.log('timelineDays - filteredTasks:', tasks.length)
+
     const minDate = new Date(Math.min(...tasks.map(t => t.startDate.getTime())))
     const maxDate = new Date(Math.max(...tasks.map(t => t.endDate.getTime())))
 
@@ -173,21 +223,62 @@ const getters = {
     const endDate = new Date(maxDate)
     endDate.setDate(endDate.getDate() + bufferDays)
 
+    // 计算可用宽度（假设最小可视宽度为800px）
+    const availableWidth = Math.max(800, state.containerSize.width || window.innerWidth - 400)
+    const minDayWidth = 30
+
+    // 计算最大可显示的天数
+    const maxVisibleDays = Math.floor(availableWidth / minDayWidth)
+
+    // 如果总天数超过可显示天数，使用稀疏显示
+    const useSparseDisplay = totalDays > maxVisibleDays * 0.8
+
     const days = []
     const currentDate = new Date(startDate)
     const today = new Date()
 
-    while (currentDate <= endDate) {
-      const dateStr = formatDate(currentDate)
-      days.push({
-        date: dateStr,
-        day: currentDate.getDate(),
-        weekday: ['日', '一', '二', '三', '四', '五', '六'][currentDate.getDay()],
-        isToday: dateStr === formatDate(today),
-        isWeekend: currentDate.getDay() === 0 || currentDate.getDay() === 6,
-        position: 0
-      })
-      currentDate.setDate(currentDate.getDate() + 1)
+    if (useSparseDisplay) {
+      // 稀疏显示模式：使用1-3-5-7-9或1-3-5-9模式
+      let displayPattern = '13579'
+      if (totalDays > maxVisibleDays * 1.5) {
+        displayPattern = '159'
+      }
+
+      let displayIndex = 0
+      const patternDigits = displayPattern.split('').map(Number)
+
+      while (currentDate <= endDate) {
+        const dateStr = formatDate(currentDate)
+        const shouldDisplay = patternDigits[displayIndex] || 1
+
+        if (shouldDisplay) {
+          days.push({
+            date: dateStr,
+            day: currentDate.getDate(),
+            weekday: ['日', '一', '二', '三', '四', '五', '六'][currentDate.getDay()],
+            isToday: dateStr === formatDate(today),
+            isWeekend: currentDate.getDay() === 0 || currentDate.getDay() === 6,
+            position: 0
+          })
+        }
+
+        displayIndex = (displayIndex + 1) % patternDigits.length
+        currentDate.setDate(currentDate.getDate() + 1)
+      }
+    } else {
+      // 正常显示模式：显示所有日期
+      while (currentDate <= endDate) {
+        const dateStr = formatDate(currentDate)
+        days.push({
+          date: dateStr,
+          day: currentDate.getDate(),
+          weekday: ['日', '一', '二', '三', '四', '五', '六'][currentDate.getDay()],
+          isToday: dateStr === formatDate(today),
+          isWeekend: currentDate.getDay() === 0 || currentDate.getDay() === 6,
+          position: 0
+        })
+        currentDate.setDate(currentDate.getDate() + 1)
+      }
     }
 
     return days.map((day, index) => ({
@@ -307,6 +398,41 @@ const getters = {
     return quarters
   }),
 
+  // 时间轴月份行（用于日视图双层显示的上层）
+  timelineHeaderMonths: computed(() => {
+    const days = getters.timelineDays.value
+    if (days.length === 0) return []
+
+    const months = []
+    let currentMonth = null
+
+    days.forEach((day, index) => {
+      const date = new Date(day.date)
+      const year = date.getFullYear()
+      const month = date.getMonth() + 1
+      const monthKey = `${year}-${month}`
+
+      if (monthKey !== currentMonth) {
+        // 开始新月份
+        currentMonth = monthKey
+        months.push({
+          key: monthKey,
+          label: `${year}年${month}月`,
+          position: day.position,
+          width: 0  // 稍后计算
+        })
+      }
+
+      // 累加当前月份的宽度
+      if (months.length > 0) {
+        const lastMonth = months[months.length - 1]
+        lastMonth.width += state.dayWidth
+      }
+    })
+
+    return months
+  }),
+
   // 时间轴宽度
   timelineWidth: computed(() => {
     if (state.filteredTasks.length === 0) return 800
@@ -396,12 +522,16 @@ const getters = {
     const getVisibleTasks = (tasks) => {
       return tasks.filter(task => {
         const taskId = task.id
-        const checkTask = (tid) => {
+        const checkTask = (tid, visited = new Set()) => {
+          if (visited.has(tid)) {
+            return false // 循环引用，停止检查
+          }
+          visited.add(tid)
           const t = tasks.find(task => task.id === tid)
           if (!t) return false
           if (!t.parent_id) return false
           if (state.collapsedTasks.has(t.parent_id)) return true
-          return checkTask(t.parent_id)
+          return checkTask(t.parent_id, visited)
         }
         return !checkTask(taskId)
       })
@@ -418,6 +548,8 @@ const getters = {
       }
     )
 
+    // 不过滤依赖关系，渲染所有依赖关系
+    // 路径计算逻辑会自动处理异常情况（避免穿越任务条）
     const paths = calculateAllDependencyPaths(
       dependencies,
       visibleTasks,
@@ -483,7 +615,10 @@ const getters = {
     const duration = diffDays(state.previewTask.start, state.previewTask.end)
 
     return `${mode}: ${state.previewTask.start} ~ ${state.previewTask.end} (${duration}天)`
-  })
+  }),
+
+  // 暴露时间轴月份行（用于双层显示）
+  timelineHeaderMonths: computed(() => state.timelineHeaderMonths)
 }
 
 // ==================== Actions (同步操作) ====================
@@ -504,6 +639,25 @@ const actions = {
     try {
       const response = await progressApi.getProjectSchedule(state.projectId)
       state.scheduleData = response.data
+
+      // 加载任务表以获取最新的 parent_id 信息
+      try {
+        const tasksResponse = await progressApi.getTasks(state.projectId)
+        const tasks = tasksResponse.data || []
+
+        // 更新本地 parent_id 映射
+        state.localParentIdMap.clear()
+        for (const task of tasks) {
+          if (task.parent_id !== null && task.parent_id !== undefined) {
+            state.localParentIdMap.set(task.id, task.parent_id)
+          }
+        }
+
+        console.log('已从数据库加载 parent_id 映射:', Object.fromEntries(state.localParentIdMap))
+      } catch (error) {
+        console.warn('加载任务 parent_id 失败，将使用 schedule 数据:', error)
+      }
+
       await this.formatTasks()
 
       eventBus.emit(GanttEvents.DATA_LOADED, { source: 'load' })
@@ -523,10 +677,14 @@ const actions = {
     const tasks = []
     const activities = state.scheduleData.activities || {}
 
+    console.log('formatTasks - activities count:', Object.keys(activities).length)
+    console.log('formatTasks - activities sample:', Object.entries(activities).slice(0, 3))
+
     for (const [key, activity] of Object.entries(activities)) {
+      console.log('formatTasks - processing activity:', key, 'is_dummy:', activity.is_dummy, 'name:', activity.name)
       if (!activity.is_dummy) {
         const startDate = new Date(activity.earliest_start * 1000)
-        const endDate = new Date(activity.latest_finish * 1000)
+        const endDate = new Date(activity.earliest_finish * 1000)
 
         // 验证日期是否有效
         if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
@@ -534,10 +692,13 @@ const actions = {
           continue
         }
 
-        // 提取数字ID
-        let taskId = activity.id
-        if (typeof taskId === 'string' && taskId.includes('_')) {
-          taskId = parseInt(taskId.split('_').pop()) || 0
+        // 使用后端提供的 task_id（数字类型），如果没有则从 id 字符串中提取
+        let taskId = activity.task_id
+        if (!taskId) {
+          taskId = activity.id
+          if (typeof taskId === 'string' && taskId.includes('_')) {
+            taskId = parseInt(taskId.split('_').pop()) || 0
+          }
         }
 
         // 使用本地映射中的 parent_id（如果存在）
@@ -545,7 +706,7 @@ const actions = {
           ? state.localParentIdMap.get(taskId)
           : (activity.parent_id || null)
 
-        tasks.push({
+        const taskObj = {
           id: taskId,
           name: activity.name || '未命名任务',
           start: formatDate(startDate),
@@ -555,7 +716,10 @@ const actions = {
           baseline_start: activity.baseline_start ? formatDate(new Date(activity.baseline_start * 1000)) : null,
           baseline_end: activity.baseline_end ? formatDate(new Date(activity.baseline_end * 1000)) : null,
           duration: activity.duration || 1,
-          progress: Math.round(activity.progress || 0),
+          // 处理进度值：如果是小数(0-1范围)，转换为百分比(0-100)；如果是百分比，直接使用
+          progress: (activity.progress || 0) < 1
+            ? Math.round((activity.progress || 0) * 100)
+            : Math.round(activity.progress || 0),
           status: this.getActivityStatus(activity),
           priority: activity.priority || 'medium',
           is_critical: activity.is_critical || false,
@@ -564,7 +728,9 @@ const actions = {
           resources: activity.resources || [],
           parent_id: parentId,
           sort_order: activity.sort_order || 0
-        })
+        }
+        console.log('创建任务对象:', taskObj)
+        tasks.push(taskObj)
       }
     }
 
@@ -576,21 +742,123 @@ const actions = {
       return a.id - b.id
     })
 
+    console.log('formatTasks - sortedTasks 的 parent_id 情况:', sortedTasks.map(t => ({ id: t.id, name: t.name, parent_id: t.parent_id })))
+
     // 构建树形结构的显示顺序
-    const buildTreeOrder = (tasks, parentId = null) => {
+    const buildTreeOrder = (tasks, parentId = null, visited = new Set()) => {
+      // 检测循环
+      const key = `${parentId}`
+      if (visited.has(key)) {
+        console.warn(`检测到循环: parent_id=${parentId}`)
+        return []
+      }
+      visited.add(key)
+
       const result = []
       const children = tasks.filter(t => (t.parent_id || null) === parentId)
+      console.log(`buildTreeOrder - parentId: ${parentId}, 找到 ${children.length} 个子任务`)
 
       for (const child of children) {
         result.push(child)
-        result.push(...buildTreeOrder(tasks, child.id))
+        result.push(...buildTreeOrder(tasks, child.id, visited))
       }
 
       return result
     }
 
-    state.tasks = buildTreeOrder(sortedTasks, null)
+    let finalTasks = buildTreeOrder(sortedTasks, null)
+
+    // 如果没有找到根任务（所有任务都有parent_id），则显示所有任务
+    if (finalTasks.length === 0 && sortedTasks.length > 0) {
+      console.warn('没有找到根任务，显示所有任务（按sort_order排序）')
+      finalTasks = sortedTasks
+    }
+
+    // 确保 finalTasks 包含所有任务（修复树形结构可能遗漏任务的问题）
+    if (finalTasks.length < sortedTasks.length) {
+      const includedIds = new Set(finalTasks.map(t => t.id))
+      const missingTasks = sortedTasks.filter(t => !includedIds.has(t.id))
+      if (missingTasks.length > 0) {
+        console.warn(`树形结构遗漏了 ${missingTasks.length} 个任务，将它们添加到末尾:`, missingTasks.map(t => ({ id: t.id, name: t.name, parent_id: t.parent_id })))
+        finalTasks = [...finalTasks, ...missingTasks]
+      }
+    }
+
+    state.tasks = finalTasks
+
+    // 自动处理汇总任务（父任务）
+    // 如果一个任务有子任务，自动将其标记为汇总任务，并更新日期
+    this.updateSummaryTasks()
+
+    console.log('formatTasks - 最终 state.tasks 数量:', state.tasks.length)
+    console.log('formatTasks - 最终 state.tasks:', state.tasks)
     this.filterTasks(state.searchKeyword)
+  },
+
+  /**
+   * 更新汇总任务（父任务）
+   * 有子任务的父任务自动变成汇总任务，日期由子任务决定
+   */
+  updateSummaryTasks() {
+    // 找出所有有子任务的任务
+    const parentTaskIds = new Set()
+    for (const task of state.tasks) {
+      if (task.parent_id) {
+        parentTaskIds.add(task.parent_id)
+      }
+    }
+
+    // 对每个父任务，更新其日期为子任务的日期范围
+    for (const parentId of parentTaskIds) {
+      const parentTask = state.tasks.find(t => t.id === parentId)
+      if (!parentTask) continue
+
+      // 找出所有子任务（递归查找所有后代）
+      const getAllDescendants = (taskId, visited = new Set()) => {
+        // 防止循环引用
+        if (visited.has(taskId)) {
+          console.warn(`检测到循环引用: 任务 ${taskId}`)
+          return []
+        }
+        visited.add(taskId)
+
+        const descendants = []
+        const children = state.tasks.filter(t => t.parent_id === taskId)
+        for (const child of children) {
+          descendants.push(child)
+          descendants.push(...getAllDescendants(child.id, visited))
+        }
+        return descendants
+      }
+
+      const descendants = getAllDescendants(parentId)
+      if (descendants.length === 0) continue
+
+      // 计算日期范围：最早开始到最晚结束
+      let minStartDate = null
+      let maxEndDate = null
+
+      for (const child of descendants) {
+        const childStart = new Date(child.start)
+        const childEnd = new Date(child.end)
+
+        if (!minStartDate || childStart < minStartDate) {
+          minStartDate = childStart
+        }
+        if (!maxEndDate || childEnd > maxEndDate) {
+          maxEndDate = childEnd
+        }
+      }
+
+      // 更新父任务的日期和标记
+      if (minStartDate && maxEndDate) {
+        parentTask.start = formatDate(minStartDate)
+        parentTask.end = formatDate(maxEndDate)
+        parentTask.is_summary = true // 标记为汇总任务
+        parentTask.startDate = minStartDate
+        parentTask.endDate = maxEndDate
+      }
+    }
   },
 
   /**
@@ -633,77 +901,94 @@ const actions = {
   },
 
   /**
-   * 缩放控制
+   * 设置时间轴格式
    */
-  zoomIn() {
-    const config = state.VIEW_CONFIG[state.viewMode]
-    state.dayWidth = Math.min(
-      state.dayWidth + (state.viewMode === 'day' ? 10 : 5),
-      config.maxWidth
-    )
-    eventBus.emit(GanttEvents.ZOOM_CHANGED, { width: state.dayWidth })
+  setTimelineFormat(format) {
+    if (state.TIMELINE_FORMATS[format]) {
+      state.timelineFormat = format
+      eventBus.emit(GanttEvents.TIMELINE_FORMAT_CHANGED, { format })
+    }
   },
 
-  zoomOut() {
-    const config = state.VIEW_CONFIG[state.viewMode]
+  /**
+   * 设置日期显示格式
+   */
+  setDateDisplayFormat(format) {
+    if (state.DATE_FORMATS[format]) {
+      state.dateDisplayFormat = format
+      eventBus.emit(GanttEvents.DATE_FORMAT_CHANGED, { format })
+    }
+  },
+
+  /**
+   * 缩放控制
+   * zoomIn: 放大（让日期单元格变小，显示更多日期）
+   * zoomOut: 缩小（让日期单元格变大，显示更少日期但更详细）
+   */
+  zoomIn() {
+    const format = state.timelineFormat
+    const config = state.VIEW_CONFIG[format] || state.VIEW_CONFIG['month-day']
+    // 放大 = 减少 dayWidth，让更多日期显示在屏幕上
     state.dayWidth = Math.max(
-      state.dayWidth - (state.viewMode === 'day' ? 10 : 5),
+      state.dayWidth - 5,
       config.minWidth
     )
     eventBus.emit(GanttEvents.ZOOM_CHANGED, { width: state.dayWidth })
   },
 
+  zoomOut() {
+    const format = state.timelineFormat
+    const config = state.VIEW_CONFIG[format] || state.VIEW_CONFIG['month-day']
+    // 缩小 = 增加 dayWidth，让每个日期单元格更大更详细
+    state.dayWidth = Math.min(
+      state.dayWidth + 5,
+      config.maxWidth
+    )
+    eventBus.emit(GanttEvents.ZOOM_CHANGED, { width: state.dayWidth })
+  },
+
   zoomReset() {
-    state.dayWidth = state.VIEW_CONFIG[state.viewMode].default
+    const format = state.timelineFormat
+    const config = state.VIEW_CONFIG[format] || state.VIEW_CONFIG['month-day']
+    state.dayWidth = config.default
     eventBus.emit(GanttEvents.ZOOM_CHANGED, { width: state.dayWidth })
   },
 
   /**
    * 自动适应容器尺寸
+   * 根据实际任务条的时间范围调整时间轴，使所有任务都显示在可见屏幕中
    */
   autoFit() {
-    if (state.tasks.length === 0) return
+    if (state.filteredTasks.length === 0) return
 
-    state.containerSize = { width: null, height: null }
+    // 获取时间轴上实际渲染的日期范围
+    const timelineDays = getters.timelineDays.value
+    if (!timelineDays || timelineDays.length === 0) return
 
-    const tasks = state.tasks
-    const minDate = new Date(Math.min(...tasks.map(t => t.startDate.getTime())))
-    const maxDate = new Date(Math.max(...tasks.map(t => t.endDate.getTime())))
-    const totalDays = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24))
+    // 计算时间轴的总天数
+    const totalDays = timelineDays.length
 
-    const availableWidth = 1200
+    // 获取时间轴容器的可用宽度
+    const containerWidth = state.containerSize.width || 1200
+    // 减去任务列表宽度（550px）和其他边距（20px）
+    const availableWidth = Math.max(600, containerWidth - 570)
+
+    // 计算每天的最佳像素宽度，确保所有天都能显示
     const optimalDayWidth = Math.floor(availableWidth / totalDays)
 
-    if (optimalDayWidth >= 30) {
-      state.viewMode = 'day'
-      state.dayWidth = Math.max(
-        state.VIEW_CONFIG.day.minWidth,
-        Math.min(state.VIEW_CONFIG.day.maxWidth, optimalDayWidth)
-      )
-    } else if (optimalDayWidth >= 10) {
-      state.viewMode = 'week'
-      state.dayWidth = Math.max(
-        state.VIEW_CONFIG.week.minWidth,
-        Math.min(state.VIEW_CONFIG.week.maxWidth, optimalDayWidth * 7)
-      )
-    } else if (optimalDayWidth >= 3) {
-      state.viewMode = 'month'
-      state.dayWidth = Math.max(
-        state.VIEW_CONFIG.month.minWidth,
-        Math.min(state.VIEW_CONFIG.month.maxWidth, optimalDayWidth * 30)
-      )
-    } else {
-      state.viewMode = 'quarter'
-      state.dayWidth = Math.max(
-        state.VIEW_CONFIG.quarter.minWidth,
-        Math.min(state.VIEW_CONFIG.quarter.maxWidth, optimalDayWidth * 90)
-      )
-    }
+    console.log('autoFit - totalDays:', totalDays, 'availableWidth:', availableWidth, 'optimalDayWidth:', optimalDayWidth)
 
-    eventBus.emit(GanttEvents.VIEW_AUTO_FITTED, {
-      mode: state.viewMode,
-      dayWidth: state.dayWidth
-    })
+    // 根据时间轴格式获取配置
+    const format = state.timelineFormat
+    const config = state.VIEW_CONFIG[format] || state.VIEW_CONFIG['month-day']
+
+    // 设置新的 dayWidth，确保在合理范围内
+    state.dayWidth = Math.max(config.minWidth, Math.min(config.maxWidth, optimalDayWidth))
+
+    console.log('autoFit - timelineFormat:', format, 'dayWidth:', state.dayWidth)
+
+    // 发送事件通知其他组件
+    eventBus.emit(GanttEvents.ZOOM_CHANGED, { width: state.dayWidth })
   },
 
   /**
@@ -741,10 +1026,11 @@ const actions = {
     if (!state.originalTask) return
 
     const original = state.originalTask
+    let preview = null
 
     switch (state.dragMode) {
       case 'move':
-        state.previewTask = {
+        preview = {
           ...original,
           start: formatDate(addDays(original.start, dayOffset)),
           end: formatDate(addDays(original.end, dayOffset))
@@ -754,7 +1040,7 @@ const actions = {
       case 'resize_left':
         const newStart = addDays(original.start, dayOffset)
         if (newStart <= new Date(original.end)) {
-          state.previewTask = {
+          preview = {
             ...original,
             start: formatDate(newStart)
           }
@@ -764,7 +1050,7 @@ const actions = {
       case 'resize_right':
         const newEnd = addDays(original.end, dayOffset)
         if (newEnd >= new Date(original.start)) {
-          state.previewTask = {
+          preview = {
             ...original,
             end: formatDate(newEnd)
           }
@@ -772,9 +1058,14 @@ const actions = {
         break
     }
 
-    if (state.previewTask) {
-      const duration = diffDays(state.previewTask.start, state.previewTask.end)
-      state.previewTask.duration = Math.max(duration, 0)
+    if (preview) {
+      const duration = diffDays(preview.start, preview.end)
+      preview.duration = Math.max(duration, 0)
+
+      // 应用依赖关系约束到预览任务
+      state.previewTask = this.applyDependencyConstraints(preview, state.draggedTask?.id)
+    } else {
+      state.previewTask = null
     }
 
     eventBus.emit(GanttEvents.TASK_DRAG_MOVE, { preview: state.previewTask })
@@ -784,10 +1075,23 @@ const actions = {
    * 结束拖拽
    */
   endDrag(newTask, originalTask) {
+    // 根据拖动模式决定是否应用依赖约束
+    let adjustedTask
+    if (state.dragMode === 'resize_right') {
+      // 调整结束日期：不应用前置约束，只更新结束日期，保持开始日期不变
+      adjustedTask = {
+        ...newTask,
+        start: originalTask.start // 保持原始开始日期
+      }
+    } else {
+      // 移动或调整开始日期：应用依赖约束
+      adjustedTask = this.applyDependencyConstraints(newTask, originalTask.id)
+    }
+
     const updateData = {
-      task_name: newTask.name,
-      start_date: newTask.start,
-      end_date: newTask.end,
+      name: adjustedTask.name || newTask.name,
+      start_date: adjustedTask.start,
+      end_date: adjustedTask.end,
       progress: newTask.progress,
       priority: newTask.priority
     }
@@ -800,16 +1104,22 @@ const actions = {
     // 更新本地状态
     const task = state.tasks.find(t => t.id === originalTask.id)
     if (task) {
-      Object.assign(task, newTask)
-      task.startDate = new Date(newTask.start)
-      task.endDate = new Date(newTask.end)
+      Object.assign(task, adjustedTask)
+      task.startDate = new Date(adjustedTask.start)
+      task.endDate = new Date(adjustedTask.end)
+    }
+
+    // 只在非 resize_right 模式下调整后置任务的开始时间
+    // resize_right 模式只改变结束时间，不应该影响后置任务
+    if (state.dragMode !== 'resize_right') {
+      this.adjustSuccessorTasks(originalTask.id)
     }
 
     this.markUnsaved()
 
     eventBus.emit(GanttEvents.TASK_DRAG_END, {
       fromTask: originalTask,
-      toTask: newTask
+      toTask: adjustedTask
     })
 
     // 重置拖拽状态
@@ -818,6 +1128,129 @@ const actions = {
     state.draggedTask = null
     state.originalTask = null
     state.previewTask = null
+  },
+
+  /**
+   * 应用依赖关系约束：确保任务开始时间不早于所有前置任务的结束时间
+   */
+  applyDependencyConstraints(task, taskId) {
+    const activities = state.scheduleData.activities
+    const activityKey = `task_${taskId}`
+    const activity = activities[activityKey]
+
+    if (!activity || !activity.predecessors || activity.predecessors.length === 0) {
+      return task
+    }
+
+    let latestPredecessorEnd = null
+
+    // 找到所有前置任务的最新结束时间
+    for (const predId of activity.predecessors) {
+      const predTask = state.tasks.find(t => t.id === predId)
+      if (predTask) {
+        const predEnd = new Date(predTask.end)
+        if (!latestPredecessorEnd || predEnd > latestPredecessorEnd) {
+          latestPredecessorEnd = predEnd
+        }
+      }
+    }
+
+    // 如果有前置任务且任务开始时间早于前置任务结束时间，调整开始时间
+    if (latestPredecessorEnd) {
+      const taskStart = new Date(task.start)
+      const taskEnd = new Date(task.end)
+      const duration = Math.ceil((taskEnd - taskStart) / (1000 * 60 * 60 * 24))
+
+      if (taskStart < latestPredecessorEnd) {
+        // 计算新的开始和结束时间
+        const newStart = new Date(latestPredecessorEnd)
+        const newEnd = addDays(newStart, duration)
+
+        return {
+          ...task,
+          start: formatDate(newStart),
+          end: formatDate(newEnd)
+        }
+      }
+    }
+
+    return task
+  },
+
+  /**
+   * 调整所有后置任务的开始时间
+   */
+  adjustSuccessorTasks(taskId) {
+    const activities = state.scheduleData.activities
+    const task = state.tasks.find(t => t.id === taskId)
+
+    if (!task) return
+
+    // 递归调整后置任务
+    const adjustTask = (currentTaskId) => {
+      const currentTask = state.tasks.find(t => t.id === currentTaskId)
+      if (!currentTask) return
+
+      const currentActivityKey = `task_${currentTaskId}`
+      const currentActivity = activities[currentActivityKey]
+
+      if (!currentActivity || !currentActivity.predecessors) return
+
+      // 检查所有前置任务的结束时间
+      let latestPredecessorEnd = null
+      for (const predId of currentActivity.predecessors) {
+        const predTask = state.tasks.find(t => t.id === predId)
+        if (predTask) {
+          const predEnd = new Date(predTask.end)
+          if (!latestPredecessorEnd || predEnd > latestPredecessorEnd) {
+            latestPredecessorEnd = predEnd
+          }
+        }
+      }
+
+      // 如果当前任务开始时间早于最新前置任务结束时间，调整
+      if (latestPredecessorEnd) {
+        const taskStart = new Date(currentTask.start)
+        const taskEnd = new Date(currentTask.end)
+        const duration = Math.ceil((taskEnd - taskStart) / (1000 * 60 * 60 * 24))
+
+        if (taskStart < latestPredecessorEnd) {
+          const newStart = new Date(latestPredecessorEnd)
+          const newEnd = addDays(newStart, duration)
+
+          // 更新任务数据
+          currentTask.start = formatDate(newStart)
+          currentTask.end = formatDate(newEnd)
+          currentTask.startDate = newStart
+          currentTask.endDate = newEnd
+
+          // 记录待保存的更新（包含所有必要字段）
+          state.pendingTaskUpdates.set(currentTask.id, {
+            id: currentTask.id,
+            name: currentTask.name,
+            start_date: currentTask.start,
+            end_date: currentTask.end,
+            progress: currentTask.progress || 0,
+            priority: currentTask.priority || 1
+          })
+        }
+      }
+    }
+
+    // 找到所有后置任务
+    const successorIds = []
+    for (const [key, activity] of Object.entries(activities)) {
+      if (activity.predecessors && activity.predecessors.includes(taskId)) {
+        const id = parseInt(key.replace('task_', ''))
+        successorIds.push(id)
+      }
+    }
+
+    // 按依赖关系顺序调整后置任务
+    for (const successorId of successorIds) {
+      adjustTask(successorId)
+      this.adjustSuccessorTasks(successorId)
+    }
   },
 
   /**
@@ -936,20 +1369,110 @@ const actions = {
   startDependencyCreation(task) {
     state.isCreatingDependency = true
     state.dependencySourceTask = task
+    // 初始化 tempLineEnd 为源任务位置（需要从组件传递）
+    // 先设为 null，等待组件第一次鼠标移动时更新
+    state.tempLineEnd = null
     eventBus.emit(GanttEvents.DEPENDENCY_CREATING, { task })
   },
 
   /**
    * 完成依赖关系创建
    */
-  completeDependencyCreation(targetTask) {
+  async completeDependencyCreation(targetTask) {
     if (!state.dependencySourceTask || !targetTask) return
 
-    this.addDependency(state.dependencySourceTask.id, targetTask.id, 'FS', 0)
+    // 检查是否是父子关系，如果是则不允许创建
+    if (this.checkParentChildRelation(state.dependencySourceTask.id, targetTask.id)) {
+      console.warn('不能在父子任务之间创建依赖关系')
+      // 显示提示消息
+      eventBus.emit(GanttEvents.DEPENDENCY_ERROR, {
+        message: '不能在父子任务之间创建依赖关系'
+      })
+      // 取消依赖关系创建
+      this.cancelDependencyCreation()
+      return
+    }
+
+    // 检查是否是从右到左的连线（源任务的结束日期晚于目标任务的开始日期）
+    const sourceEndDate = new Date(state.dependencySourceTask.end)
+    const targetStartDate = new Date(targetTask.start)
+
+    if (sourceEndDate > targetStartDate) {
+      console.warn('不能创建从右到左的依赖关系')
+      // 显示提示消息
+      eventBus.emit(GanttEvents.DEPENDENCY_ERROR, {
+        message: '不能创建从右到左的依赖关系（前置任务必须先于后置任务）'
+      })
+      // 取消依赖关系创建
+      this.cancelDependencyCreation()
+      return
+    }
+
+    // 不再强制调整日期 - 只允许从左到右的依赖关系
+
+    // 立即调用 API 创建依赖关系
+    try {
+      console.log('[创建依赖关系] 源任务:', state.dependencySourceTask.id, state.dependencySourceTask.name)
+      console.log('[创建依赖关系] 目标任务:', targetTask.id, targetTask.name)
+
+      const response = await progressApi.createDependencyVisual(
+        state.dependencySourceTask.id,
+        targetTask.id,
+        { type: 'FS', lag: 0 }
+      )
+
+      console.log('[创建依赖关系] API响应:', response.data)
+      console.log('[创建依赖关系] 正在重新加载数据...')
+
+      // 创建成功后重新加载数据
+      await this.loadData()
+      ElMessage.success('依赖关系创建成功')
+
+      console.log('[创建依赖关系] 数据重新加载完成')
+    } catch (error) {
+      console.error('[创建依赖关系] 失败:', error)
+      console.error('[创建依赖关系] 错误响应:', error.response?.data)
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || '创建依赖关系失败'
+      ElMessage.error(errorMsg)
+    }
 
     state.isCreatingDependency = false
     state.dependencySourceTask = null
     state.tempLineEnd = null
+  },
+
+  /**
+   * 检查两个任务之间是否存在父子关系
+   */
+  checkParentChildRelation(taskId1, taskId2) {
+    const task1 = state.tasks.find(t => t.id === taskId1)
+    const task2 = state.tasks.find(t => t.id === taskId2)
+
+    if (!task1 || !task2) return false
+
+    // 检查task1是否是task2的父任务
+    if (task2.parent_id === taskId1) return true
+
+    // 检查task2是否是task1的父任务
+    if (task1.parent_id === taskId2) return true
+
+    // 检查task1的祖先任务是否包含task2
+    let current = task1
+    while (current.parent_id) {
+      if (current.parent_id === taskId2) return true
+      current = state.tasks.find(t => t.id === current.parent_id)
+      if (!current) break
+    }
+
+    // 检查task2的祖先任务是否包含task1
+    current = task2
+    while (current.parent_id) {
+      if (current.parent_id === taskId1) return true
+      current = state.tasks.find(t => t.id === current.parent_id)
+      if (!current) break
+    }
+
+    return false
   },
 
   /**
@@ -959,6 +1482,104 @@ const actions = {
     state.isCreatingDependency = false
     state.dependencySourceTask = null
     state.tempLineEnd = null
+  },
+
+  /**
+   * 获取任务持续天数
+   */
+  getTaskDuration(task) {
+    const startDate = new Date(task.start_date)
+    const endDate = new Date(task.end_date)
+    return Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24))
+  },
+
+  /**
+   * 格式化日期为 YYYY-MM-DD 格式
+   */
+  formatDate(date) {
+    return formatDate(date)
+  },
+
+  /**
+   * 上移任务（交换任务顺序）
+   */
+  async moveTaskUp(taskId) {
+    const tasks = state.tasks
+    const currentIndex = tasks.findIndex(t => t.id === taskId)
+    if (currentIndex <= 0) {
+      throw new Error('任务已经在最前面')
+    }
+
+    const targetIndex = currentIndex - 1
+    const currentTask = tasks[currentIndex]
+    const targetTask = tasks[targetIndex]
+
+    // 交换 parent_id、wbs_code 等层级相关字段
+    const currentParentId = currentTask.parent_id
+    const targetParentId = targetTask.parent_id
+
+    // 通过 API 更新
+    await progressApi.update(currentTask.id, {
+      parent_id: targetParentId
+    })
+    await progressApi.update(targetTask.id, {
+      parent_id: currentParentId
+    })
+
+    // 重新加载和格式化任务
+    await this.loadData()
+  },
+
+  /**
+   * 下移任务（交换任务顺序）
+   */
+  async moveTaskDown(taskId) {
+    const tasks = state.tasks
+    const currentIndex = tasks.findIndex(t => t.id === taskId)
+    if (currentIndex >= tasks.length - 1) {
+      throw new Error('任务已经在最后面')
+    }
+
+    const targetIndex = currentIndex + 1
+    const currentTask = tasks[currentIndex]
+    const targetTask = tasks[targetIndex]
+
+    // 交换 parent_id、wbs_code 等层级相关字段
+    const currentParentId = currentTask.parent_id
+    const targetParentId = targetTask.parent_id
+
+    // 通过 API 更新
+    await progressApi.update(currentTask.id, {
+      parent_id: targetParentId
+    })
+    await progressApi.update(targetTask.id, {
+      parent_id: currentParentId
+    })
+
+    // 重新加载和格式化任务
+    await this.loadData()
+  },
+
+  /**
+   * 将子任务转为独立任务（解除父子关系）
+   */
+  async convertToIndependentTask(taskId) {
+    const task = state.tasks.find(t => t.id === taskId)
+    if (!task) {
+      throw new Error('任务不存在')
+    }
+
+    if (!task.parent_id) {
+      throw new Error('任务已经是独立任务')
+    }
+
+    // 将 parent_id 设置为 null
+    await progressApi.update(taskId, {
+      parent_id: null
+    })
+
+    // 重新加载和格式化任务
+    await this.loadData()
   },
 
   /**
@@ -1032,11 +1653,13 @@ const actions = {
 
     try {
       console.log('开始保存所有更改...')
+      console.log('待保存的任务更新:', Array.from(state.pendingTaskUpdates.entries()))
 
       // 1. 保存任务更新
       const taskPromises = []
       for (const [taskId, data] of state.pendingTaskUpdates) {
-        taskPromises.push(progressApi.update(taskId, data))
+        console.log(`保存任务 ${taskId}:`, data)
+        taskPromises.push(progressApi.updateTask(taskId, data))
       }
 
       if (taskPromises.length > 0) {
@@ -1131,7 +1754,12 @@ const actions = {
   /**
    * 检查任务是否应该被隐藏（因为父任务被折叠）
    */
-  isTaskHidden(taskId, tasks = state.filteredTasks) {
+  isTaskHidden(taskId, tasks = state.filteredTasks, visited = new Set()) {
+    if (visited.has(taskId)) {
+      return false // 循环引用，停止检查
+    }
+    visited.add(taskId)
+
     const task = tasks.find(t => t.id === taskId)
     if (!task) return false
     if (!task.parent_id) return false
@@ -1140,7 +1768,7 @@ const actions = {
     if (!parent) return false
 
     if (state.collapsedTasks.has(parent.id)) return true
-    return this.isTaskHidden(parent.id, tasks)
+    return this.isTaskHidden(parent.id, tasks, visited)
   },
 
   /**
@@ -1163,6 +1791,26 @@ const actions = {
 
   toggleBaseline() {
     state.showBaseline = !state.showBaseline
+  },
+
+  toggleTaskList() {
+    state.showTaskList = !state.showTaskList
+  },
+
+  /**
+   * 切换平移模式（手形工具）
+   */
+  togglePanMode() {
+    state.panMode = !state.panMode
+    eventBus.emit(GanttEvents.PAN_MODE_CHANGED, { enabled: state.panMode })
+  },
+
+  /**
+   * 设置时间轴滚动位置
+   */
+  setScrollLeft(scrollLeft) {
+    state.scrollLeft = scrollLeft
+    eventBus.emit(GanttEvents.TIMELINE_SCROLLED, { scrollLeft })
   },
 
   /**

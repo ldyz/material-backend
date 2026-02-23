@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    @update:model-value="$emit('update:visible', $event)"
+    @update:model-value="val => { if (!val) handleClose() }"
     :title="editingTask ? '编辑任务' : '新建任务'"
     width="800px"
     :close-on-click-modal="false"
@@ -182,7 +182,7 @@
     </el-tabs>
 
     <template #footer>
-      <el-button @click="$emit('update:visible', false)">取消</el-button>
+      <el-button @click="handleClose">取消</el-button>
       <el-button type="primary" @click="handleSave" :loading="saving">保存</el-button>
     </template>
   </el-dialog>
@@ -369,7 +369,7 @@
 </template>
 
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { Plus, Back, Right } from '@element-plus/icons-vue'
 import { progressApi } from '@/api'
 
@@ -716,7 +716,27 @@ const handleSave = async () => {
   if (!formRef.value) return
 
   try {
-    await formRef.value.validate()
+    console.log('TaskEditDialog - 表单验证前的数据:', JSON.parse(JSON.stringify(formData.value)))
+    console.log('TaskEditDialog - name字段值:', formData.value.name)
+    console.log('TaskEditDialog - name字段类型:', typeof formData.value.name)
+
+    const valid = await formRef.value.validate()
+    console.log('TaskEditDialog - 验证结果:', valid)
+
+    if (!valid) {
+      console.error('TaskEditDialog - 表单验证失败')
+      // 获取验证错误信息
+      const fields = formRef.value.fields || {}
+      for (const key in fields) {
+        const field = fields[key]
+        if (field && field.validateState === 'error') {
+          console.error(`字段 ${key} 验证失败:`, field.validateMessage)
+        }
+      }
+      return
+    }
+
+    console.log('TaskEditDialog - 表单验证通过')
 
     // 构建保存数据
     const saveData = {
@@ -733,10 +753,20 @@ const handleSave = async () => {
       }))
     }
 
+    console.log('TaskEditDialog - 要保存的数据:', saveData)
     emit('save', saveData)
   } catch (error) {
-    // 验证失败
+    console.error('TaskEditDialog - 保存过程出错:', error)
+    // 验证失败或其他错误
   }
+}
+
+// 关闭对话框
+const handleClose = () => {
+  // 重置表单状态
+  resetForm()
+  // 发送关闭事件
+  emit('update:visible', false)
 }
 
 const resetForm = () => {
@@ -744,6 +774,27 @@ const resetForm = () => {
   formRef.value?.clearValidate()
   activeTab.value = 'basic'
 }
+
+// ==================== ESC 键关闭对话框 ====================
+const handleKeydown = (event) => {
+  // ESC 键关闭对话框
+  if (event.key === 'Escape' && props.visible) {
+    // 如果子对话框打开，不关闭主对话框
+    if (!resourceDialogVisible.value &&
+        !predecessorDialogVisible.value &&
+        !successorDialogVisible.value) {
+      handleClose()
+    }
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', handleKeydown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown)
+})
 
 defineExpose({
   resetForm

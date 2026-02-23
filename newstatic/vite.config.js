@@ -11,6 +11,7 @@ export default defineConfig({
     },
   },
   server: {
+    host: '0.0.0.0',
     port: 3000,
     proxy: {
       '/api': {
@@ -27,64 +28,24 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000, // Increase limit to 1000KB
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          // Vendor chunks
-          if (id.includes('node_modules')) {
-            // Element Plus
-            if (id.includes('element-plus')) {
-              return 'element-plus'
-            }
+        manualChunks: {
+          // Element Plus (large UI library)
+          'element-plus': ['element-plus'],
 
-            // Vue ecosystem
-            if (id.includes('vue/') || id.includes('@vue') || id.includes('pinia') || id.includes('vue-router')) {
-              return 'vue-vendor'
-            }
+          // Vue ecosystem (core framework)
+          'vue-vendor': ['vue', 'vue-router', 'pinia'],
 
-            // Editor (Quill)
-            if (id.includes('quill')) {
-              return 'editor'
-            }
+          // Charts library
+          'charts': ['chart.js', 'vue-chartjs'],
 
-            // Charts
-            if (id.includes('chart.js') || id.includes('vue-chartjs')) {
-              return 'charts'
-            }
+          // PDF export libraries
+          'pdf-export': ['jspdf', 'html2canvas'],
 
-            // PDF export libraries - split separately
-            if (id.includes('jspdf')) {
-              return 'pdf-export'
-            }
+          // Editor
+          'editor': ['quill', '@vueup/vue-quill'],
 
-            if (id.includes('html2canvas')) {
-              return 'pdf-export'
-            }
-
-            // Date utilities
-            if (id.includes('date-fns')) {
-              return 'date-utils'
-            }
-
-            // Virtual scroller
-            if (id.includes('vue-virtual-scroller')) {
-              return 'virtual-scroller'
-            }
-
-            // Other utilities
-            if (id.includes('lodash-es')) {
-              return 'lodash'
-            }
-
-            if (id.includes('axios')) {
-              return 'http'
-            }
-
-            // Node_modules polyfills
-            if (id.includes('core-js') || id.includes('regenerator-runtime')) {
-              return 'polyfills'
-            }
-
-            return 'vendor'
-          }
+          // Other major libraries
+          'vendor': ['axios', 'lodash-es', 'date-fns', 'vue-virtual-scroller'],
         },
         chunkFileNames: 'assets/[name]-[hash].js',
         entryFileNames: 'assets/[name]-[hash].js',

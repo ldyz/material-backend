@@ -2,6 +2,8 @@ package progress
 
 import (
 	"time"
+
+	"github.com/yourorg/material-backend/backend/internal/api/project"
 )
 
 // ReportConfig defines the configuration for generating reports
@@ -36,8 +38,8 @@ type Report struct {
 	UpdatedAt time.Time   `json:"updated_at"`
 
 	// Associations
-	User     *User   `json:"user,omitempty" gorm:"foreignKey:CreatedBy"`
-	Project  *Project `json:"project,omitempty" gorm:"foreignKey:Config.ProjectID"`
+	User     *User            `json:"user,omitempty" gorm:"foreignKey:CreatedBy"`
+	Project  *project.Project `json:"project,omitempty" gorm:"foreignKey:Config.ProjectID"`
 }
 
 // ReportData holds the generated report data

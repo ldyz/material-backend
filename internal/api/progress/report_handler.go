@@ -1,6 +1,7 @@
 package progress
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -368,7 +369,10 @@ func (h *ReportHandler) generateReportData(req *ReportRequest) (*ReportData, err
 	reportData := &ReportData{
 		Type:      req.Type,
 		DateRange: []time.Time{req.StartDate, req.EndDate},
-		GeneratedAt: time.Now(),
+		Metadata: ReportMetadata{
+			GeneratedAt: time.Now(),
+			ProjectID:   req.ProjectID,
+		},
 	}
 
 	// Set columns based on report type
@@ -386,7 +390,7 @@ func (h *ReportHandler) generateReportData(req *ReportRequest) (*ReportData, err
 	case "progress":
 		reportData.Data, reportData.Summary, err = h.fetchProgressReportData(req)
 	default:
-		return nil, gin.H{"error": "Invalid report type"}
+		return nil, fmt.Errorf("invalid report type: %s", req.Type)
 	}
 
 	if err != nil {

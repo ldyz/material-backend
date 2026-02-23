@@ -90,6 +90,14 @@
             添加任务
           </el-button>
           <el-button
+            type="danger"
+            :icon="Delete"
+            @click="handleDeleteSchedule"
+            v-if="currentView === 'gantt' || currentView === 'network'"
+          >
+            删除进度计划
+          </el-button>
+          <el-button
             type="warning"
             :icon="Download"
             @click="handleExport"
@@ -109,6 +117,7 @@
           @view-gantt="handleViewGanttFromList"
           @view-network="handleViewNetworkFromList"
           @create-schedule="handleCreateScheduleFromList"
+          @delete-schedule="handleDeleteScheduleFromList"
           @generate-plan="handleGeneratePlanFromList"
         />
       </div>
@@ -119,9 +128,10 @@
       </div>
 
       <!-- 甘特图视图 -->
-      <div v-show="currentView === 'gantt'" class="gantt-view-container">
+      <div v-if="currentView === 'gantt'" class="gantt-view-container">
         <GanttChart
           v-if="scheduleData && Object.keys(scheduleData).length > 0"
+          :key="`gantt-${currentProjectId}-${scheduleData?.updated || Date.now()}`"
           :project-id="currentProjectId"
           :schedule-data="scheduleData"
           @task-updated="handleTaskUpdated"
@@ -132,13 +142,15 @@
       </div>
 
       <!-- 网络图视图 -->
-      <div v-show="currentView === 'network'" class="network-view-container">
+      <div v-if="currentView === 'network'" class="network-view-container">
         <NetworkDiagram
           v-if="scheduleData && Object.keys(scheduleData).length > 0"
+          :key="`network-${currentProjectId}-${scheduleData?.updated || Date.now()}`"
           :project-id="currentProjectId"
           :schedule-data="scheduleData"
           @node-selected="handleNodeSelected"
           @position-updated="handlePositionUpdated"
+          @task-updated="handleTaskUpdated"
         />
         <el-empty v-else description="暂无进度计划，请先创建计划任务" />
       </div>
@@ -546,11 +558,68 @@ const loadScheduleData = async () => {
   if (!currentProjectId.value) return
   try {
     const response = await progressApi.getProjectSchedule(currentProjectId.value)
-    scheduleData.value = response.data || null
+    const rawData = response.data || null
+
+    // 统一处理和清理数据
+    const cleanedData = rawData ? cleanScheduleData(rawData) : null
+
+    scheduleData.value = cleanedData
+
+    console.log('Progress - loadScheduleData completed:', {
+      hasData: !!cleanedData,
+      activitiesCount: cleanedData?.activities ? Object.keys(cleanedData.activities).length : 0,
+      timestamp: cleanedData?.updated
+    })
   } catch (error) {
     console.error('获取进度计划失败:', error)
     scheduleData.value = null
   }
+}
+
+// 统一处理和清理进度计划数据
+const cleanScheduleData = (data) => {
+  if (!data || !data.activities) {
+    return null
+  }
+
+  // 创建数据的深拷贝，避免修改原始数据
+  const cleanedData = {
+    ...data,
+    activities: {},
+    updated: Date.now()
+  }
+
+  // 处理每个活动，确保数据一致性
+  for (const [key, activity] of Object.entries(data.activities)) {
+    // 过滤掉无效的活动数据
+    if (!activity.earliest_start || activity.earliest_start <= 0 ||
+        !activity.earliest_finish || activity.earliest_finish <= 0) {
+      console.warn('Progress - 过滤无效活动:', activity.name || key, {
+        earliest_start: activity.earliest_start,
+        earliest_finish: activity.earliest_finish
+      })
+      continue
+    }
+
+    // 确保必要的字段存在
+    cleanedData.activities[key] = {
+      ...activity,
+      // 确保数字类型字段正确
+      task_id: activity.task_id || activity.id,
+      duration: activity.duration || 1,
+      progress: activity.progress || 0,
+      // 确保数组类型字段存在
+      predecessors: Array.isArray(activity.predecessors) ? activity.predecessors : [],
+      successors: Array.isArray(activity.successors) ? activity.successors : []
+    }
+  }
+
+  console.log('Progress - cleanScheduleData:', {
+    原始活动数: Object.keys(data.activities).length,
+    清理后活动数: Object.keys(cleanedData.activities).length
+  })
+
+  return cleanedData
 }
 
 // 加载项目信息
@@ -722,6 +791,42 @@ const handleCreateScheduleFromList = (projectId) => {
   currentProjectId.value = projectId
   creatingProjectId.value = projectId
   createScheduleVisible.value = true
+}
+
+const handleDeleteScheduleFromList = async (projectId) => {
+  const project = projectTreeData.value.find(p => p.id === projectId)
+    || projectTreeData.value.flatMap(p => p.children || []).find(c => c.id === projectId)
+
+  const projectName = project?.name || `项目 ${projectId}`
+
+  ElMessageBox.confirm(
+    `确定要删除项目"${projectName}"的进度计划吗？此操作将删除该项目的所有任务和依赖关系，且无法恢复。`,
+    '删除进度计划',
+    {
+      confirmButtonText: '确定删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+      distinguishCancelAndClose: true
+    }
+  ).then(async () => {
+    try {
+      await progressApi.deleteProjectSchedule(projectId)
+      ElMessage.success('进度计划删除成功')
+
+      // 重新加载项目列表和进度计划状态
+      await fetchProjects()
+      await loadAllProjectSchedules()
+    } catch (error) {
+      console.error('删除进度计划失败:', error)
+      const errorMsg = error?.response?.data?.error || error?.response?.data?.message || error?.message || '删除失败，请重试'
+      ElMessage.error(errorMsg)
+    }
+  }).catch((error) => {
+    // 用户取消操作，不需要提示
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('操作失败:', error)
+    }
+  })
 }
 
 // 计划创建成功后的处理
@@ -957,6 +1062,50 @@ const handleDelete = (row) => {
   })
 }
 
+// 删除进度计划
+const handleDeleteSchedule = () => {
+  if (!currentProjectId.value) {
+    ElMessage.warning('未选择项目')
+    return
+  }
+
+  const projectName = getProjectName(currentProjectId.value)
+
+  ElMessageBox.confirm(
+    `确定要删除项目"${projectName}"的进度计划吗？此操作将删除该项目的所有任务和依赖关系，且无法恢复。`,
+    '删除进度计划',
+    {
+      confirmButtonText: '确定删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+      distinguishCancelAndClose: true
+    }
+  ).then(async () => {
+    try {
+      await progressApi.deleteProjectSchedule(currentProjectId.value)
+      ElMessage.success('进度计划删除成功')
+
+      // 清空当前数据并返回列表视图
+      scheduleData.value = { activities: {}, nodes: {} }
+      currentView.value = 'list'
+      searchForm.project_id = null
+
+      // 重新加载项目列表和进度计划状态
+      await fetchProjects()
+      await loadAllProjectSchedules()
+    } catch (error) {
+      console.error('删除进度计划失败:', error)
+      const errorMsg = error?.response?.data?.error || error?.response?.data?.message || error?.message || '删除失败，请重试'
+      ElMessage.error(errorMsg)
+    }
+  }).catch((error) => {
+    // 用户取消操作，不需要提示
+    if (error !== 'cancel' && error !== 'close') {
+      console.error('操作失败:', error)
+    }
+  })
+}
+
 // 提交表单
 const handleSubmit = async () => {
   if (!formRef.value) return
@@ -977,7 +1126,7 @@ const handleSubmit = async () => {
     const data = {
       project_id: formData.project_id,
       parent_id: formData.parent_id,
-      task_name: formData.task_name,
+      name: formData.task_name,
       start_date: formData.start_date,
       end_date: formData.end_date,
       priority: formData.priority,
@@ -1152,28 +1301,66 @@ onMounted(async () => {
 <style scoped>
 .progress-container {
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
+/* 面包屑导航在 el-card 外面 */
 .breadcrumb-nav {
   padding: 12px 16px;
   background: #f5f7fa;
   border-radius: 4px;
   margin-bottom: 16px;
+  flex-shrink: 0;
 }
 
+/* el-card 占据剩余的所有高度 */
+.progress-container > :deep(.el-card) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: none;
+  box-shadow: none;
+}
+
+/* el-card__body 使用 flexbox */
+.progress-container > :deep(.el-card) > :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 20px;
+  overflow: hidden;
+}
+
+/* ViewSwitcher 和 TableToolbar 使用 flex-shrink: 0 */
+.progress-container > :deep(.el-card) > :deep(.el-card__body) > :deep(.view-switcher),
+.progress-container > :deep(.el-card) > :deep(.el-card__body) > :deep(.table-toolbar) {
+  flex-shrink: 0;
+}
+
+/* 分页 */
 .mt-20 {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
-/* 新视图容器样式 */
+/* 新视图容器样式 - 充满剩余空间 */
 .gantt-view-container,
 .network-view-container {
-  height: 600px;
+  flex: 1;
+  min-height: 0;
   border: 1px solid #dcdfe6;
   border-radius: 4px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 甘特图样式 */

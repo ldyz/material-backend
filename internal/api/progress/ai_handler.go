@@ -8,21 +8,17 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/julei/go-erp-system/internal/api"
-	"github.com/julei/go-erp-system/internal/database"
 	"gorm.io/gorm"
 )
 
-// AIHandler handles AI-powered schedule optimization requests
+// AIHandler handles AI-related requests
 type AIHandler struct {
 	db *gorm.DB
 }
 
 // NewAIHandler creates a new AI handler
-func NewAIHandler() *AIHandler {
-	return &AIHandler{
-		db: database.GetDB(),
-	}
+func NewAIHandler(db *gorm.DB) *AIHandler {
+	return &AIHandler{db: db}
 }
 
 // AnalyzeScheduleRequest represents a request to analyze a project schedule

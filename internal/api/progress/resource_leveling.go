@@ -14,17 +14,6 @@ type ResourceAssignment struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-// Resource represents a project resource
-type Resource struct {
-	ID        uint      `json:"id" gorm:"primaryKey"`
-	Name      string    `json:"name" gorm:"size:255;not null"`
-	Type      string    `json:"type" gorm:"size:50"` // work, material, cost
-	Capacity  float64   `json:"capacity" gorm:"default:100"` // Maximum allocation percentage
-	ProjectID uint      `json:"project_id" gorm:"index"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
 // ResourceConflict represents a resource overallocation conflict
 type ResourceConflict struct {
 	ResourceID    uint                    `json:"resource_id"`
@@ -124,9 +113,12 @@ func (s *ResourceLevelingService) DetectConflicts(
 			continue
 		}
 
-		// Get date range for task
-		startDate := task.StartDate
-		endDate := task.EndDate
+		// Get date range for task - handle nil pointers
+		if task.StartDate == nil || task.EndDate == nil {
+			continue
+		}
+		startDate := *task.StartDate
+		endDate := *task.EndDate
 
 		// Iterate through each day
 		for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
@@ -158,14 +150,16 @@ func (s *ResourceLevelingService) DetectConflicts(
 	// Find conflicts
 	for _, usage := range usageMap {
 		resource := resourceMap[usage.ResourceID]
-		if usage.Total > resource.Capacity {
+		// Use Quantity as the capacity (max available amount)
+		capacity := resource.Quantity
+		if usage.Total > capacity {
 			conflicts = append(conflicts, ResourceConflict{
 				ResourceID:    usage.ResourceID,
 				ResourceName:  resource.Name,
 				Date:          usage.Date,
-				Capacity:      resource.Capacity,
+				Capacity:      capacity,
 				Assigned:      usage.Total,
-				Overallocated: usage.Total - resource.Capacity,
+				Overallocated: usage.Total - capacity,
 				Tasks:         usage.Tasks,
 			})
 		}
@@ -232,14 +226,14 @@ func (s *ResourceLevelingService) calculateStatistics(
 
 	// Find project end dates
 	for _, task := range originalTasks {
-		if task.EndDate.After(stats.OriginalProjectEnd) {
-			stats.OriginalProjectEnd = task.EndDate
+		if task.EndDate != nil && task.EndDate.After(stats.OriginalProjectEnd) {
+			stats.OriginalProjectEnd = *task.EndDate
 		}
 	}
 
 	for _, task := range leveledTasks {
-		if task.EndDate.After(stats.LeveledProjectEnd) {
-			stats.LeveledProjectEnd = task.EndDate
+		if task.EndDate != nil && task.EndDate.After(stats.LeveledProjectEnd) {
+			stats.LeveledProjectEnd = *task.EndDate
 		}
 	}
 

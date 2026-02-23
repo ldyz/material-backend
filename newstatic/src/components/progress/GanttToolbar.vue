@@ -16,18 +16,64 @@
 
       <span class="current-period">{{ currentPeriodText }}</span>
 
-      <!-- 视图模式切换 -->
+      <!-- 时间轴格式 -->
       <el-select
-        :model-value="viewMode"
-        @change="$emit('view-mode-change', $event)"
+        :model-value="timelineFormat"
+        @change="$emit('timeline-format-change', $event)"
         size="small"
-        style="width: 100px; margin-left: 12px"
+        style="width: 130px; margin-left: 12px"
       >
-        <el-option label="日视图" value="day"></el-option>
-        <el-option label="周视图" value="week"></el-option>
-        <el-option label="月视图" value="month"></el-option>
-        <el-option label="季度视图" value="quarter"></el-option>
+        <el-option label="日期" value="day"></el-option>
+        <el-option label="月/日" value="month-day"></el-option>
+        <el-option label="年/月" value="year-month"></el-option>
+        <el-option label="年/月/日" value="year-month-day"></el-option>
+        <el-option label="周" value="week"></el-option>
+        <el-option label="月" value="month"></el-option>
+        <el-option label="季度" value="quarter"></el-option>
       </el-select>
+
+      <!-- 日期显示格式 -->
+      <el-select
+        v-if="showDateFormat"
+        :model-value="dateDisplayFormat"
+        @change="$emit('date-format-change', $event)"
+        size="small"
+        style="width: 130px; margin-left: 8px"
+      >
+        <el-option label="全部日期" value="all"></el-option>
+        <el-option label="奇数日期" value="odd"></el-option>
+        <el-option label="间隔3天" value="interval3"></el-option>
+        <el-option label="间隔5天" value="interval5"></el-option>
+        <el-option label="每月1号" value="first"></el-option>
+      </el-select>
+
+      <!-- 工具模式切换 -->
+      <el-button-group size="small" style="margin-left: 12px" title="工具模式">
+        <!-- 箭头选择工具 -->
+        <el-button
+          @click="$emit('toggle-select-mode')"
+          :type="!panMode ? 'primary' : 'default'"
+          title="选择/拖拽模式"
+        >
+          <el-icon>
+            <svg viewBox="0 0 1024 1024" width="14" height="14">
+              <path d="M896 448H560V112c0-17.7-14.3-32-32-32s-32 14.3-32 32v336H160c-17.7 0-32 14.3-32 32s14.3 32 32 32h336v336c0 17.7 14.3 32 32 32s32-14.3 32-32V512h336c17.7 0 32-14.3 32-32s-14.3-32-32-32z" fill="currentColor"></path>
+            </svg>
+          </el-icon>
+        </el-button>
+        <!-- 手形平移工具 -->
+        <el-button
+          @click="$emit('toggle-pan-mode')"
+          :type="panMode ? 'primary' : 'default'"
+          title="平移工具"
+        >
+          <el-icon>
+            <svg viewBox="0 0 1024 1024" width="14" height="14">
+              <path d="M768 256h-64V128c0-17.7-14.3-32-32-32s-32 14.3-32 32v128H384V128c0-17.7-14.3-32-32-32s-32 14.3-32 32v128h-64c-17.7 0-32 14.3-32 32s14.3 32 32 32h64v416c0 17.7 14.3 32 32 32h256v128c0 17.7 14.3 32 32 32s32-14.3 32-32V768h64c17.7 0 32-14.3 32-32s-14.3-32-32-32h-64V320h64c17.7 0 32-14.3 32-32s-14.3-32-32-32z" fill="currentColor"></path>
+            </svg>
+          </el-icon>
+        </el-button>
+      </el-button-group>
 
       <!-- 缩放控制 -->
       <el-button-group size="small" style="margin-left: 16px">
@@ -159,18 +205,16 @@ import {
   Close
 } from '@element-plus/icons-vue'
 
-defineProps({
-  viewMode: {
+import { computed } from 'vue'
+
+const props = defineProps({
+  currentZoomLabel: {
     type: String,
-    default: 'day'
+    default: '40日'
   },
   currentPeriodText: {
     type: String,
     default: ''
-  },
-  currentZoomLabel: {
-    type: String,
-    default: '40日'
   },
   showDependencies: {
     type: Boolean,
@@ -203,13 +247,29 @@ defineProps({
   hasUnsavedChanges: {
     type: Boolean,
     default: false
+  },
+  timelineFormat: {
+    type: String,
+    default: 'month-day'
+  },
+  dateDisplayFormat: {
+    type: String,
+    default: 'all'
+  },
+  panMode: {
+    type: Boolean,
+    default: false
   }
+})
+
+const showDateFormat = computed(() => {
+  const format = props.timelineFormat
+  return format === 'day' || format === 'month-day' || format === 'year-month-day'
 })
 
 defineEmits([
   'navigate-date',
   'go-today',
-  'view-mode-change',
   'zoom-in',
   'zoom-out',
   'zoom-reset',
@@ -225,7 +285,11 @@ defineEmits([
   'add-task',
   'refresh',
   'toggle-fullscreen',
-  'save-all'
+  'save-all',
+  'timeline-format-change',
+  'date-format-change',
+  'toggle-pan-mode',
+  'toggle-select-mode'
 ])
 </script>
 

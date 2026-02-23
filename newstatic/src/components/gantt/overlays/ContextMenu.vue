@@ -241,6 +241,11 @@ const editingTask = ref(null)
 const dependencyDialogVisible = ref(false)
 const resourceDialogVisible = ref(false)
 
+// 事件监听器状态跟踪
+let clickOutsideListener = null
+let keydownListener = null
+let isListenersAdded = false
+
 const allTasks = computed(() => props.tasks)
 
 const menuStyle = computed(() => ({
@@ -409,19 +414,48 @@ function handleEscape(event) {
 watch(() => props.visible, (visible) => {
   if (visible) {
     nextTick(() => {
-      document.addEventListener('click', handleClickOutside)
-      document.addEventListener('keydown', handleEscape)
+      // 创建绑定的监听器函数
+      clickOutsideListener = (event) => {
+        if (menuRef.value && !menuRef.value.contains(event.target)) {
+          emit('close')
+        }
+      }
+      keydownListener = (event) => {
+        if (event.key === 'Escape') {
+          emit('close')
+        }
+      }
+
+      document.addEventListener('click', clickOutsideListener)
+      document.addEventListener('keydown', keydownListener)
+      isListenersAdded = true
     })
   } else {
-    document.removeEventListener('click', handleClickOutside)
-    document.removeEventListener('keydown', handleEscape)
+    // 移除监听器
+    if (clickOutsideListener && isListenersAdded) {
+      document.removeEventListener('click', clickOutsideListener)
+      clickOutsideListener = null
+    }
+    if (keydownListener && isListenersAdded) {
+      document.removeEventListener('keydown', keydownListener)
+      keydownListener = null
+    }
+    isListenersAdded = false
   }
 })
 
 // Cleanup
 onBeforeUnmount(() => {
-  document.removeEventListener('click', handleClickOutside)
-  document.removeEventListener('keydown', handleEscape)
+  // 确保监听器被移除
+  if (clickOutsideListener) {
+    document.removeEventListener('click', clickOutsideListener)
+    clickOutsideListener = null
+  }
+  if (keydownListener) {
+    document.removeEventListener('keydown', keydownListener)
+    keydownListener = null
+  }
+  isListenersAdded = false
 })
 </script>
 

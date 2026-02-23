@@ -6,19 +6,20 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // ChangeLogHandler handles change log-related HTTP requests
 type ChangeLogHandler struct {
-	repo     *ChangeLogRepository
-	taskRepo *TaskRepository
+	repo *ChangeLogRepository
+	db   *gorm.DB
 }
 
 // NewChangeLogHandler creates a new change log handler
-func NewChangeLogHandler(repo *ChangeLogRepository, taskRepo *TaskRepository) *ChangeLogHandler {
+func NewChangeLogHandler(repo *ChangeLogRepository, db *gorm.DB) *ChangeLogHandler {
 	return &ChangeLogHandler{
-		repo:     repo,
-		taskRepo: taskRepo,
+		repo: repo,
+		db:   db,
 	}
 }
 
@@ -237,10 +238,11 @@ func (h *ChangeLogHandler) RollbackChange(c *gin.Context) {
 // rollbackTask rolls back a task change
 func (h *ChangeLogHandler) rollbackTask(projectID uint, data *RollbackData, userID uint) error {
 	// Check if task exists
-	task, err := h.taskRepo.GetByID(data.EntityID)
+	var task Task
+	err := h.db.Where("id = ? AND project_id = ?", data.EntityID, projectID).First(&task).Error
 	if err != nil {
 		// Task doesn't exist, create it
-		task = &Task{
+		task = Task{
 			ProjectID: projectID,
 		}
 	}
@@ -271,9 +273,9 @@ func (h *ChangeLogHandler) rollbackTask(projectID uint, data *RollbackData, user
 
 	// Save task
 	if task.ID == 0 {
-		return h.taskRepo.Create(task)
+		return h.db.Create(&task).Error
 	}
-	return h.taskRepo.Update(task)
+	return h.db.Save(&task).Error
 }
 
 // rollbackDependency rolls back a dependency change

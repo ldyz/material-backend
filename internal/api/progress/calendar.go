@@ -2,6 +2,8 @@ package progress
 
 import (
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // Calendar represents a working time calendar

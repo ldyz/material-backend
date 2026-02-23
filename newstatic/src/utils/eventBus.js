@@ -120,11 +120,16 @@ export const GanttEvents = {
   DEPENDENCY_CREATED: 'gantt:dependency:created',
   DEPENDENCY_DELETED: 'gantt:dependency:deleted',
   DEPENDENCY_UPDATED: 'gantt:dependency:updated',
+  DEPENDENCY_ERROR: 'gantt:dependency:error',
 
   // ==================== 视图相关 ====================
   VIEW_CHANGED: 'gantt:view:changed',
   ZOOM_CHANGED: 'gantt:zoom:changed',
   VIEW_AUTO_FITTED: 'gantt:view:auto-fitted',
+  TIMELINE_FORMAT_CHANGED: 'gantt:timeline:format:changed',
+  DATE_FORMAT_CHANGED: 'gantt:date:format:changed',
+  PAN_MODE_CHANGED: 'gantt:pan-mode:changed',
+  TIMELINE_SCROLLED: 'gantt:timeline:scrolled',
 
   // ==================== 编辑相关 ====================
   EDIT_START: 'gantt:edit:start',

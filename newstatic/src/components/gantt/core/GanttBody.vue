@@ -44,6 +44,8 @@
         :selected-task-id="selectedTask?.id"
         :is-dragging="isDragging"
         :dragged-task="draggedTask"
+        :preview-task="previewTask"
+        :drag-mode="dragMode"
         :use-virtual-scroll="useVirtualScroll"
         @task-click="handleTaskClick"
         @task-dblclick="handleTaskDblClick"
@@ -127,6 +129,8 @@ interface Props {
   // 拖拽状态
   isDragging: boolean
   draggedTask: any
+  previewTask: any
+  dragMode: string
   tooltipVisible: boolean
   tooltipPosition: TooltipPosition
   tooltipText: string
@@ -196,7 +200,8 @@ function handleTaskDblClick(task: any) {
  * 处理任务鼠标按下（开始拖拽）
  */
 function handleTaskMouseDown(task: any, event: MouseEvent, taskBar: HTMLElement) {
-  emit('taskMousedown', task, event, taskBar)
+  // 注意：TaskTimeline emit 的顺序是 event, task, taskBar
+  emit('taskMousedown', event, task, taskBar)
 }
 
 /**

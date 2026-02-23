@@ -301,7 +301,7 @@ const handleSave = async () => {
 
 const handleClose = () => {
   dialogVisible.value = false
-  emit('update:modelValue', false)
+  // Don't emit here - let the watch handle it
   // Reset form
   nextTick(() => {
     constraint.value = {

@@ -2,36 +2,54 @@
   <div class="gantt-chart" :class="{ 'is-fullscreen': isFullscreen }" @keydown="handleKeydown" tabindex="0" ref="ganttChartRef">
     <!-- 工具栏 -->
     <GanttToolbar
-      :view-mode="viewMode"
-      :current-period-text="currentPeriodText"
       :current-zoom-label="currentZoomLabel"
+      :current-period-text="currentPeriodText"
       :show-dependencies="showDependencies"
       :show-critical-path="showCriticalPath"
       :show-baseline="showBaseline"
+      :show-task-list="showTaskList"
       :group-mode="groupMode"
       :search-keyword="searchKeyword"
       :is-fullscreen="isFullscreen"
       :is-saving="saving"
       :has-unsaved-changes="hasUnsavedChanges"
+      :can-undo="canUndo"
+      :can-redo="canRedo"
+      :selected-count="selectedTaskIds.size"
+      :undo-count="undoCount"
+      :command-history="commandHistory"
+      :timeline-format="state.timelineFormat"
+      :date-display-format="state.dateDisplayFormat"
+      :pan-mode="state.panMode"
       @navigate-date="navigateDate"
       @go-today="goToToday"
-      @view-mode-change="handleViewModeChange"
       @zoom-in="zoomIn"
       @zoom-out="zoomOut"
       @zoom-reset="zoomReset"
       @toggle-dependencies="toggleDependencies"
       @toggle-critical-path="toggleCriticalPath"
       @toggle-baseline="toggleBaseline"
+      @toggle-task-list="toggleTaskList"
       @open-resource-management="openResourceManagement"
       @group-change="handleGroupChange"
       @search="searchKeyword = $event"
       @export-png="handleExportPNG"
       @export-pdf="handleExportPDF"
       @auto-fit="autoFitContainer"
-      @add-task="handleAddTask"
       @refresh="handleRefresh"
       @toggle-fullscreen="toggleFullscreen"
       @save-all="handleSaveAll"
+      @undo="handleUndo"
+      @redo="handleRedo"
+      @undo-to="handleUndoTo"
+      @clear-history="handleClearHistory"
+      @toggle-template="templateDialogVisible = true"
+      @toggle-bulk-edit="handleToggleBulkEdit"
+      @timeline-format-change="handleTimelineFormatChange"
+      @date-format-change="handleDateFormatChange"
+      @toggle-pan-mode="togglePanMode"
+      @toggle-select-mode="toggleSelectMode"
+      @add-task="handleCreateTask"
     />
 
     <!-- 统计信息 -->
@@ -40,9 +58,10 @@
     <!-- 甘特图容器 -->
     <div
       class="gantt-container"
-      :class="{ 'is-resizing': isResizing }"
+      :class="{ 'is-resizing': isResizing, 'is-pan-mode': panMode }"
       ref="ganttContainer"
       :style="containerStyle"
+      @mousedown="handlePanStart"
     >
       <!-- 调整大小手柄 - 右下角 -->
       <div
@@ -71,18 +90,21 @@
       <!-- 表头容器（固定在顶部） -->
       <div class="gantt-header-container">
         <GanttHeader
-          :view-mode="viewMode"
+          :timeline-format="state.timelineFormat"
+          :date-display-format="state.dateDisplayFormat"
           :timeline-days="timelineDays"
           :timeline-weeks="timelineWeeks"
           :timeline-months="timelineMonths"
+          :timeline-header-months="timelineHeaderMonths"
           :timeline-quarters="timelineQuarters"
           :day-width="dayWidth"
           :today-position="todayPosition"
         />
       </div>
 
-      <!-- 任务列表（可滚动） -->
+      <!-- 任务列表（可折叠） -->
       <TaskList
+        :is-collapsed="!showTaskList"
         :tasks="filteredTasks"
         :grouped-tasks="groupedTasks"
         :selected-task-id="selectedTask?.id"
@@ -105,6 +127,8 @@
         :tooltip-visible="tooltipVisible"
         :tooltip-position="tooltipPosition"
         :tooltip-text="tooltipText"
+        :preview-task="previewTask"
+        :drag-mode="dragMode"
         :search-keyword="searchKeyword"
         :timeline-width="timelineWidth"
         :arrow-marker-id="arrowMarkerId"
@@ -114,13 +138,14 @@
         :is-creating-dependency="isCreatingDependency"
         :source-task-id="dependencySourceTask?.id"
         :temp-line-end="tempLineEnd"
+        :show-task-names="!showTaskList"
         @row-click="handleRowClick"
+        @row-dblclick="handleRowDblClick"
         @task-click="handleTaskClick"
         @task-dblclick="handleTaskDblClick"
         @task-mousedown="handleTaskMouseDown"
         @toggle-group="toggleGroup"
         @context-menu="handleContextMenu"
-        @add-task="handleAddTask"
         @dependency-create="handleDependencyCreate"
         @mousemove="handleTimelineMouseMove"
         @cell-edit="handleCellEdit"
@@ -141,14 +166,19 @@
         v-model:visible="contextMenuVisible"
         :task="contextMenuTask"
         :position="contextMenuPosition"
+        :all-tasks="formattedTasks"
         @add-subtask="handleAddSubtask"
         @convert-milestone="handleConvertToMilestone"
         @add-dependency="handleAddDependency"
         @view-dependencies="handleViewDependencies"
         @allocate-resources="handleAllocateResources"
+        @create-task="handleCreateTask"
         @edit="handleContextMenuEdit"
         @duplicate="handleContextMenuDuplicate"
         @delete="handleContextMenuDelete"
+        @move-up="handleMoveTaskUp"
+        @move-down="handleMoveTaskDown"
+        @convert-to-independent="handleConvertToIndependent"
         ref="contextMenuRef"
       />
     </teleport>
@@ -178,6 +208,21 @@
       :project-id="projectId"
       @save="handleSaveTask"
       ref="taskEditDialogRef"
+    />
+
+    <!-- 任务模板对话框 -->
+    <TaskTemplatesDialog
+      v-model="templateDialogVisible"
+      :project-id="projectId"
+      @created="handleTaskCreated"
+    />
+
+    <!-- 批量编辑对话框 -->
+    <BulkEditDialog
+      v-model="bulkEditDialogVisible"
+      :tasks="selectedTasks"
+      :project-id="projectId"
+      @updated="handleBulkUpdate"
     />
 
     <!-- 任务详情侧边栏 -->
@@ -214,6 +259,16 @@ import {
 import { formatDate, diffDays } from '@/utils/dateFormat'
 import eventBus, { GanttEvents } from '@/utils/eventBus'
 import { ganttStore } from '@/stores/ganttStore'
+import { useUndoRedoStore } from '@/stores/undoRedoStore'
+import {
+  CreateTaskCommand,
+  UpdateTaskCommand,
+  DeleteTaskCommand,
+  MoveTaskCommand,
+  BatchUpdateTasksCommand,
+  DuplicateTaskCommand,
+  ConvertToMilestoneCommand
+} from '@/commands/taskCommands'
 
 // Import new subcomponents
 import GanttToolbar from './GanttToolbar.vue'
@@ -228,6 +283,8 @@ import ResourceAllocationDialog from './ResourceAllocationDialog.vue'
 import ResourceManagementDialog from './ResourceManagementDialog.vue'
 import ResourceView from './ResourceView.vue'
 import GanttStatusBar from './GanttStatusBar.vue'
+import TaskTemplatesDialog from '@/components/gantt/dialogs/TaskTemplatesDialog.vue'
+import BulkEditDialog from '@/components/gantt/dialogs/BulkEditDialog.vue'
 
 const props = defineProps({
   projectId: {
@@ -253,6 +310,15 @@ const { state, getters, actions } = store
 // 设置项目信息
 actions.setProject(props.projectId, props.projectName)
 
+// ==================== Undo/Redo Store ====================
+const undoRedoStore = useUndoRedoStore()
+
+// 初始化项目上下文
+undoRedoStore.clear()
+
+// 多选状态
+const selectedTaskIds = ref(new Set())
+
 // ==================== 组件引用 ====================
 const ganttChartRef = ref(null)
 const ganttContainer = ref(null)
@@ -260,9 +326,18 @@ const taskListRef = ref(null)
 const statusBarRef = ref(null)
 const contextMenuRef = ref(null)
 
+// ==================== 清理引用 ====================
+let resizeObserver = null
+let resizeTimer = null
+let unsubscribeDependencyError = null
+
 // 容器调整大小状态（保留在组件中）
 const resizeDirection = ref(null)
 const resizeStart = ref({ x: 0, y: 0, width: 0, height: 0 })
+
+// 平移状态
+const panStart = ref({ x: 0, scrollLeft: 0 })
+const isPanning = ref(false)
 
 // 使用 store 中的状态（通过解构简化访问）
 const loading = computed(() => state.loading)
@@ -278,21 +353,45 @@ const taskHeight = computed(() => state.taskHeight)
 const showDependencies = computed(() => state.showDependencies)
 const showCriticalPath = computed(() => state.showCriticalPath)
 const showBaseline = computed(() => state.showBaseline)
+const showTaskList = computed(() => state.showTaskList)
+const panMode = computed(() => state.panMode)
 const searchKeyword = computed(() => state.searchKeyword)
-const taskDetailVisible = computed(() => state.taskDetailVisible)
+const taskDetailVisible = computed({
+  get: () => state.taskDetailVisible,
+  set: (val) => actions.closeTaskDetail()
+})
 const selectedTask = computed(() => getters.selectedTask)
 const tempLineEnd = computed(() => state.tempLineEnd)
 const isResizing = computed(() => state.isResizing)
 const containerSize = computed(() => state.containerSize)
-const editDialogVisible = computed(() => state.editDialogVisible)
+const editDialogVisible = computed({
+  get: () => state.editDialogVisible,
+  set: (val) => { if (!val) actions.closeEditDialog() }
+})
 const editingTask = computed(() => state.editingTask)
-const contextMenuVisible = computed(() => state.contextMenuVisible)
+const contextMenuVisible = computed({
+  get: () => state.contextMenuVisible,
+  set: (val) => { if (!val) actions.hideContextMenu() }
+})
 const contextMenuTask = computed(() => state.contextMenuTask)
 const contextMenuPosition = computed(() => state.contextMenuPosition)
-const resourceDialogVisible = computed(() => state.resourceDialogVisible)
-const currentTaskForResource = computed(() => state.currentTaskForResource)
-const resourceManagementDialogVisible = computed(() => state.resourceManagementDialogVisible)
+const resourceDialogVisible = ref(false)
+const currentTaskForResource = ref(null)
+const resourceManagementDialogVisible = ref(false)
 const resourceLibrary = computed(() => state.resourceLibrary)
+
+// ==================== 对话框状态 ====================
+const templateDialogVisible = ref(false)
+const bulkEditDialogVisible = ref(false)
+
+// ==================== Undo/Redo 状态 ====================
+const canUndo = computed(() => undoRedoStore.canUndo)
+const canRedo = computed(() => undoRedoStore.canRedo)
+const undoCount = computed(() => undoRedoStore.stackSize)
+const selectedTasks = computed(() => {
+  return state.filteredTasks.filter(t => selectedTaskIds.value.has(t.id))
+})
+const commandHistory = computed(() => undoRedoStore.getCommandHistory())
 
 // 拖拽状态（使用 useGanttDrag composable 返回的值）
 // 这些会在下面的 useGanttDrag 调用中定义
@@ -331,6 +430,97 @@ const handleDragEnd = async (newTask, originalTask) => {
 const markAsUnsaved = () => actions.markUnsaved()
 const handleSaveAll = () => actions.saveAll()
 
+// ==================== Undo/Redo 处理 ====================
+const handleUndo = async () => {
+  if (!canUndo.value) return
+
+  try {
+    await undoRedoStore.undo((command) => {
+      ElMessage.success(`已撤销: ${command.getDescription()}`)
+      emit('task-updated', null)
+    })
+  } catch (error) {
+    console.error('撤销失败:', error)
+    ElMessage.error('撤销失败')
+  }
+}
+
+const handleRedo = async () => {
+  if (!canRedo.value) return
+
+  try {
+    await undoRedoStore.redo((command) => {
+      ElMessage.success(`已重做: ${command.getDescription()}`)
+      emit('task-updated', null)
+    })
+  } catch (error) {
+    console.error('重做失败:', error)
+    ElMessage.error('重做失败')
+  }
+}
+
+// 撤销到指定位置
+const handleUndoTo = async (targetIndex) => {
+  try {
+    await undoRedoStore.undoTo(targetIndex)
+    ElMessage.success(`已撤销到指定位置`)
+    emit('task-updated', null)
+  } catch (error) {
+    console.error('撤销到指定位置失败:', error)
+    ElMessage.error('撤销失败')
+  }
+}
+
+// 清空历史
+const handleClearHistory = () => {
+  try {
+    undoRedoStore.clear()
+    ElMessage.success('已清空操作历史')
+  } catch (error) {
+    console.error('清空历史失败:', error)
+    ElMessage.error('清空历史失败')
+  }
+}
+
+// ==================== 多选功能 ====================
+const handleDeleteSelected = async () => {
+  if (selectedTaskIds.value.size === 0) return
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedTaskIds.value.size} 个任务吗？`,
+      '确认删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    statusBarRef.value?.showStatus(`正在删除 ${selectedTaskIds.value.size} 个任务...`, 'loading')
+
+    // 批量删除
+    for (const taskId of selectedTaskIds.value) {
+      const task = state.filteredTasks.find(t => t.id === taskId)
+      if (task) {
+        const command = new DeleteTaskCommand(task, props.projectId)
+        await undoRedoStore.execute(command)
+      }
+    }
+
+    selectedTaskIds.value.clear()
+    ElMessage.success('删除成功')
+    statusBarRef.value?.showStatus('删除成功', 'success', 2000)
+    emit('task-updated', null)
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('批量删除失败:', error)
+      ElMessage.error('批量删除失败')
+      statusBarRef.value?.showStatus('批量删除失败', 'error', 2000)
+    }
+  }
+}
+
 // ==================== 拖拽功能 ====================
 const dragResult = useGanttDrag({
   dayWidth,
@@ -359,6 +549,7 @@ const taskStats = computed(() => getters.taskStats.value)
 const timelineDays = computed(() => getters.timelineDays.value)
 const timelineWeeks = computed(() => getters.timelineWeeks.value)
 const timelineMonths = computed(() => getters.timelineMonths.value)
+const timelineHeaderMonths = computed(() => getters.timelineHeaderMonths.value)
 const timelineQuarters = computed(() => getters.timelineQuarters.value)
 const timelineWidth = computed(() => getters.timelineWidth.value)
 const todayPosition = computed(() => getters.todayPosition.value)
@@ -377,16 +568,43 @@ const getActivityStatus = (activity) => actions.getActivityStatus(activity)
 const autoFitContainer = () => actions.autoFit()
 
 // ==================== 任务操作 ====================
-// 行点击
+// 行点击（支持多选）
 const handleRowClick = (task) => {
-  actions.selectTask(task.id)
+  if (!task) return
+
+  // 检查是否按下了 Ctrl/Cmd 键进行多选
+  const event = window.event
+  if (event && (event.ctrlKey || event.metaKey)) {
+    if (selectedTaskIds.value.has(task.id)) {
+      selectedTaskIds.value.delete(task.id)
+    } else {
+      selectedTaskIds.value.add(task.id)
+    }
+  } else {
+    // 单选模式
+    selectedTaskIds.value.clear()
+    actions.selectTask(task.id)
+  }
   emit('task-selected', task)
 }
 
-// 任务点击
+// 任务点击（支持多选）
 const handleTaskClick = (task) => {
   if (!task) return
-  actions.selectTask(task.id)
+
+  // 检查是否按下了 Ctrl/Cmd 键进行多选
+  const event = window.event
+  if (event && (event.ctrlKey || event.metaKey)) {
+    if (selectedTaskIds.value.has(task.id)) {
+      selectedTaskIds.value.delete(task.id)
+    } else {
+      selectedTaskIds.value.add(task.id)
+    }
+  } else {
+    // 单选模式
+    selectedTaskIds.value.clear()
+    actions.selectTask(task.id)
+  }
   emit('task-selected', task)
 }
 
@@ -397,8 +615,15 @@ const handleTaskDblClick = (task) => {
   actions.openEditDialog(task)
 }
 
+// 行双击 - 打开编辑对话框
+const handleRowDblClick = (task) => {
+  if (!task) return
+  actions.selectTask(task.id)
+  actions.openEditDialog(task)
+}
+
 // 拖拽事件处理
-const handleTaskMouseDown = (event, taskOrId) => {
+const handleTaskMouseDown = (event, taskOrId, taskBarElement) => {
   // 只在左键点击时启动拖拽
   if (event.button !== 0) return
 
@@ -407,7 +632,13 @@ const handleTaskMouseDown = (event, taskOrId) => {
   const task = filteredTasks.value.find(t => t.id === taskId)
   if (!task) return
 
-  startDrag(event, task)
+  // 如果有taskBarElement，使用它来检测拖拽模式（边缘调整）
+  // 否则默认为移动模式
+  if (taskBarElement) {
+    startDrag(event, task, taskBarElement)
+  } else {
+    startDrag(event, task, event.target)
+  }
 }
 
 // 依赖关系创建处理
@@ -575,12 +806,81 @@ const handleResizeEnd = () => {
   document.body.style.userSelect = ''
 }
 
+// ==================== 平移功能 ====================
+// 平移开始
+const handlePanStart = (event) => {
+  if (!state.panMode) return
+
+  event.preventDefault()
+  isPanning.value = true
+
+  // 获取时间轴滚动区域（ganttBodyRef）
+  const timelineScrollArea = taskListRef.value?.ganttBodyRef?.value
+  const currentScrollLeft = timelineScrollArea?.scrollLeft || 0
+
+  panStart.value = {
+    x: event.clientX,
+    scrollLeft: currentScrollLeft
+  }
+
+  document.addEventListener('mousemove', handlePanMove)
+  document.addEventListener('mouseup', handlePanEnd)
+  document.body.style.cursor = 'grabbing'
+  document.body.style.userSelect = 'none'
+}
+
+// 平移移动
+const handlePanMove = (event) => {
+  if (!isPanning.value) return
+
+  const deltaX = event.clientX - panStart.value.x
+  const newScrollLeft = panStart.value.scrollLeft - deltaX
+
+  // 只滚动时间轴区域（ganttBodyRef），不影响任务列表
+  const timelineScrollArea = taskListRef.value?.ganttBodyRef?.value
+  if (timelineScrollArea) {
+    timelineScrollArea.scrollLeft = newScrollLeft
+  }
+  actions.setScrollLeft(newScrollLeft)
+}
+
+// 平移结束
+const handlePanEnd = () => {
+  isPanning.value = false
+
+  document.removeEventListener('mousemove', handlePanMove)
+  document.removeEventListener('mouseup', handlePanEnd)
+
+  if (state.panMode) {
+    document.body.style.cursor = 'grab'
+  } else {
+    document.body.style.cursor = ''
+  }
+  document.body.style.userSelect = ''
+}
+
 // ==================== 视图控制 ====================
-// 日期导航
+// 日期导航（滚动时间轴视图）
 const navigateDate = (direction) => {
-  const offset = direction * (state.viewMode === 'day' ? 7 : state.viewMode === 'week' ? 4 : 1)
-  const newDayWidth = Math.max(state.dayWidth + offset, state.VIEW_CONFIG[state.viewMode].minWidth)
-  state.dayWidth = newDayWidth
+  // 根据时间轴格式决定滚动的天数
+  const format = state.timelineFormat
+  let daysToScroll = 7 // 默认滚动一周
+
+  if (format === 'day' || format === 'month-day' || format === 'year-month-day') {
+    daysToScroll = 7
+  } else if (format === 'week') {
+    daysToScroll = 1 // 滚动一周
+  } else if (format === 'month') {
+    daysToScroll = 30 // 滚动一个月
+  } else if (format === 'quarter' || format === 'year-month') {
+    daysToScroll = 90 // 滚动一个季度
+  }
+
+  // TODO: 实现时间轴滚动功能
+  // 这里需要配合时间轴的 scrollLeft 值来实现滚动
+  // 暂时先使用简单的 dayWidth 调整作为临时方案
+  const offset = direction * daysToScroll
+  console.log('navigateDate:', { direction, daysToScroll, offset })
 }
 
 const goToToday = () => {
@@ -595,10 +895,27 @@ const zoomReset = () => actions.zoomReset()
 // 视图模式切换
 const handleViewModeChange = (newMode) => actions.setViewMode(newMode)
 
+// 时间轴格式切换
+const handleTimelineFormatChange = (newFormat) => actions.setTimelineFormat(newFormat)
+
+// 日期显示格式切换
+const handleDateFormatChange = (newFormat) => actions.setDateDisplayFormat(newFormat)
+
 // 显示选项切换
 const toggleDependencies = () => actions.toggleDependencies()
 const toggleCriticalPath = () => actions.toggleCriticalPath()
 const toggleBaseline = () => actions.toggleBaseline()
+const toggleTaskList = () => actions.toggleTaskList()
+
+// 平移模式切换
+const togglePanMode = () => actions.togglePanMode()
+
+// 选择模式切换（关闭平移模式，返回正常拖拽模式）
+const toggleSelectMode = () => {
+  if (state.panMode) {
+    actions.togglePanMode() // 关闭平移模式
+  }
+}
 
 // 打开资源管理对话框
 const openResourceManagement = () => actions.openResourceManagementDialog()
@@ -610,38 +927,9 @@ const toggleGroup = (groupName) => actions.toggleGroup(groupName)
 // 刷新
 const handleRefresh = () => emit('task-updated', null)
 
-// 全屏切换
+// 全屏切换（使用 CSS 模拟，避免弹出层问题）
 const toggleFullscreen = () => {
-  if (!document.fullscreenElement) {
-    // 进入全屏
-    if (ganttChartRef.value?.requestFullscreen) {
-      ganttChartRef.value.requestFullscreen()
-    } else if (ganttChartRef.value?.webkitRequestFullscreen) {
-      ganttChartRef.value.webkitRequestFullscreen()
-    } else if (ganttChartRef.value?.mozRequestFullScreen) {
-      ganttChartRef.value.mozRequestFullScreen()
-    } else if (ganttChartRef.value?.msRequestFullscreen) {
-      ganttChartRef.value.msRequestFullscreen()
-    }
-    actions.setFullscreen(true)
-  } else {
-    // 退出全屏
-    if (document.exitFullscreen) {
-      document.exitFullscreen()
-    } else if (document.webkitExitFullscreen) {
-      document.webkitExitFullscreen()
-    } else if (document.mozCancelFullScreen) {
-      document.mozCancelFullScreen()
-    } else if (document.msExitFullscreen) {
-      document.msExitFullscreen()
-    }
-    actions.setFullscreen(false)
-  }
-}
-
-// 监听全屏状态变化
-const handleFullscreenChange = () => {
-  actions.setFullscreen(!!document.fullscreenElement)
+  actions.setFullscreen(!state.isFullscreen)
 }
 
 // ==================== 导出功能 ====================
@@ -694,17 +982,21 @@ const handleExportPDF = async () => {
 
 // ==================== 右键菜单 ====================
 const handleContextMenu = (eventOrData) => {
-  // 支持两种参数格式：直接的事件对象或包含 event 和 task 的数据对象
-  let event, task
+  // 支持多种参数格式
+  let event, task, type, action
 
-  if (eventOrData.event && eventOrData.task) {
-    // 来自 TaskTable 的格式
+  if (eventOrData && typeof eventOrData === 'object' && 'event' in eventOrData) {
+    // 来自 TaskTable 的数据对象格式
     event = eventOrData.event
     task = eventOrData.task
-  } else {
+    type = eventOrData.type
+    action = eventOrData.action
+  } else if (eventOrData && eventOrData.target) {
     // 来自 TaskTimeline 的原始事件格式
     event = eventOrData
     task = null
+    type = 'task'
+
     // 查找被点击的任务行
     const taskRow = event.target.closest('.table-row')
     if (taskRow) {
@@ -726,14 +1018,44 @@ const handleContextMenu = (eventOrData) => {
         }
       }
     }
+  } else {
+    // 没有事件对象，可能是直接调用
+    event = null
+    task = eventOrData?.task || null
+    type = eventOrData?.type || 'task'
+    action = eventOrData?.action || null
   }
 
+  // 处理空白行的新建任务
+  if (type === 'new-task') {
+    if (action === 'create-immediate') {
+      // 双击直接创建
+      actions.openEditDialog(null)
+    } else if (action === 'context-menu' && event) {
+      // 右键显示菜单
+      event.preventDefault()
+      event.stopPropagation()
+      actions.showContextMenu(null, { x: event.clientX, y: event.clientY })
+      nextTick(() => {
+        contextMenuRef.value?.open()
+      })
+    } else {
+      // 单击也直接创建
+      actions.openEditDialog(null)
+    }
+    return
+  }
+
+  // 处理已有任务的右键菜单
   if (!task) return
 
-  event.preventDefault()
-  event.stopPropagation()
+  if (event) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
 
-  actions.showContextMenu(task, { x: event.clientX, y: event.clientY })
+  const position = event ? { x: event.clientX, y: event.clientY } : { x: 0, y: 0 }
+  actions.showContextMenu(task, position)
 
   nextTick(() => {
     contextMenuRef.value?.open()
@@ -747,7 +1069,7 @@ const handleContextMenuDuplicate = async (task) => {
   try {
     const newTask = {
       project_id: props.projectId,
-      task_name: `${task.name} (副本)`,
+      name: `${task.name} (副本)`,
       start_date: task.start,
       end_date: task.end,
       progress: 0,
@@ -769,6 +1091,49 @@ const handleContextMenuDelete = async (task) => {
   await handleDeleteTask()
 }
 
+// ==================== 任务层级操作 ====================
+// 上移任务
+const handleMoveTaskUp = async (task) => {
+  try {
+    await actions.moveTaskUp(task.id)
+    ElMessage.success('任务已上移')
+    emit('task-updated', null)
+  } catch (error) {
+    console.error('上移任务失败:', error)
+    ElMessage.error('上移任务失败')
+  }
+}
+
+// 下移任务
+const handleMoveTaskDown = async (task) => {
+  try {
+    await actions.moveTaskDown(task.id)
+    ElMessage.success('任务已下移')
+    emit('task-updated', null)
+  } catch (error) {
+    console.error('下移任务失败:', error)
+    ElMessage.error('下移任务失败')
+  }
+}
+
+// 转为独立任务（解除父子关系）
+const handleConvertToIndependent = async (task) => {
+  try {
+    await actions.convertToIndependentTask(task.id)
+    ElMessage.success('任务已转为独立任务')
+    emit('task-updated', null)
+  } catch (error) {
+    console.error('转为独立任务失败:', error)
+    ElMessage.error('转为独立任务失败')
+  }
+}
+
+// ==================== 新建任务 ====================
+// 从右键菜单新建任务
+const handleCreateTask = () => {
+  actions.openEditDialog(null)
+}
+
 // ==================== 子任务管理 ====================
 // 添加子任务
 const handleAddSubtask = async (parentTask) => {
@@ -777,7 +1142,7 @@ const handleAddSubtask = async (parentTask) => {
 
     const newTask = {
       project_id: props.projectId,
-      task_name: `${parentTask.name} - 子任务`,
+      name: `${parentTask.name} - 子任务`,
       start_date: parentTask.start,
       end_date: parentTask.end,
       progress: 0,
@@ -807,8 +1172,8 @@ const handleAddSubtask = async (parentTask) => {
       }
     }
 
-    // 进度更新后不需要刷新整个数据
-    // emit('task-updated')
+    // 刷新任务列表以显示新创建的子任务
+    emit('task-updated', response.data)
   } catch (error) {
     console.error('添加子任务失败:', error)
     const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || '添加子任务失败'
@@ -921,26 +1286,25 @@ const handleResourceRefresh = () => {
 }
 
 // ==================== 添加/编辑/删除任务 ====================
-// 添加任务
-const handleAddTask = () => {
-  actions.openEditDialog(null)
-}
-
-// 保存任务
+// 保存任务（使用命令模式支持撤销/重做）
 const handleSaveTask = async (formData) => {
   try {
+    console.log('GanttChart - handleSaveTask 收到的数据:', formData)
+    console.log('GanttChart - formData.name:', formData.name)
+
     const isEdit = !!state.editingTask
     const statusMsg = isEdit ? '正在更新任务...' : '正在创建任务...'
     statusBarRef.value?.showStatus(statusMsg, 'loading')
 
     const taskData = {
       project_id: props.projectId,
-      task_name: formData.name,
+      name: formData.name,
       start_date: formData.start,
       end_date: formData.end,
       progress: formData.progress,
       priority: formData.priority,
       description: formData.notes,
+      parent_id: formData.parent_id || null,
       // 资源分配
       resources: formData.resources?.map(r => ({
         resource_id: r.resource_id || r.id,
@@ -954,25 +1318,54 @@ const handleSaveTask = async (formData) => {
       successor_ids: formData.successor_ids || []
     }
 
+    console.log('GanttChart - 准备发送到API的数据:', taskData)
+
+    let result
     if (isEdit) {
-      await progressApi.update(state.editingTask.id, taskData)
-      ElMessage.success('任务更新成功')
-      statusBarRef.value?.showStatus('任务更新成功', 'success', 2000)
-      emit('task-updated', { ...state.editingTask, ...taskData })
+      // 使用更新命令
+      const command = new UpdateTaskCommand(
+        state.editingTask.id,
+        state.editingTask,
+        taskData,
+        (updatedTask) => {
+          ElMessage.success('任务更新成功')
+          statusBarRef.value?.showStatus('任务更新成功', 'success', 2000)
+          emit('task-updated', updatedTask)
+        },
+        (error) => {
+          console.error('保存任务失败:', error)
+          ElMessage.error('保存任务失败')
+          statusBarRef.value?.showStatus('保存任务失败', 'error', 2000)
+        }
+      )
+      result = await undoRedoStore.execute(command)
     } else {
-      await progressApi.create(taskData)
-      ElMessage.success('任务创建成功')
-      statusBarRef.value?.showStatus('任务创建成功', 'success', 2000)
-      emit('task-updated', taskData)
+      // 使用创建命令
+      const command = new CreateTaskCommand(
+        props.projectId,
+        taskData,
+        (createdTask) => {
+          console.log('任务创建响应:', createdTask)
+          ElMessage.success('任务创建成功')
+          statusBarRef.value?.showStatus('任务创建成功', 'success', 2000)
+          emit('task-updated', createdTask)
+        },
+        (error) => {
+          console.error('保存任务失败:', error)
+          ElMessage.error('保存任务失败')
+          statusBarRef.value?.showStatus('保存任务失败', 'error', 2000)
+        }
+      )
+      result = await undoRedoStore.execute(command)
     }
 
-    actions.closeEditDialog()
+    if (result.success) {
+      actions.closeEditDialog()
+    }
   } catch (error) {
     console.error('保存任务失败:', error)
     ElMessage.error('保存任务失败')
     statusBarRef.value?.showStatus('保存任务失败', 'error', 2000)
-  } finally {
-    // Note: saving state is managed by store
   }
 }
 
@@ -992,7 +1385,7 @@ const handleDuplicateTask = async () => {
   try {
     const newTask = {
       project_id: props.projectId,
-      task_name: `${task.name} (副本)`,
+      name: `${task.name} (副本)`,
       start_date: task.start,
       end_date: task.end,
       progress: 0,
@@ -1009,25 +1402,61 @@ const handleDuplicateTask = async () => {
   }
 }
 
-// 删除任务
+// 删除任务（包括所有子任务）
 const handleDeleteTask = async () => {
   const task = getters.selectedTask.value
   if (!task) return
 
   try {
+    // 查找所有子任务
+    const findAllChildren = (parentTask) => {
+      const children = state.tasks.filter(t => t.parent_id === parentTask.id)
+      let allChildren = [...children]
+      children.forEach(child => {
+        allChildren = allChildren.concat(findAllChildren(child))
+      })
+      return allChildren
+    }
+
+    const childTasks = findAllChildren(task)
+    const hasChildren = childTasks.length > 0
+
+    // 构建确认消息
+    let confirmMessage = `确定要删除任务"${task.name}"吗？`
+    if (hasChildren) {
+      confirmMessage = `确定要删除任务"${task.name}"吗？\n\n该任务包含 ${childTasks.length} 个子任务，删除父任务将同时删除所有子任务。`
+    }
+
     await ElMessageBox.confirm(
-      `确定要删除任务"${task.name}"吗？`,
+      confirmMessage,
       '确认删除',
       {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
-        type: 'warning'
+        type: 'warning',
+        dangerouslyUseHTMLString: false
       }
     )
 
     statusBarRef.value?.showStatus('正在删除任务...', 'loading')
+
+    // 删除所有子任务
+    if (hasChildren) {
+      for (const child of childTasks) {
+        try {
+          await progressApi.delete(child.id)
+        } catch (error) {
+          console.error(`删除子任务 ${child.name} (ID: ${child.id}) 失败:`, error)
+        }
+      }
+    }
+
+    // 删除父任务
     await progressApi.delete(task.id)
-    ElMessage.success('任务已删除')
+
+    ElMessage.success(hasChildren
+      ? `已删除任务"${task.name}"及其 ${childTasks.length} 个子任务`
+      : '任务已删除')
     statusBarRef.value?.showStatus('任务已删除', 'success', 2000)
     actions.closeTaskDetail()
     emit('task-updated', task)
@@ -1040,10 +1469,54 @@ const handleDeleteTask = async () => {
   }
 }
 
+// ==================== 模板和批量编辑 ====================
+const handleTaskCreated = (result) => {
+  ElMessage.success('任务已创建')
+  emit('task-updated', result.data)
+  templateDialogVisible.value = false
+}
+
+const handleToggleBulkEdit = () => {
+  if (selectedTaskIds.value.size === 0) {
+    ElMessage.warning('请先选择要编辑的任务')
+    return
+  }
+  bulkEditDialogVisible.value = true
+}
+
+const handleBulkUpdate = (result) => {
+  ElMessage.success(`已更新 ${result.count} 个任务`)
+  selectedTaskIds.value.clear()
+  bulkEditDialogVisible.value = false
+  emit('task-updated', null)
+}
+
 // ==================== 键盘快捷键 ====================
 const handleKeydown = (event) => {
   // 如果在编辑对话框中，不处理快捷键
   if (state.editDialogVisible) return
+
+  // Ctrl/Cmd + Z: 撤销
+  if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
+    event.preventDefault()
+    handleUndo()
+  }
+
+  // Ctrl/Cmd + Y 或 Ctrl/Cmd + Shift + Z: 重做
+  if (
+    ((event.ctrlKey || event.metaKey) && event.key === 'y') ||
+    ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'z')
+  ) {
+    event.preventDefault()
+    handleRedo()
+  }
+
+  // Ctrl/Cmd + A: 全选任务
+  if ((event.ctrlKey || event.metaKey) && event.key === 'a') {
+    event.preventDefault()
+    selectedTaskIds.value = new Set(state.filteredTasks.map(t => t.id))
+    ElMessage.info(`已选中 ${selectedTaskIds.value.size} 个任务`)
+  }
 
   // Ctrl/Cmd + N: 新建任务
   if ((event.ctrlKey || event.metaKey) && event.key === 'n') {
@@ -1057,10 +1530,24 @@ const handleKeydown = (event) => {
     handleDuplicateTask()
   }
 
-  // Delete: 删除任务
-  if (event.key === 'Delete' && getters.selectedTask.value) {
+  // Delete: 删除任务（单选或多选）
+  if (event.key === 'Delete') {
     event.preventDefault()
-    handleDeleteTask()
+    if (selectedTaskIds.value.size > 0) {
+      // TODO: 批量删除
+      handleDeleteSelected()
+    } else if (getters.selectedTask.value) {
+      handleDeleteTask()
+    }
+  }
+
+  // ESC: 取消依赖连线绘制或关闭对话框
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    if (isCreatingDependency.value) {
+      cancelDependencyCreation()
+      ElMessage.info('已取消依赖关系绘制')
+    }
   }
 
   // Enter: 编辑任务
@@ -1076,6 +1563,7 @@ const handleKeydown = (event) => {
     event.preventDefault()
     actions.selectTask(null)
     actions.closeTaskDetail()
+    selectedTaskIds.value.clear()
     if (isDragging.value) {
       cancelDrag()
     }
@@ -1114,6 +1602,36 @@ const handleBeforeUnload = (e) => {
   }
 }
 
+// 更新容器尺寸
+const updateContainerSize = () => {
+  if (ganttContainer.value) {
+    const rect = ganttContainer.value.getBoundingClientRect()
+    // 只设置宽度，让高度通过 flex 自适应
+    actions.setContainerSize(rect.width, null)
+  }
+}
+
+// 窗口大小改变时的处理
+const handleWindowResize = () => {
+  // 使用防抖来避免频繁更新
+  if (resizeTimer) {
+    clearTimeout(resizeTimer)
+  }
+  resizeTimer = setTimeout(() => {
+    updateContainerSize()
+  }, 200)
+}
+
+// ==================== 监听 props 变化 ====================
+// 监听 scheduleData 变化（当任务更新时，父组件会重新加载 scheduleData）
+watch(() => props.scheduleData, (newData) => {
+  console.log('GanttChart - scheduleData changed, reformatting tasks')
+  if (newData) {
+    state.scheduleData = newData
+    actions.formatTasks()
+  }
+}, { deep: true })
+
 onMounted(() => {
   console.log('GanttChart - mounted with refactored components and store')
   // 同步 scheduleData 到 store 并格式化任务
@@ -1123,13 +1641,27 @@ onMounted(() => {
   // 加载资源库
   actions.loadResources()
 
-  // 添加全屏状态变化监听
-  document.addEventListener('fullscreenchange', handleFullscreenChange)
-  document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
-  document.addEventListener('mozfullscreenchange', handleFullscreenChange)
-  document.addEventListener('MSFullscreenChange', handleFullscreenChange)
+  // 初始化容器尺寸
+  updateContainerSize()
+
+  // 添加容器尺寸监听
+  resizeObserver = new ResizeObserver(() => {
+    updateContainerSize()
+  })
+  if (ganttContainer.value) {
+    resizeObserver.observe(ganttContainer.value)
+  }
+
+  // 添加窗口大小监听
+  window.addEventListener('resize', handleWindowResize)
+
   // 添加页面离开前的警告
   window.addEventListener('beforeunload', handleBeforeUnload)
+
+  // 监听依赖关系错误事件 - 保存取消订阅函数
+  unsubscribeDependencyError = eventBus.on(GanttEvents.DEPENDENCY_ERROR, ({ message }) => {
+    ElMessage.warning(message)
+  })
 })
 
 onUnmounted(() => {
@@ -1141,13 +1673,24 @@ onUnmounted(() => {
   if (state.isResizing) {
     handleResizeEnd()
   }
-  // 移除全屏状态变化监听
-  document.removeEventListener('fullscreenchange', handleFullscreenChange)
-  document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
-  document.removeEventListener('mozfullscreenchange', handleFullscreenChange)
-  document.removeEventListener('MSFullscreenChange', handleFullscreenChange)
+  // 清理 ResizeObserver
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+  // 移除窗口大小监听
+  window.removeEventListener('resize', handleWindowResize)
+  if (resizeTimer) {
+    clearTimeout(resizeTimer)
+    resizeTimer = null
+  }
   // 移除页面离开前的警告
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  // 移除依赖关系错误监听 - 使用取消订阅函数
+  if (unsubscribeDependencyError) {
+    unsubscribeDependencyError()
+    unsubscribeDependencyError = null
+  }
   // 清理自动保存计时器
   actions.stopAutoSave()
 })
@@ -1179,19 +1722,57 @@ watch(
     actions.filterTasks(newKeyword)
   }
 )
+
+// 监听 store 中的资源对话框状态变化
+watch(
+  () => state.resourceDialogVisible,
+  (val) => {
+    resourceDialogVisible.value = val
+  }
+)
+
+// 双向同步：本地 ref → store
+watch(resourceDialogVisible, (val) => {
+  state.resourceDialogVisible = val
+})
+
+watch(
+  () => state.resourceManagementDialogVisible,
+  (val) => {
+    resourceManagementDialogVisible.value = val
+  }
+)
+
+// 双向同步：本地 ref → store
+watch(resourceManagementDialogVisible, (val) => {
+  state.resourceManagementDialogVisible = val
+})
+
+watch(
+  () => state.currentTaskForResource,
+  (val) => {
+    currentTaskForResource.value = val
+  }
+)
 </script>
 
 <style scoped>
 .gantt-chart {
-  height: 100vh;
-  max-height: 100vh;
+  flex: 1;
   display: flex;
   flex-direction: column;
   background: #fff;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
+  border: none;
+  border-radius: 0;
   overflow: hidden;
   outline: none;
+  min-height: 0;
+}
+
+/* 确保工具栏和统计信息不被压缩 */
+.gantt-chart :deep(.gantt-toolbar),
+.gantt-chart :deep(.gantt-stats) {
+  flex-shrink: 0;
 }
 
 /* 甘特图容器 */
@@ -1202,7 +1783,6 @@ watch(
   flex-direction: column;
   position: relative;
   min-width: 600px;
-  /* 充满可用空间 */
   min-height: 0;
 }
 
@@ -1218,6 +1798,15 @@ watch(
 
 .gantt-container.is-resizing .gantt-header-container {
   pointer-events: none;
+}
+
+/* 平移模式 */
+.gantt-container.is-pan-mode {
+  cursor: grab;
+}
+
+.gantt-container.is-pan-mode:active {
+  cursor: grabbing;
 }
 
 /* 调整大小手柄 */
@@ -1291,7 +1880,7 @@ watch(
   bottom: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 9998;
+  z-index: 1000; /* 降低 z-index，避免覆盖 Element Plus 弹出层 */
   border-radius: 0;
   overflow: hidden;
 }

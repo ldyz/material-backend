@@ -2,10 +2,14 @@ package progress
 
 import (
 	"encoding/json"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// JSON is a type alias for json.RawMessage
+type JSON = json.RawMessage
 
 // Suggestion represents an AI-powered suggestion for schedule optimization
 type Suggestion struct {

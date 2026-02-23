@@ -221,7 +221,7 @@ import {
 } from '@element-plus/icons-vue'
 import { progressApi } from '@/api'
 import { useUndoRedoStore } from '@/stores/undoRedoStore'
-import { BatchUpdateCommand } from '@/stores/undoRedoStore'
+import { BatchUpdateTasksCommand } from '@/commands/taskCommands'
 import eventBus, { GanttEvents } from '@/utils/eventBus'
 import { addDays, diffDays } from '@/utils/dateFormat'
 
@@ -252,10 +252,7 @@ const emit = defineEmits(['update:modelValue', 'updated'])
 const undoRedoStore = useUndoRedoStore()
 
 // State
-const dialogVisible = computed({
-  get: () => props.modelValue,
-  set: (val) => emit('update:modelValue', val)
-})
+const dialogVisible = ref(false)
 
 const selectedTasks = ref([])
 const selectedFields = ref([])
@@ -434,7 +431,7 @@ async function handleApply() {
         updates: {},
         originalData: {
           id: task.id,
-          task_name: task.name,
+          name: task.name,
           status: task.status,
           priority: task.priority,
           progress: task.progress || 0,
@@ -539,6 +536,8 @@ async function handleApply() {
  * Close dialog
  */
 function handleClose() {
+  dialogVisible.value = false
+  // Don't emit here - let the watch handle it
   selectedFields.value = []
   formData.value = {
     status: '',
@@ -551,7 +550,6 @@ function handleClose() {
   }
   adjustRelative.value = false
   showAllChanges.value = false
-  emit('update:modelValue', false)
 }
 
 /**
@@ -581,12 +579,18 @@ watch(() => props.tasks, (tasks) => {
   selectedTasks.value = [...tasks]
 }, { immediate: true })
 
-// Watch for dialog open
-watch(() => props.modelValue, (val) => {
-  if (val) {
+// Watch modelValue changes
+watch(() => props.modelValue, (newVal) => {
+  dialogVisible.value = newVal
+  if (newVal) {
     loadUsers()
     selectedTasks.value = [...props.tasks]
   }
+})
+
+// Sync dialogVisible back to parent (for v-model)
+watch(dialogVisible, (newVal) => {
+  emit('update:modelValue', newVal)
 })
 </script>
 

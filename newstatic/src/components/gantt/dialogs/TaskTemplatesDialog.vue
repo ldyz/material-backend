@@ -409,7 +409,7 @@ import {
 } from '@element-plus/icons-vue'
 import { progressApi } from '@/api'
 import { useUndoRedoStore } from '@/stores/undoRedoStore'
-import { CreateTaskCommand } from '@/stores/undoRedoStore'
+import { CreateTaskCommand } from '@/commands/taskCommands'
 import eventBus, { GanttEvents } from '@/utils/eventBus'
 
 /**
@@ -439,10 +439,7 @@ const emit = defineEmits(['update:modelValue', 'created', 'template-selected'])
 const undoRedoStore = useUndoRedoStore()
 
 // State
-const dialogVisible = computed({
-  get: () => props.modelValue,
-  set: (val) => emit('update:modelValue', val)
-})
+const dialogVisible = ref(false)
 
 const activeTab = ref('preset')
 const selectedTemplate = ref(null)
@@ -644,7 +641,7 @@ async function useTemplate(template) {
     // Build task data from template
     const taskData = {
       project_id: props.projectId,
-      task_name: template.name || quickForm.value.name,
+      name: template.name || quickForm.value.name,
       start_date: template.defaultStartDate || props.startDate,
       duration: template.defaultDuration,
       progress: template.defaultProgress || 0,
@@ -686,7 +683,7 @@ async function handleQuickCreate() {
 
     const taskData = {
       project_id: props.projectId,
-      task_name: quickForm.value.name,
+      name: quickForm.value.name,
       start_date: quickForm.value.startDate,
       duration: quickForm.value.type === 'milestone' ? 0 : quickForm.value.duration,
       progress: quickForm.value.progress,
@@ -855,10 +852,24 @@ function resetQuickForm() {
  * Close dialog
  */
 function handleClose() {
+  dialogVisible.value = false
+  // Don't emit here - let the watch handle it
   selectedTemplate.value = null
   resetQuickForm()
-  emit('update:modelValue', false)
 }
+
+// Watch modelValue changes
+watch(() => props.modelValue, (newVal) => {
+  dialogVisible.value = newVal
+  if (newVal) {
+    loadCustomTemplates()
+  }
+})
+
+// Sync dialogVisible back to parent (for v-model)
+watch(dialogVisible, (newVal) => {
+  emit('update:modelValue', newVal)
+})
 
 /**
  * Helper functions
@@ -909,12 +920,18 @@ function disabledDate(time) {
   return time.getTime() < today.getTime()
 }
 
-// Lifecycle
-watch(() => props.modelValue, (val) => {
-  if (val) {
+// Watch modelValue changes
+watch(() => props.modelValue, (newVal) => {
+  dialogVisible.value = newVal
+  if (newVal) {
     loadCustomTemplates()
     quickForm.value.startDate = props.startDate
   }
+})
+
+// Sync dialogVisible back to parent (for v-model)
+watch(dialogVisible, (newVal) => {
+  emit('update:modelValue', newVal)
 })
 
 // Initialize

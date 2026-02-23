@@ -136,6 +136,8 @@
         :search-keyword="searchKeyword"
         :is-dragging="isDragging"
         :dragged-task="draggedTask"
+        :preview-task="dragResult.previewTask.value"
+        :drag-mode="dragResult.dragMode.value"
         :tooltip-visible="tooltipVisible"
         :tooltip-position="tooltipPosition"
         :tooltip-text="tooltipText"
@@ -467,12 +469,33 @@ const handleDragChange = (preview) => {
 
 const handleDragEnd = async (newTask, originalTask) => {
   try {
+    // First apply local changes and update state
     actions.endDrag(newTask, originalTask)
-    announce('任务位置已更改，记得保存')
-    statusBarRef.value?.showStatus('任务位置已更改，记得保存', 'info', 2000)
+
+    // Get the pending update data
+    const pendingUpdate = state.pendingTaskUpdates.get(originalTask.id)
+    if (!pendingUpdate) {
+      console.warn('No pending update found for task:', originalTask.id)
+      return
+    }
+
+    // Auto-save to backend (like Network diagram does)
+    console.log('[GanttDrag] Auto-saving task changes:', pendingUpdate)
+    await progressApi.update(originalTask.id, pendingUpdate)
+
+    // Clear pending update after successful save
+    state.pendingTaskUpdates.delete(originalTask.id)
+    state.hasUnsavedChanges = state.pendingTaskUpdates.size > 0
+
+    // Reload data to reflect changes
+    await actions.loadData()
+
+    announce('任务位置已保存')
+    statusBarRef.value?.showStatus('任务位置已保存', 'success', 2000)
+    ElMessage.success('任务位置已保存')
   } catch (error) {
     console.error('处理任务拖拽失败:', error)
-    ElMessage.error('处理任务拖拽失败')
+    ElMessage.error('保存任务失败: ' + (error.response?.data?.error || error.message || '未知错误'))
   }
 }
 
@@ -539,12 +562,9 @@ const handleTaskDblClick = (task) => {
   actions.openEditDialog(task)
 }
 
-const handleTaskMouseDown = (event, taskOrId) => {
+const handleTaskMouseDown = (event, task, taskBar) => {
   if (event.button !== 0) return
-  const taskId = typeof taskOrId === 'object' ? taskOrId.id : taskOrId
-  const task = filteredTasks.value.find(t => t.id === taskId)
-  if (!task) return
-  startDrag(event, task)
+  startDrag(event, task, taskBar)
 }
 
 const handleSearch = (value) => {
@@ -815,7 +835,7 @@ const handleContextMenuDuplicate = async (task) => {
   try {
     const newTask = {
       project_id: props.projectId,
-      task_name: `${task.name} (副本)`,
+      name: `${task.name} (副本)`,
       start_date: task.start,
       end_date: task.end,
       progress: 0,
@@ -843,7 +863,7 @@ const handleAddSubtask = async (parentTask) => {
   try {
     const newTask = {
       project_id: props.projectId,
-      task_name: `${parentTask.name} - 子任务`,
+      name: `${parentTask.name} - 子任务`,
       start_date: parentTask.start,
       end_date: parentTask.end,
       progress: 0,
@@ -971,7 +991,7 @@ const handleSaveTask = async (formData) => {
 
     const taskData = {
       project_id: props.projectId,
-      task_name: formData.name,
+      name: formData.name,
       start_date: formData.start,
       end_date: formData.end,
       progress: formData.progress,
@@ -1023,7 +1043,7 @@ const handleDuplicateTask = async () => {
   try {
     const newTask = {
       project_id: props.projectId,
-      task_name: `${task.name} (副本)`,
+      name: `${task.name} (副本)`,
       start_date: task.start,
       end_date: task.end,
       progress: 0,
@@ -1058,6 +1078,8 @@ const handleDeleteTask = async () => {
 
     statusBarRef.value?.showStatus('正在删除任务...', 'loading')
     await progressApi.delete(task.id)
+    // 重新加载数据以更新任务列表
+    await actions.loadData()
     ElMessage.success('任务已删除')
     announce('任务已删除')
     statusBarRef.value?.showStatus('任务已删除', 'success', 2000)

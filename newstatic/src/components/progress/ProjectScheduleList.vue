@@ -73,7 +73,7 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="300" fixed="right">
+      <el-table-column label="操作" width="380" fixed="right">
         <template #default="scope">
           <!-- 只对有子项目权限的项目显示操作 -->
           <template v-if="!scope.row.children || scope.row.children.length === 0">
@@ -95,6 +95,16 @@
               @click="handleViewNetwork(scope.row)"
             >
               网络图
+            </el-button>
+
+            <!-- 删除进度计划 - 只在已创建进度计划时显示 -->
+            <el-button
+              v-if="scope.row.has_schedule"
+              type="danger"
+              size="small"
+              @click="handleDeleteSchedule(scope.row)"
+            >
+              删除计划
             </el-button>
 
             <!-- 创建进度计划 - 只在未创建进度计划时显示 -->
@@ -144,7 +154,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['view-gantt', 'view-network', 'create-schedule'])
+const emit = defineEmits(['view-gantt', 'view-network', 'create-schedule', 'delete-schedule', 'generate-plan'])
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -182,6 +192,11 @@ const handleViewNetwork = (project) => {
 // 创建进度计划
 const handleCreateSchedule = (project) => {
   emit('create-schedule', project.id)
+}
+
+// 删除进度计划
+const handleDeleteSchedule = (project) => {
+  emit('delete-schedule', project.id)
 }
 
 // 生成计划

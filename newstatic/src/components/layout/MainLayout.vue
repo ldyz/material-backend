@@ -122,7 +122,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, shallowRef, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
@@ -304,9 +304,9 @@ const menuConfig = [
   }
 ]
 
-// 可见菜单 - 使用 ref 而非 computed，避免响应式循环
+// 可见菜单 - 使用 shallowRef 避免图标组件被包装成响应式对象
 // 在组件挂载时一次性计算，不响应权限变化
-const visibleMenus = ref([])
+const visibleMenus = shallowRef([])
 
 // 初始化菜单
 const initMenus = () => {
@@ -506,8 +506,11 @@ const handleResize = () => {
 .layout-content {
   background: #f5f7fa;
   padding: 20px;
-  overflow-y: auto;
+  overflow: hidden;  /* 改为 hidden，让内部内容处理滚动 */
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* 过渡动画 */

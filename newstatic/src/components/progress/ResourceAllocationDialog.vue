@@ -4,7 +4,6 @@
     title="分配资源"
     width="700px"
     :close-on-click-modal="false"
-    @close="handleClose"
   >
     <!-- 已分配资源列表 -->
     <div class="allocated-resources">
@@ -313,7 +312,7 @@ const handleSave = async () => {
 // 关闭对话框
 const handleClose = () => {
   visible.value = false
-  emit('update:modelValue', false)
+  // Don't emit here - let the watch handle it
 }
 
 // 监听显示状态
@@ -325,10 +324,9 @@ watch(() => props.modelValue, (val) => {
   }
 })
 
+// Sync visible back to parent (for v-model)
 watch(visible, (val) => {
-  if (!val) {
-    emit('update:modelValue', false)
-  }
+  emit('update:modelValue', val)
 })
 </script>
 

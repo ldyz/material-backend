@@ -351,7 +351,7 @@ const handleResolveConflict = async (conflict) => {
 
 const handleClose = () => {
   dialogVisible.value = false
-  emit('update:modelValue', false)
+  // Don't emit here - let the watch handle it
   nextTick(() => {
     conflicts.value = []
     showPreview.value = false
@@ -368,6 +368,7 @@ watch(() => props.modelValue, (newVal) => {
   }
 })
 
+// Sync dialogVisible back to parent (for v-model)
 watch(dialogVisible, (newVal) => {
   emit('update:modelValue', newVal)
 })

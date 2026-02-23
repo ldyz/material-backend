@@ -47,7 +47,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTour } from '@vueuse/integrations/useTour'
 import { QuestionFilled, CircleCheck, Close } from '@element-plus/icons-vue'
@@ -99,6 +99,9 @@ const { t } = useI18n()
 const tourRef = ref(null)
 const showCompleteDialog = ref(false)
 const currentTourType = ref(props.tourType)
+
+// 定时器引用
+let autoStartTimer = null
 
 // Current tour steps
 const currentSteps = computed(() => getTourSteps(currentTourType.value))
@@ -230,9 +233,27 @@ watch(() => props.tourType, (newType) => {
 // Auto-start on mount if configured
 onMounted(() => {
   if (props.autoStart && !isTourCompleted(props.tourType)) {
-    setTimeout(() => {
+    autoStartTimer = setTimeout(() => {
       startTour()
+      autoStartTimer = null
     }, props.startDelay)
+  }
+})
+
+// 清理定时器和 tour
+onUnmounted(() => {
+  if (autoStartTimer) {
+    clearTimeout(autoStartTimer)
+    autoStartTimer = null
+  }
+  // 停止 tour（如果正在运行）
+  if (tourRef.value) {
+    try {
+      tourRef.value.stop?.()
+      tourRef.value.skip?.()
+    } catch (e) {
+      // 忽略清理时的错误
+    }
   }
 })
 

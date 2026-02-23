@@ -2,6 +2,7 @@ package progress
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -125,6 +126,8 @@ func (h *ProgressHandler) CreateTask(c *gin.Context) {
 		IsMilestone bool      `json:"is_milestone"`
 		ParentID    *uint     `json:"parent_id"`
 		SortOrder   int       `json:"sort_order"`
+		Priority    string    `json:"priority"`
+		Status      string    `json:"status"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -161,6 +164,8 @@ func (h *ProgressHandler) CreateTask(c *gin.Context) {
 		IsMilestone: req.IsMilestone,
 		ParentID:    req.ParentID,
 		SortOrder:   req.SortOrder,
+		Priority:    req.Priority,
+		Status:      req.Status,
 	}
 
 	if err := h.db.Create(&task).Error; err != nil {
@@ -479,6 +484,9 @@ func (h *ProgressHandler) UpdateTask(c *gin.Context) {
 		return
 	}
 
+	// 调试：打印接收到的数据
+	log.Printf("[UpdateTask] 接收到数据: taskID=%s, req=%#v", taskID, req)
+
 	updates := make(map[string]any)
 
 	if v, ok := req["name"].(string); ok {
@@ -516,10 +524,115 @@ func (h *ProgressHandler) UpdateTask(c *gin.Context) {
 			updates["end_date"] = t
 		}
 	}
+	if v, ok := req["priority"].(string); ok {
+		updates["priority"] = v
+	}
+	if v, ok := req["status"].(string); ok {
+		updates["status"] = v
+	}
+	if v, ok := req["description"].(string); ok {
+		updates["description"] = v
+	}
 
 	if err := h.db.Model(&task).Updates(updates).Error; err != nil {
 		response.InternalError(c, "更新任务失败")
 		return
+	}
+
+	// 处理依赖关系更新（predecessor_ids 和 successor_ids）
+	// 只有在请求中包含 predecessor_ids 或 successor_ids 时才更新依赖关系
+	hasPredecessors := false
+	hasSuccessors := false
+
+	if _, ok := req["predecessor_ids"]; ok {
+		hasPredecessors = true
+	}
+	if _, ok := req["successor_ids"]; ok {
+		hasSuccessors = true
+	}
+
+	// 只有在明确要求更新依赖关系时才删除旧的
+	if hasPredecessors || hasSuccessors {
+		// 先删除该任务的所有旧依赖关系
+		h.db.Where("task_id = ?", task.ID).Delete(&TaskDependency{})
+		h.db.Where("depends_on = ?", task.ID).Delete(&TaskDependency{})
+	}
+
+	// 处理前置任务（predecessor_ids）
+	if predecessorIDs, ok := req["predecessor_ids"].([]interface{}); ok {
+		for _, predItem := range predecessorIDs {
+			if predMap, ok := predItem.(map[string]interface{}); ok {
+				var taskIDFloat, lagFloat float64
+				var depType string
+
+				if tid, ok := predMap["task_id"].(float64); ok {
+					taskIDFloat = tid
+				}
+				if l, ok := predMap["lag"].(float64); ok {
+					lagFloat = l
+				}
+				if t, ok := predMap["type"].(string); ok {
+					depType = t
+				}
+				if depType == "" {
+					depType = "FS"
+				}
+
+				if taskIDFloat > 0 {
+					dep := TaskDependency{
+						TaskID:    task.ID,
+						DependsOn: uint(taskIDFloat),
+						Type:      depType,
+						Lag:       int(lagFloat),
+					}
+					if err := h.db.Create(&dep).Error; err != nil {
+						log.Printf("[UpdateTask] 创建前置依赖失败: %v", err)
+					}
+				}
+			}
+		}
+	}
+
+	// 处理后置任务（successor_ids）- 这些实际上是反向的依赖关系
+	if successorIDs, ok := req["successor_ids"].([]interface{}); ok {
+		for _, succItem := range successorIDs {
+			if succMap, ok := succItem.(map[string]interface{}); ok {
+				var taskIDFloat, lagFloat float64
+				var depType string
+
+				if tid, ok := succMap["task_id"].(float64); ok {
+					taskIDFloat = tid
+				}
+				if l, ok := succMap["lag"].(float64); ok {
+					lagFloat = l
+				}
+				if t, ok := succMap["type"].(string); ok {
+					depType = t
+				}
+				if depType == "" {
+					depType = "FS"
+				}
+
+				if taskIDFloat > 0 {
+					// 后置任务意味着：当前任务是 successor 的前置任务
+					// 所以应该是 successor.TaskID 依赖当前任务
+					dep := TaskDependency{
+						TaskID:    uint(taskIDFloat), // 后置任务ID
+						DependsOn: task.ID,           // 当前任务ID
+						Type:     depType,
+						Lag:      int(lagFloat),
+					}
+					if err := h.db.Create(&dep).Error; err != nil {
+						log.Printf("[UpdateTask] 创建后置依赖失败: %v", err)
+					}
+				}
+			}
+		}
+	}
+
+	// 调试：打印更新后的 parent_id
+	if val, ok := updates["parent_id"]; ok {
+		log.Printf("[UpdateTask] 更新后的 parent_id: %v", val)
 	}
 
 	// 获取更新前的 parent_id（如果存在）
@@ -1027,27 +1140,14 @@ func (h *ProgressHandler) GetProjectSchedule(c *gin.Context) {
 		return
 	}
 
-	// 首先尝试从 project_schedules 表获取
-	var schedule ProjectSchedule
-	err := h.db.Where("project_id = ?", projectID).First(&schedule).Error
-
-	if err == gorm.ErrRecordNotFound {
-		// 没有找到 schedule 数据，从 tasks 表动态生成
-		scheduleData, err := h.generateScheduleFromTasks(projectID)
-		if err != nil {
-			response.InternalError(c, "生成进度计划失败")
-			return
-		}
-		response.Success(c, scheduleData)
-		return
-	}
-
+	// 总是从 tasks 表动态生成，确保数据是最新的（包括 parent_id 等字段）
+	scheduleData, err := h.generateScheduleFromTasks(projectID)
 	if err != nil {
-		response.InternalError(c, "查询失败")
+		response.InternalError(c, "生成进度计划失败")
 		return
 	}
 
-	response.Success(c, schedule.Data)
+	response.Success(c, scheduleData)
 }
 
 // GetAllProjectSchedules 获取所有项目进度计划状态
@@ -1159,12 +1259,79 @@ func (h *ProgressHandler) DeleteProjectSchedule(c *gin.Context) {
 		return
 	}
 
-	err := h.db.Where("project_id = ?", projectID).Delete(&ProjectSchedule{}).Error
+	// 转换项目ID为整数
+	projectIDInt, err := strconv.ParseUint(projectID, 10, 32)
 	if err != nil {
+		response.BadRequest(c, "项目ID格式无效")
+		return
+	}
+
+	// 开始事务
+	tx := h.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 获取项目的所有任务ID
+	var taskIDs []uint
+	if err := tx.Model(&Task{}).Where("project_id = ?", projectIDInt).Pluck("id", &taskIDs).Error; err != nil {
+		tx.Rollback()
+		response.InternalError(c, "查询任务失败")
+		return
+	}
+
+	// 记录删除前的任务数量
+	fmt.Printf("[DeleteProjectSchedule] 项目ID=%d, 找到任务数量=%d\n", projectIDInt, len(taskIDs))
+
+	// 如果有任务，删除相关的依赖关系
+	if len(taskIDs) > 0 {
+		// 删除作为前置任务的依赖关系
+		result1 := tx.Where("task_id IN ?", taskIDs).Delete(&TaskDependency{})
+		if result1.Error != nil {
+			tx.Rollback()
+			response.InternalError(c, "删除依赖关系失败")
+			return
+		}
+		fmt.Printf("[DeleteProjectSchedule] 删除前置依赖关系，影响行数=%d\n", result1.RowsAffected)
+
+		// 删除作为后置任务的依赖关系
+		result2 := tx.Where("depends_on IN ?", taskIDs).Delete(&TaskDependency{})
+		if result2.Error != nil {
+			tx.Rollback()
+			response.InternalError(c, "删除依赖关系失败")
+			return
+		}
+		fmt.Printf("[DeleteProjectSchedule] 删除后置依赖关系，影响行数=%d\n", result2.RowsAffected)
+
+		// 删除任务
+		result3 := tx.Where("project_id = ?", projectIDInt).Delete(&Task{})
+		if result3.Error != nil {
+			tx.Rollback()
+			response.InternalError(c, "删除任务失败")
+			return
+		}
+		fmt.Printf("[DeleteProjectSchedule] 删除任务，影响行数=%d\n", result3.RowsAffected)
+	}
+
+	// 删除进度计划记录
+	result4 := tx.Where("project_id = ?", projectIDInt).Delete(&ProjectSchedule{})
+	if result4.Error != nil {
+		tx.Rollback()
+		response.InternalError(c, "删除进度计划失败")
+		return
+	}
+	fmt.Printf("[DeleteProjectSchedule] 删除进度计划记录，影响行数=%d\n", result4.RowsAffected)
+
+	// 提交事务
+	if err := tx.Commit().Error; err != nil {
+		fmt.Printf("[DeleteProjectSchedule] 提交事务失败: %v\n", err)
 		response.InternalError(c, "删除失败")
 		return
 	}
 
+	fmt.Printf("[DeleteProjectSchedule] 删除成功\n")
 	response.SuccessOnlyMessage(c, "删除成功")
 }
 
@@ -1240,6 +1407,7 @@ func (h *ProgressHandler) generateScheduleFromTasks(projectID string) (*Schedule
 		// 创建 activity
 		activities[taskID] = Activity{
 			ID:            taskID,
+			TaskID:        task.ID, // 数字类型的任务ID
 			Name:          task.Name,
 			Duration:      duration / 86400, // 转换为天
 			FromNode:      "",
@@ -1258,6 +1426,7 @@ func (h *ProgressHandler) generateScheduleFromTasks(projectID string) (*Schedule
 			Priority:      task.Priority,
 			Predecessors:  []int{},   // 初始化前置任务数组
 			Successors:    []int{},   // 初始化后置任务数组
+			ParentID:      task.ParentID, // 父任务ID
 			SortOrder:     int(task.SortOrder),
 		}
 	}

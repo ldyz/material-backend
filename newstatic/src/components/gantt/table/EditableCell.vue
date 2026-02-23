@@ -222,6 +222,9 @@ const inputRef = ref(null)
 const validationError = ref('')
 const isSaving = ref(false)
 
+// 定时器引用
+let selectTimeout = null
+
 // Computed
 const displayValue = computed(() => {
   if (props.displayFormat) {
@@ -269,10 +272,15 @@ function startEditing() {
       inputRef.value.focus()
       // For select, we need to focus and then show the dropdown
       if (props.type === 'select' && inputRef.value.focus) {
-        setTimeout(() => {
+        // 清理之前的定时器
+        if (selectTimeout) {
+          clearTimeout(selectTimeout)
+        }
+        selectTimeout = setTimeout(() => {
           if (inputRef.value?.blur) {
             // The select dropdown will show automatically on focus
           }
+          selectTimeout = null
         }, 100)
       }
     }
@@ -473,6 +481,11 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
+  // 清理 select 定时器
+  if (selectTimeout) {
+    clearTimeout(selectTimeout)
+    selectTimeout = null
+  }
 })
 </script>
 

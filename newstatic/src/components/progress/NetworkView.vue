@@ -112,6 +112,7 @@
                 fill="none"
                 :marker-end="`url(#${task.marker})`"
                 class="task-arrow-real"
+                @contextmenu="handleTaskContextMenu($event, task)"
               />
 
               <!-- 自由时差（波形线部分） -->
@@ -176,6 +177,7 @@
               class="node-group"
               @mousedown="handleNodeMouseDown($event, node)"
               @click="handleNodeClick($event, node)"
+              @contextmenu="handleNodeContextMenu($event, node)"
             >
               <!-- 节点圆形背景 -->
               <circle
@@ -367,7 +369,9 @@ const emit = defineEmits([
   'task-click',
   'task-dblclick',
   'zoom-change',
-  'pan-change'
+  'pan-change',
+  'node-contextmenu',
+  'task-contextmenu'
 ])
 
 // Refs
@@ -734,12 +738,44 @@ function handleNodeClick(event, node) {
   emit('node-click', node)
 }
 
+// 节点右键菜单
+function handleNodeContextMenu(event, node) {
+  event.preventDefault()
+  event.stopPropagation()
+  selectedNodeId.value = node.id
+  selectedTaskId.value = null
+
+  // 触发右键菜单事件，传递节点和鼠标位置
+  emit('node-contextmenu', {
+    event,
+    node,
+    x: event.clientX,
+    y: event.clientY
+  })
+}
+
 // 任务点击
 function handleTaskClick(event, task) {
   event.stopPropagation()
   selectedTaskId.value = task.id
   selectedNodeId.value = null
   emit('task-click', task)
+}
+
+// 任务右键菜单
+function handleTaskContextMenu(event, task) {
+  event.preventDefault()
+  event.stopPropagation()
+  selectedTaskId.value = task.id
+  selectedNodeId.value = null
+
+  // 触发右键菜单事件，传递任务和鼠标位置
+  emit('task-contextmenu', {
+    event,
+    task,
+    x: event.clientX,
+    y: event.clientY
+  })
 }
 
 // 任务双击

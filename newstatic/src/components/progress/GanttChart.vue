@@ -209,6 +209,8 @@
           @task-dblclick="handleNetworkTaskDblClick"
           @zoom-change="handleNetworkZoom"
           @pan-change="handleNetworkPan"
+          @node-contextmenu="handleNetworkNodeContextMenu"
+          @task-contextmenu="handleNetworkTaskContextMenu"
         />
       </div>
     </div>
@@ -1103,6 +1105,33 @@ const handleNetworkTaskDblClick = (task) => {
   actions.selectTask(task.id)
   actions.editTask(state.tasks.find(t => t.id === task.id))
 }
+
+// 网络图节点右键菜单
+const handleNetworkNodeContextMenu = ({ event, node, x, y }) => {
+  // 节点代表事件，显示事件信息
+  const nodeTasks = formattedTasks.value.filter(task => {
+    const taskStart = new Date(task.start)
+    const taskEnd = new Date(task.end)
+    const timelineStart = timelineDays.value[0]?.date
+    if (!timelineStart) return false
+
+    const startDays = Math.ceil((taskStart - new Date(timelineStart)) / (1000 * 60 * 60 * 24))
+    const endDays = Math.ceil((taskEnd - new Date(timelineStart)) / (1000 * 60 * 60 * 24))
+
+    return startDays === node.days || endDays === node.days
+  })
+
+  ElMessage.info(`节点 ${node.number}: 关联 ${nodeTasks.length} 个任务`)
+}
+
+// 网络图任务连线右键菜单
+const handleNetworkTaskContextMenu = ({ event, task, x, y }) => {
+  // 设置右键菜单任务
+  contextMenuTask.value = state.tasks.find(t => t.id === task.id)
+  contextMenuPosition.value = { x, y }
+  contextMenuVisible.value = true
+}
+
 const toggleGroup = (groupName) => actions.toggleGroup(groupName)
 
 // 刷新

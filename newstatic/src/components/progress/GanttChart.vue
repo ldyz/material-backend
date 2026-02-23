@@ -104,131 +104,93 @@
         />
       </div>
 
-      <!-- 任务列表（可折叠） - 仅在甘特图模式下显示 -->
-      <TaskList
-        v-if="chartViewMode === 'gantt'"
-        :is-collapsed="!showTaskList"
-        :tasks="filteredTasks"
-        :grouped-tasks="groupedTasks"
-        :selected-task-id="selectedTask?.id"
-        :view-mode="viewMode"
-        :timeline-days="timelineDays"
-        :timeline-weeks="timelineWeeks"
-        :timeline-months="timelineMonths"
-        :timeline-quarters="timelineQuarters"
-        :day-width="dayWidth"
-        :row-height="rowHeight"
-        :task-height="taskHeight"
-        :show-dependencies="showDependencies"
-        :show-critical-path="showCriticalPath"
-        :show-baseline="showBaseline"
-        :group-mode="groupMode"
-        :collapsed-groups="collapsedGroups"
-        :visible-dependencies="visibleDependencies"
-        :is-dragging="isDragging"
-        :dragged-task="draggedTask"
-        :tooltip-visible="tooltipVisible"
-        :tooltip-position="tooltipPosition"
-        :tooltip-text="tooltipText"
-        :preview-task="previewTask"
-        :drag-mode="dragMode"
-        :search-keyword="searchKeyword"
-        :timeline-width="timelineWidth"
-        :arrow-marker-id="arrowMarkerId"
-        :arrow-color="arrowColor"
-        :empty-description="emptyDescription"
-        :raw-tasks="formattedTasks"
-        :is-creating-dependency="isCreatingDependency"
-        :source-task-id="dependencySourceTask?.id"
-        :temp-line-end="tempLineEnd"
-        :show-task-names="!showTaskList"
-        @row-click="handleRowClick"
-        @row-dblclick="handleRowDblClick"
-        @task-click="handleTaskClick"
-        @task-dblclick="handleTaskDblClick"
-        @task-mousedown="handleTaskMouseDown"
-        @toggle-group="toggleGroup"
-        @context-menu="handleContextMenu"
-        @dependency-create="handleDependencyCreate"
-        @mousemove="handleTimelineMouseMove"
-        @cell-edit="handleCellEdit"
-        @task-dragged="handleTaskDragged"
-        ref="taskListRef"
-      />
+      <!-- 主体区域：任务表格 + 视图区域 -->
+      <div class="gantt-body" ref="ganttBodyRef">
+        <!-- 左侧：任务表格（始终显示） -->
+        <TaskTable
+          :is-collapsed="!showTaskList"
+          :tasks="filteredTasks"
+          :grouped-tasks="groupedTasks"
+          :selected-task-id="selectedTask?.id"
+          :row-height="rowHeight"
+          :show-critical-path="showCriticalPath"
+          :group-mode="groupMode"
+          :collapsed-groups="collapsedGroups"
+          :empty-description="emptyDescription"
+          @row-click="handleRowClick"
+          @row-dblclick="handleRowDblClick"
+          @toggle-group="toggleGroup"
+          @context-menu="handleContextMenu"
+          @cell-edit="handleCellEdit"
+          @task-dragged="handleTaskDragged"
+        />
 
-      <!-- 网络图视图 - 仅在网络图模式下显示 -->
-      <NetworkView
-        v-if="chartViewMode === 'network'"
-        :tasks="formattedTasks"
-        :dependencies="formattedTasks.flatMap(t =>
-          (t.predecessors || []).map(predId => ({
-            task_id: t.id,
-            depends_on: predId,
-            type: 'FS',
-            is_critical: t.is_critical
-          }))
-        )"
-        :show-critical-path="showCriticalPath"
-        :show-task-names="true"
-        :show-time-params="false"
-        :show-slack="false"
-        :svg-width="Math.max(2000, timelineWidth)"
-        :svg-height="1200"
-        :node-radius="18"
-        @node-click="handleNetworkNodeClick"
-        @node-dblclick="handleNetworkNodeDblClick"
-        @edge-click="handleNetworkEdgeClick"
-        @task-updated="handleNetworkTaskUpdated"
-      />
-      <TaskList
-        :is-collapsed="!showTaskList"
-        :tasks="filteredTasks"
-        :grouped-tasks="groupedTasks"
-        :selected-task-id="selectedTask?.id"
-        :view-mode="viewMode"
-        :timeline-days="timelineDays"
-        :timeline-weeks="timelineWeeks"
-        :timeline-months="timelineMonths"
-        :timeline-quarters="timelineQuarters"
-        :day-width="dayWidth"
-        :row-height="rowHeight"
-        :task-height="taskHeight"
-        :show-dependencies="showDependencies"
-        :show-critical-path="showCriticalPath"
-        :show-baseline="showBaseline"
-        :group-mode="groupMode"
-        :collapsed-groups="collapsedGroups"
-        :visible-dependencies="visibleDependencies"
-        :is-dragging="isDragging"
-        :dragged-task="draggedTask"
-        :tooltip-visible="tooltipVisible"
-        :tooltip-position="tooltipPosition"
-        :tooltip-text="tooltipText"
-        :preview-task="previewTask"
-        :drag-mode="dragMode"
-        :search-keyword="searchKeyword"
-        :timeline-width="timelineWidth"
-        :arrow-marker-id="arrowMarkerId"
-        :arrow-color="arrowColor"
-        :empty-description="emptyDescription"
-        :raw-tasks="formattedTasks"
-        :is-creating-dependency="isCreatingDependency"
-        :source-task-id="dependencySourceTask?.id"
-        :temp-line-end="tempLineEnd"
-        :show-task-names="!showTaskList"
-        @row-click="handleRowClick"
-        @row-dblclick="handleRowDblClick"
-        @task-click="handleTaskClick"
-        @task-dblclick="handleTaskDblClick"
-        @task-mousedown="handleTaskMouseDown"
-        @toggle-group="toggleGroup"
-        @context-menu="handleContextMenu"
-        @dependency-create="handleDependencyCreate"
-        @mousemove="handleTimelineMouseMove"
-        @cell-edit="handleCellEdit"
-        @task-dragged="handleTaskDragged"
-        ref="taskListRef"
-      />
+        <!-- 右侧：视图区域（根据视图模式切换） -->
+        <!-- 甘特图时间轴视图 -->
+        <TaskTimeline
+          v-if="chartViewMode === 'gantt'"
+          :show-task-names="!showTaskList"
+          :tasks="filteredTasks"
+          :raw-tasks="formattedTasks"
+          :selected-task-id="selectedTask?.id"
+          :view-mode="viewMode"
+          :timeline-days="timelineDays"
+          :day-width="dayWidth"
+          :row-height="rowHeight"
+          :task-height="taskHeight"
+          :show-dependencies="showDependencies"
+          :show-critical-path="showCriticalPath"
+          :show-baseline="showBaseline"
+          :visible-dependencies="visibleDependencies"
+          :is-dragging="isDragging"
+          :dragged-task="draggedTask"
+          :tooltip-visible="tooltipVisible"
+          :tooltip-position="tooltipPosition"
+          :tooltip-text="tooltipText"
+          :preview-task="previewTask"
+          :drag-mode="dragMode"
+          :today-position="todayPosition"
+          :arrow-marker-id="arrowMarkerId"
+          :arrow-color="arrowColor"
+          :empty-description="emptyDescription"
+          :is-creating-dependency="isCreatingDependency"
+          :source-task-id="dependencySourceTask?.id"
+          :temp-line-end="tempLineEnd"
+          @task-click="handleTaskClick"
+          @task-dblclick="handleTaskDblClick"
+          @task-mousedown="handleTaskMouseDown"
+          @dependency-create="handleDependencyCreate"
+          @mousemove="handleTimelineMouseMove"
+          @task-dragged="handleTaskDragged"
+          @context-menu="handleContextMenu"
+          ref="taskTimelineRef"
+        />
+
+        <!-- 网络图视图 -->
+        <NetworkView
+          v-if="chartViewMode === 'network'"
+          :tasks="formattedTasks"
+          :dependencies="formattedTasks.flatMap(t =>
+            (t.predecessors || []).map(predId => ({
+              task_id: t.id,
+              depends_on: predId,
+              type: 'FS',
+              is_critical: t.is_critical
+            }))
+          )"
+          :show-critical-path="showCriticalPath"
+          :show-task-names="true"
+          :show-time-params="false"
+          :show-slack="false"
+          :svg-width="Math.max(2000, timelineWidth)"
+          :svg-height="1200"
+          :node-radius="18"
+          @node-click="handleNetworkNodeClick"
+          @node-dblclick="handleNetworkNodeDblClick"
+          @edge-click="handleNetworkEdgeClick"
+          @task-updated="handleNetworkTaskUpdated"
+        />
+      </div>
     </div>
 
     <!-- 图例 -->
@@ -352,6 +314,8 @@ import GanttToolbar from './GanttToolbar.vue'
 import GanttStats from './GanttStats.vue'
 import GanttHeader from './GanttHeader.vue'
 import TaskList from './TaskList.vue'
+import TaskTable from './TaskTable.vue'
+import TaskTimeline from './TaskTimeline.vue'
 import NetworkView from './NetworkView.vue'
 import GanttLegend from './GanttLegend.vue'
 import GanttContextMenu from './GanttContextMenu.vue'
@@ -399,7 +363,8 @@ const selectedTaskIds = ref(new Set())
 // ==================== 组件引用 ====================
 const ganttChartRef = ref(null)
 const ganttContainer = ref(null)
-const taskListRef = ref(null)
+const ganttBodyRef = ref(null)
+const taskTimelineRef = ref(null)
 const statusBarRef = ref(null)
 const contextMenuRef = ref(null)
 
@@ -895,7 +860,7 @@ const handlePanStart = (event) => {
   isPanning.value = true
 
   // 获取时间轴滚动区域（ganttBodyRef）
-  const timelineScrollArea = taskListRef.value?.ganttBodyRef?.value
+  const timelineScrollArea = ganttBodyRef?.value
   const currentScrollLeft = timelineScrollArea?.scrollLeft || 0
 
   panStart.value = {
@@ -917,7 +882,7 @@ const handlePanMove = (event) => {
   const newScrollLeft = panStart.value.scrollLeft - deltaX
 
   // 只滚动时间轴区域（ganttBodyRef），不影响任务列表
-  const timelineScrollArea = taskListRef.value?.ganttBodyRef?.value
+  const timelineScrollArea = ganttBodyRef?.value
   if (timelineScrollArea) {
     timelineScrollArea.scrollLeft = newScrollLeft
   }
@@ -1123,7 +1088,7 @@ const handleContextMenu = (eventOrData) => {
       }
       if (!task) {
         // 获取任务索引
-        const ganttBodyRef = taskListRef.value?.ganttBodyRef
+        const ganttBodyRef = ganttBodyRef
         if (ganttBodyRef) {
           const taskRows = Array.from(ganttBodyRef.value?.querySelectorAll('.table-row') || [])
           const taskIndex = taskRows.indexOf(taskRow)
@@ -2003,5 +1968,22 @@ watch(
 
 .gantt-chart.is-fullscreen .gantt-container {
   /* 全屏时也不限制最大高度，让内容撑开 */
+}
+/* 主体区域：任务表格 + 视图区域 */
+.gantt-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* 确保任务表格和视图区域正确布局 */
+.gantt-body > * {
+  flex-shrink: 0;
+}
+
+.gantt-body > *:last-child {
+  flex: 1;
+  overflow: auto;
 }
 </style>

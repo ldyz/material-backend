@@ -6,7 +6,7 @@
       <div class="header-column column-dates">起止时间</div>
       <div class="header-column column-resources">资源</div>
     </div>
-    <div class="header-timeline" :class="timelineHeightClass" ref="timelineHeaderRef">
+    <div class="header-timeline" :class="timelineHeightClass" ref="timelineHeaderRef" :style="{ transform: `translateX(${panOffset}px)` }">
       <!-- 根据时间轴格式动态渲染 -->
       <template v-if="timelineFormat === 'day'">
         <!-- 单层：只显示日期 -->
@@ -203,6 +203,10 @@ const props = defineProps({
   todayPosition: {
     type: Number,
     default: null
+  },
+  panOffset: {
+    type: Number,
+    default: 0
   }
 })
 

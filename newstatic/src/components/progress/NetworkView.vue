@@ -366,7 +366,8 @@ const emit = defineEmits([
   'node-click',
   'task-click',
   'task-dblclick',
-  'zoom-change'
+  'zoom-change',
+  'pan-change'
 ])
 
 // Refs
@@ -389,6 +390,11 @@ const dragStartPos = ref({ x: 0, y: 0 })
 // 选中状态
 const selectedNodeId = ref(null)
 const selectedTaskId = ref(null)
+
+// 监听平移变化，通知父组件
+watch(panX, (newX) => {
+  emit('pan-change', { x: newX, y: panY.value })
+})
 
 // 计算时间轴起始日期
 const timelineStartDate = computed(() => {

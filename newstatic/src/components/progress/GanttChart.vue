@@ -182,6 +182,7 @@
           :timeline-quarters="timelineQuarters"
           :day-width="dayWidth"
           :today-position="todayPosition"
+          :pan-offset="chartViewMode === 'network' ? networkPanX : 0"
         />
       </div>
 
@@ -278,6 +279,7 @@
           @task-click="handleNetworkTaskClick"
           @task-dblclick="handleNetworkTaskDblClick"
           @zoom-change="handleNetworkZoom"
+          @pan-change="handleNetworkPan"
         />
       </div>
     </div>
@@ -525,6 +527,7 @@ const networkShowTimeParams = ref(false)
 const networkShowTaskNames = ref(true)
 const networkShowSlack = ref(false)
 const networkLayoutMode = ref('auto')
+const networkPanX = ref(0) // 网络图水平平移偏移量
 
 // 网络图统计信息
 const networkStats = computed(() => {
@@ -1305,6 +1308,11 @@ const handleNetworkZoom = (newDayWidth) => {
   // 直接更新 state.dayWidth，这样时间标尺也会跟着缩放
   state.dayWidth = newDayWidth
   eventBus.emit(GanttEvents.ZOOM_CHANGED, { width: newDayWidth })
+}
+
+// 网络图平移处理（同步时间轴）
+const handleNetworkPan = (pan) => {
+  networkPanX.value = pan.x
 }
 
 // 右键菜单命令处理

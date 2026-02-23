@@ -43,7 +43,9 @@
           </filter>
         </defs>
 
-        <!-- 网格背景 -->
+        <!-- 主绘图组（应用缩放和平移） -->
+        <g :transform="`translate(${panX}, ${panY}) scale(${zoomLevel})`">
+          <!-- 网格背景 -->
         <g class="grid-background" v-if="showGrid">
           <pattern
             id="gridPattern"
@@ -144,6 +146,7 @@
           stroke-width="2"
           stroke-dasharray="5,5"
         />
+        </g>
       </svg>
     </div>
   </div>
@@ -183,6 +186,19 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  // 视图控制
+  zoomLevel: {
+    type: Number,
+    default: 1
+  },
+  layoutMode: {
+    type: String,
+    default: 'auto'
+  },
+  toolMode: {
+    type: String,
+    default: 'select'
+  },
   // 样式选项
   nodeRadius: {
     type: Number,
@@ -214,7 +230,6 @@ const svgRef = ref(null)
 // 状态
 const showGrid = ref(true)
 const gridSize = ref(20)
-const zoomLevel = ref(1)
 const panX = ref(0)
 const panY = ref(0)
 

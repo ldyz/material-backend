@@ -55,7 +55,88 @@
     />
 
     <!-- 统计信息 -->
-    <GanttStats :stats="taskStats" />
+    <GanttStats v-if="chartViewMode === 'gantt'" :stats="taskStats" />
+
+    <!-- 网络图工具栏（仅在网络图模式显示） -->
+    <div v-if="chartViewMode === 'network'" class="network-toolbar">
+      <!-- 工具模式切换 -->
+      <el-button-group size="small" title="工具模式" style="margin-right: 12px">
+        <el-button
+          @click="networkToolMode = 'select'"
+          :type="networkToolMode === 'select' ? 'primary' : 'default'"
+          title="选择模式"
+        >
+          <el-icon>
+            <svg viewBox="0 0 1024 1024" width="14" height="14">
+              <path d="M896 448H560V112c0-17.7-14.3-32-32-32s-32 14.3-32 32v336H160c-17.7 0-32 14.3-32 32s14.3 32 32 32h336v336c0 17.7 14.3 32 32 32s32-14.3 32-32V512h336c17.7 0 32-14.3 32-32s-14.3-32-32-32z" fill="currentColor"></path>
+            </svg>
+          </el-icon>
+        </el-button>
+        <el-button
+          @click="networkToolMode = 'pan'"
+          :type="networkToolMode === 'pan' ? 'primary' : 'default'"
+          title="平移工具"
+        >
+          <el-icon>
+            <svg viewBox="0 0 1024 1024" width="14" height="14">
+              <path d="M768 256h-64V128c0-17.7-14.3-32-32-32s-32 14.3-32 32v128H384V128c0-17.7-14.3-32-32-32s-32 14.3-32 32v128h-64c-17.7 0-32 14.3-32 32s14.3 32 32 32h64v416c0 17.7 14.3 32 32 32h256v128c0 17.7 14.3 32 32 32s32-14.3 32-32V768h64c17.7 0 32-14.3 32-32s-14.3-32-32-32h-64V320h64c17.7 0 32-14.3 32-32s-14.3-32-32-32z" fill="currentColor"></path>
+            </svg>
+          </el-icon>
+        </el-button>
+      </el-button-group>
+
+      <!-- 缩放控制 -->
+      <el-button-group size="small">
+        <el-button @click="networkZoomOut" title="缩小">
+          <el-icon><ZoomOut /></el-icon>
+        </el-button>
+        <el-button @click="networkZoomReset" title="重置">
+          {{ Math.round(networkZoomLevel * 100) }}%
+        </el-button>
+        <el-button @click="networkZoomIn" title="放大">
+          <el-icon><ZoomIn /></el-icon>
+        </el-button>
+      </el-button-group>
+
+      <!-- 视图选项 -->
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
+        <el-checkbox v-model="showCriticalPath" size="small">关键路径</el-checkbox>
+        <el-checkbox v-model="networkShowTimeParams" size="small">时间参数</el-checkbox>
+        <el-checkbox v-model="networkShowTaskNames" size="small">任务名称</el-checkbox>
+        <el-checkbox v-model="networkShowSlack" size="small">时差信息</el-checkbox>
+
+        <!-- 布局方式 -->
+        <el-select
+          v-model="networkLayoutMode"
+          size="small"
+          style="width: 120px"
+        >
+          <el-option label="自动布局" value="auto" />
+          <el-option label="从左到右" value="left-right" />
+          <el-option label="从上到下" value="top-down" />
+        </el-select>
+      </div>
+    </div>
+
+    <!-- 网络图统计信息（仅在网络图模式显示） -->
+    <div v-if="chartViewMode === 'network'" class="network-stats">
+      <div class="stat-item">
+        <span class="stat-label">事件节点</span>
+        <span class="stat-value">{{ networkStats.nodes }}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">活动(任务)</span>
+        <span class="stat-value">{{ networkStats.activities }}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">关键路径</span>
+        <span class="stat-value critical">{{ networkStats.criticalActivities }}/{{ networkStats.activities }}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">总工期</span>
+        <span class="stat-value">{{ Math.round(networkStats.totalDuration * 10) / 10 }}天</span>
+      </div>
+    </div>
 
     <!-- 甘特图容器 -->
     <div
@@ -179,9 +260,12 @@
             }))
           )"
           :show-critical-path="showCriticalPath"
-          :show-task-names="true"
-          :show-time-params="false"
-          :show-slack="false"
+          :show-task-names="networkShowTaskNames"
+          :show-time-params="networkShowTimeParams"
+          :show-slack="networkShowSlack"
+          :zoom-level="networkZoomLevel"
+          :layout-mode="networkLayoutMode"
+          :tool-mode="networkToolMode"
           :svg-width="Math.max(2000, timelineWidth)"
           :svg-height="1200"
           :node-radius="18"
@@ -290,6 +374,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import { progressApi } from '@/api'
 import { useGanttDrag } from '@/composables/useGanttDrag'
 import {
@@ -428,6 +513,44 @@ const bulkEditDialogVisible = ref(false)
 
 // ==================== 视图模式 ====================
 const chartViewMode = ref('gantt') // 'gantt' or 'network'
+
+// 网络图视图状态
+const networkToolMode = ref('select') // 'select', 'pan'
+const networkZoomLevel = ref(1)
+const networkShowTimeParams = ref(false)
+const networkShowTaskNames = ref(true)
+const networkShowSlack = ref(false)
+const networkLayoutMode = ref('auto')
+
+// 网络图统计信息
+const networkStats = computed(() => {
+  const tasks = formattedTasks.value || []
+  const activities = tasks.length
+  const criticalActivities = tasks.filter(t => t.is_critical).length
+
+  // 计算节点数（去重的任务ID）
+  const nodes = new Set()
+  tasks.forEach(t => {
+    nodes.add(t.id)
+    if (t.predecessors) {
+      t.predecessors.forEach(p => nodes.add(p))
+    }
+  })
+
+  // 计算总工期
+  const totalDuration = tasks.length > 0
+    ? Math.max(...tasks.map(t => new Date(t.end).getTime())) -
+      Math.min(...tasks.map(t => new Date(t.start).getTime()))
+    : 0
+  const totalDays = totalDuration / (1000 * 60 * 60 * 24)
+
+  return {
+    nodes: nodes.size,
+    activities,
+    criticalActivities,
+    totalDuration: totalDays
+  }
+})
 
 // ==================== Undo/Redo 状态 ====================
 const canUndo = computed(() => undoRedoStore.canUndo)
@@ -971,6 +1094,20 @@ const handleGroupChange = (newGroup) => actions.setGroupMode(newGroup)
 // 图表视图切换（甘特图/网络图）
 const handleToggleViewMode = (mode) => {
   chartViewMode.value = mode
+}
+
+// ==================== 网络图视图控制 ====================
+// 网络图缩放控制
+const networkZoomIn = () => {
+  networkZoomLevel.value = Math.min(3, networkZoomLevel.value + 0.1)
+}
+
+const networkZoomOut = () => {
+  networkZoomLevel.value = Math.max(0.1, networkZoomLevel.value - 0.1)
+}
+
+const networkZoomReset = () => {
+  networkZoomLevel.value = 1
 }
 
 // ==================== 网络图事件处理 ====================
@@ -1985,5 +2122,46 @@ watch(
 .gantt-body > *:last-child {
   flex: 1;
   overflow: auto;
+}
+
+/* ==================== 网络图视图样式 ==================== */
+.network-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  background: #fff;
+  border-bottom: 1px solid #dcdfe6;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.network-stats {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-bottom: 1px solid #dcdfe6;
+  flex-wrap: wrap;
+}
+
+.network-stats .stat-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.network-stats .stat-label {
+  color: #909399;
+}
+
+.network-stats .stat-value {
+  font-weight: bold;
+  color: #303133;
+}
+
+.network-stats .stat-value.critical {
+  color: #f56c6c;
 }
 </style>

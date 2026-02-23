@@ -122,14 +122,31 @@
             />
           </g>
 
-          <!-- 虚任务 (宝盖形状 - 简化线条版) -->
+          <!-- 虚任务 (宝盖形状 - 简化平版) -->
+          <!-- 父任务展开且有子任务时显示宝盖，折叠时显示进度条 -->
           <g v-else-if="task.isDummy" class="dummy-task-group">
+            <!-- 有可见子任务时显示平宝盖 -->
             <path
-              :d="`M 0,${taskHeight * 0.7} L 0,${taskHeight * 0.3} L ${task.width * 0.15},${taskHeight * 0.15} L ${task.width * 0.5},0 L ${task.width * 0.85},${taskHeight * 0.15} L ${task.width},${taskHeight * 0.3} L ${task.width},${taskHeight * 0.7}`"
+              v-if="task.hasVisibleChildren"
+              :d="`M 0,${taskHeight * 0.7} L ${task.width * 0.15},${taskHeight * 0.7} L ${task.width * 0.85},${taskHeight * 0.7} L ${task.width},${taskHeight * 0.7} L ${task.width},${taskHeight * 0.3} L ${task.width * 0.85},${taskHeight * 0.3} L ${task.width * 0.15},${taskHeight * 0.3} L 0,${taskHeight * 0.3}`"
               fill="none"
               :stroke="task.is_critical && showCriticalPath ? '#f56c6c' : '#9ca3af'"
               stroke-width="1"
               stroke-dasharray="4,2"
+              style="pointer-events: all;"
+            />
+            <!-- 折叠时显示进度条 -->
+            <rect
+              v-else
+              :x="0"
+              :y="0"
+              :width="task.width"
+              :height="taskHeight"
+              :fill="getProgressBarColor(task)"
+              :stroke="task.is_critical && showCriticalPath ? '#f56c6c' : 'none'"
+              :stroke-width="task.is_critical && showCriticalPath ? 2 : 0"
+              :rx="4"
+              opacity="0.3"
               style="pointer-events: all;"
             />
           </g>
@@ -638,6 +655,10 @@ const renderTasks = computed(() => {
     const taskIsMilestone = isMilestone(taskData)
     const taskIsDummy = isDummyTask(taskData, props.rawTasks || [])
 
+    // 检查虚任务是否有子任务显示（未折叠）
+    const hasVisibleChildren = taskIsDummy && props.rawTasks ?
+      props.rawTasks.some(t => t.parent_id === task.id && !actions.isTaskHidden(t.id, props.rawTasks)) : false
+
     return {
       id: task.id,
       name: taskData.name,
@@ -646,6 +667,7 @@ const renderTasks = computed(() => {
       width,
       isMilestone: taskIsMilestone,
       isDummy: taskIsDummy,
+      hasVisibleChildren,
       height: taskIsMilestone ? props.taskHeight : props.taskHeight,
       progress: taskData.progress || 0,
       status: taskData.status,

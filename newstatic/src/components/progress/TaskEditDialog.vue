@@ -20,7 +20,12 @@
               placeholder="选择开始日期"
               style="width: 100%"
               value-format="YYYY-MM-DD"
+              :disabled="dateFieldsDisabled"
             />
+            <div v-if="dateFieldsDisabled" style="color: #909399; font-size: 12px; margin-top: 4px;">
+              <el-icon><InfoFilled /></el-icon>
+              父任务的日期由子任务自动确定
+            </div>
           </el-form-item>
           <el-form-item label="结束日期" prop="end">
             <el-date-picker
@@ -29,7 +34,12 @@
               placeholder="选择结束日期"
               style="width: 100%"
               value-format="YYYY-MM-DD"
+              :disabled="dateFieldsDisabled"
             />
+            <div v-if="dateFieldsDisabled" style="color: #909399; font-size: 12px; margin-top: 4px;">
+              <el-icon><InfoFilled /></el-icon>
+              父任务的日期由子任务自动确定
+            </div>
           </el-form-item>
           <el-form-item label="进度" prop="progress">
             <el-slider v-model="formData.progress" :marks="{ 0: '0%', 50: '50%', 100: '100%' }" />
@@ -370,7 +380,7 @@
 
 <script setup>
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
-import { Plus, Back, Right } from '@element-plus/icons-vue'
+import { Plus, Back, Right, InfoFilled } from '@element-plus/icons-vue'
 import { progressApi } from '@/api'
 
 const props = defineProps({
@@ -427,6 +437,15 @@ const defaultFormData = {
 }
 
 const formData = ref({ ...defaultFormData })
+
+// 检查当前编辑的任务是否有子任务
+const hasChildren = computed(() => {
+  if (!props.editingTask || !props.allTasks) return false
+  return props.allTasks.some(task => task.parent_id === props.editingTask.id)
+})
+
+// 日期字段是否被禁用（有子任务时禁用）
+const dateFieldsDisabled = computed(() => hasChildren.value)
 
 const rules = {
   name: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],

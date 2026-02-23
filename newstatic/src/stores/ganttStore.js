@@ -1072,6 +1072,61 @@ const actions = {
   },
 
   /**
+   * 更新父任务的日期（基于子任务计算）
+   * 当子任务的日期发生变化时，需要更新所有父任务的日期范围
+   */
+  updateParentTaskDates(taskId) {
+    const task = state.tasks.find(t => t.id === taskId)
+    if (!task || !task.parent_id) return
+
+    const updateParentRecursive = (parentId) => {
+      const parent = state.tasks.find(t => t.id === parentId)
+      if (!parent) return
+
+      // 获取所有子任务
+      const children = state.tasks.filter(t => t.parent_id === parentId)
+      if (children.length === 0) return
+
+      // 计算子任务的最早开始和最晚结束日期
+      let earliestStart = null
+      let latestEnd = null
+
+      children.forEach(child => {
+        const childStart = new Date(child.start)
+        const childEnd = new Date(child.end)
+
+        if (!earliestStart || childStart < earliestStart) {
+          earliestStart = childStart
+        }
+        if (!latestEnd || childEnd > latestEnd) {
+          latestEnd = childEnd
+        }
+      })
+
+      // 更新父任务的日期
+      const startDate = formatDate(earliestStart)
+      const endDate = formatDate(latestEnd)
+
+      parent.start = startDate
+      parent.end = endDate
+      parent.startDate = earliestStart
+      parent.endDate = latestEnd
+
+      // 计算工期（天数）
+      const duration = Math.ceil((latestEnd - earliestStart) / (1000 * 60 * 60 * 24))
+      parent.duration = duration
+
+      // 递归更新上层的父任务
+      if (parent.parent_id) {
+        updateParentRecursive(parent.parent_id)
+      }
+    }
+
+    // 开始更新父任务
+    updateParentRecursive(task.parent_id)
+  },
+
+  /**
    * 结束拖拽
    */
   endDrag(newTask, originalTask) {
@@ -1114,6 +1169,9 @@ const actions = {
     if (state.dragMode !== 'resize_right') {
       this.adjustSuccessorTasks(originalTask.id)
     }
+
+    // 更新父任务的日期（基于子任务计算）
+    this.updateParentTaskDates(originalTask.id)
 
     this.markUnsaved()
 

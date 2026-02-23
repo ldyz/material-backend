@@ -21,6 +21,7 @@
       :timeline-format="state.timelineFormat"
       :date-display-format="state.dateDisplayFormat"
       :pan-mode="state.panMode"
+      :chart-view-mode="chartViewMode"
       @navigate-date="navigateDate"
       @go-today="goToToday"
       @zoom-in="zoomIn"
@@ -49,6 +50,7 @@
       @date-format-change="handleDateFormatChange"
       @toggle-pan-mode="togglePanMode"
       @toggle-select-mode="toggleSelectMode"
+      @toggle-view-mode="handleToggleViewMode"
       @add-task="handleCreateTask"
     />
 
@@ -102,7 +104,82 @@
         />
       </div>
 
-      <!-- 任务列表（可折叠） -->
+      <!-- 任务列表（可折叠） - 仅在甘特图模式下显示 -->
+      <TaskList
+        v-if="chartViewMode === 'gantt'"
+        :is-collapsed="!showTaskList"
+        :tasks="filteredTasks"
+        :grouped-tasks="groupedTasks"
+        :selected-task-id="selectedTask?.id"
+        :view-mode="viewMode"
+        :timeline-days="timelineDays"
+        :timeline-weeks="timelineWeeks"
+        :timeline-months="timelineMonths"
+        :timeline-quarters="timelineQuarters"
+        :day-width="dayWidth"
+        :row-height="rowHeight"
+        :task-height="taskHeight"
+        :show-dependencies="showDependencies"
+        :show-critical-path="showCriticalPath"
+        :show-baseline="showBaseline"
+        :group-mode="groupMode"
+        :collapsed-groups="collapsedGroups"
+        :visible-dependencies="visibleDependencies"
+        :is-dragging="isDragging"
+        :dragged-task="draggedTask"
+        :tooltip-visible="tooltipVisible"
+        :tooltip-position="tooltipPosition"
+        :tooltip-text="tooltipText"
+        :preview-task="previewTask"
+        :drag-mode="dragMode"
+        :search-keyword="searchKeyword"
+        :timeline-width="timelineWidth"
+        :arrow-marker-id="arrowMarkerId"
+        :arrow-color="arrowColor"
+        :empty-description="emptyDescription"
+        :raw-tasks="formattedTasks"
+        :is-creating-dependency="isCreatingDependency"
+        :source-task-id="dependencySourceTask?.id"
+        :temp-line-end="tempLineEnd"
+        :show-task-names="!showTaskList"
+        @row-click="handleRowClick"
+        @row-dblclick="handleRowDblClick"
+        @task-click="handleTaskClick"
+        @task-dblclick="handleTaskDblClick"
+        @task-mousedown="handleTaskMouseDown"
+        @toggle-group="toggleGroup"
+        @context-menu="handleContextMenu"
+        @dependency-create="handleDependencyCreate"
+        @mousemove="handleTimelineMouseMove"
+        @cell-edit="handleCellEdit"
+        @task-dragged="handleTaskDragged"
+        ref="taskListRef"
+      />
+
+      <!-- 网络图视图 - 仅在网络图模式下显示 -->
+      <NetworkView
+        v-if="chartViewMode === 'network'"
+        :tasks="formattedTasks"
+        :dependencies="formattedTasks.flatMap(t =>
+          (t.predecessors || []).map(predId => ({
+            task_id: t.id,
+            depends_on: predId,
+            type: 'FS',
+            is_critical: t.is_critical
+          }))
+        )"
+        :show-critical-path="showCriticalPath"
+        :show-task-names="true"
+        :show-time-params="false"
+        :show-slack="false"
+        :svg-width="Math.max(2000, timelineWidth)"
+        :svg-height="1200"
+        :node-radius="18"
+        @node-click="handleNetworkNodeClick"
+        @node-dblclick="handleNetworkNodeDblClick"
+        @edge-click="handleNetworkEdgeClick"
+        @task-updated="handleNetworkTaskUpdated"
+      />
       <TaskList
         :is-collapsed="!showTaskList"
         :tasks="filteredTasks"
@@ -275,13 +352,13 @@ import GanttToolbar from './GanttToolbar.vue'
 import GanttStats from './GanttStats.vue'
 import GanttHeader from './GanttHeader.vue'
 import TaskList from './TaskList.vue'
+import NetworkView from './NetworkView.vue'
 import GanttLegend from './GanttLegend.vue'
 import GanttContextMenu from './GanttContextMenu.vue'
 import TaskDetailDrawer from './TaskDetailDrawer.vue'
 import TaskEditDialog from './TaskEditDialog.vue'
 import ResourceAllocationDialog from './ResourceAllocationDialog.vue'
 import ResourceManagementDialog from './ResourceManagementDialog.vue'
-import ResourceView from './ResourceView.vue'
 import GanttStatusBar from './GanttStatusBar.vue'
 import TaskTemplatesDialog from '@/components/gantt/dialogs/TaskTemplatesDialog.vue'
 import BulkEditDialog from '@/components/gantt/dialogs/BulkEditDialog.vue'
@@ -383,6 +460,9 @@ const resourceLibrary = computed(() => state.resourceLibrary)
 // ==================== 对话框状态 ====================
 const templateDialogVisible = ref(false)
 const bulkEditDialogVisible = ref(false)
+
+// ==================== 视图模式 ====================
+const chartViewMode = ref('gantt') // 'gantt' or 'network'
 
 // ==================== Undo/Redo 状态 ====================
 const canUndo = computed(() => undoRedoStore.canUndo)
@@ -922,6 +1002,42 @@ const openResourceManagement = () => actions.openResourceManagementDialog()
 
 // 分组控制
 const handleGroupChange = (newGroup) => actions.setGroupMode(newGroup)
+
+// 图表视图切换（甘特图/网络图）
+const handleToggleViewMode = (mode) => {
+  chartViewMode.value = mode
+}
+
+// ==================== 网络图事件处理 ====================
+// 网络图节点点击
+const handleNetworkNodeClick = (node) => {
+  actions.selectTask(node.taskId)
+}
+
+// 网络图节点双击（编辑任务）
+const handleNetworkNodeDblClick = (node) => {
+  actions.selectTask(node.taskId)
+  actions.editTask(state.tasks.find(t => t.id === node.taskId))
+}
+
+// 网络图边点击（查看依赖关系）
+const handleNetworkEdgeClick = (edge) => {
+  ElMessage.info(`依赖关系: 任务 ${edge.fromId} → 任务 ${edge.toId}`)
+}
+
+// 网络图任务位置更新
+const handleNetworkTaskUpdated = async (updateData) => {
+  try {
+    await progressApi.update(updateData.taskId, {
+      position_x: updateData.position_x,
+      position_y: updateData.position_y
+    })
+    await actions.loadData()
+  } catch (error) {
+    console.error('更新任务位置失败:', error)
+    ElMessage.error('更新位置失败')
+  }
+}
 const toggleGroup = (groupName) => actions.toggleGroup(groupName)
 
 // 刷新

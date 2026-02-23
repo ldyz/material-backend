@@ -47,6 +47,41 @@
         <el-option label="每月1号" value="first"></el-option>
       </el-select>
 
+      <!-- 视图切换（甘特图/网络图） -->
+      <el-button-group size="small" style="margin-left: 12px" title="视图模式">
+        <el-button
+          @click="$emit('toggle-view-mode', 'gantt')"
+          :type="chartViewMode === 'gantt' ? 'primary' : 'default'"
+          title="甘特图视图"
+        >
+          <el-icon>
+            <svg viewBox="0 0 1024 1024" width="14" height="14">
+              <path d="M128 128h768v768H128z" fill="none" stroke="currentColor" stroke-width="80"/>
+              <rect x="160" y="400" width="120" height="40" fill="currentColor"/>
+              <rect x="320" y="320" width="120" height="40" fill="currentColor"/>
+              <rect x="480" y="240" width="120" height="40" fill="currentColor"/>
+            </svg>
+          </el-icon>
+          甘特图
+        </el-button>
+        <el-button
+          @click="$emit('toggle-view-mode', 'network')"
+          :type="chartViewMode === 'network' ? 'primary' : 'default'"
+          title="网络图视图"
+        >
+          <el-icon>
+            <svg viewBox="0 0 1024 1024" width="14" height="14">
+              <circle cx="200" cy="512" r="60" fill="currentColor"/>
+              <circle cx="512" cy="200" r="60" fill="currentColor"/>
+              <circle cx="824" cy="512" r="60" fill="currentColor"/>
+              <circle cx="512" cy="824" r="60" fill="currentColor"/>
+              <path d="M200 512 L512 200 L824 512 L512 824 Z" fill="none" stroke="currentColor" stroke-width="40"/>
+            </svg>
+          </el-icon>
+          网络图
+        </el-button>
+      </el-button-group>
+
       <!-- 工具模式切换 -->
       <el-button-group size="small" style="margin-left: 12px" title="工具模式">
         <!-- 箭头选择工具 -->
@@ -259,6 +294,10 @@ const props = defineProps({
   panMode: {
     type: Boolean,
     default: false
+  },
+  chartViewMode: {
+    type: String,
+    default: 'gantt' // 'gantt' or 'network'
   }
 })
 
@@ -289,7 +328,8 @@ defineEmits([
   'timeline-format-change',
   'date-format-change',
   'toggle-pan-mode',
-  'toggle-select-mode'
+  'toggle-select-mode',
+  'toggle-view-mode'
 ])
 </script>
 

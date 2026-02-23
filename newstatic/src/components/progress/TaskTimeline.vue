@@ -122,25 +122,15 @@
             />
           </g>
 
-          <!-- 虚任务 (宝盖形状) -->
+          <!-- 虚任务 (宝盖形状 - 简化线条版) -->
           <g v-else-if="task.isDummy" class="dummy-task-group">
             <path
-              :d="`M 0,${taskHeight * 0.7} L 0,${taskHeight * 0.3} L ${task.width * 0.15},${taskHeight * 0.15} L ${task.width * 0.5},0 L ${task.width * 0.85},${taskHeight * 0.15} L ${task.width},${taskHeight * 0.3} L ${task.width},${taskHeight * 0.7} Z`"
-              :fill="getTaskBarColor(task)"
+              :d="`M 0,${taskHeight * 0.7} L 0,${taskHeight * 0.3} L ${task.width * 0.15},${taskHeight * 0.15} L ${task.width * 0.5},0 L ${task.width * 0.85},${taskHeight * 0.15} L ${task.width},${taskHeight * 0.3} L ${task.width},${taskHeight * 0.7}`"
+              fill="none"
               :stroke="task.is_critical && showCriticalPath ? '#f56c6c' : '#9ca3af'"
-              :stroke-width="1.5"
-              style="filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1)); pointer-events: all;"
-            />
-            <!-- 虚任务边框线 -->
-            <line
-              :x1="0"
-              :y1="taskHeight * 0.3"
-              :x2="task.width"
-              :y2="taskHeight * 0.3"
-              :stroke="task.is_critical && showCriticalPath ? '#f56c6c' : '#6b7280'"
               stroke-width="1"
               stroke-dasharray="4,2"
-              style="pointer-events: none;"
+              style="pointer-events: all;"
             />
           </g>
 

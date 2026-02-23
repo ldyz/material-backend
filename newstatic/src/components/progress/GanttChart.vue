@@ -91,7 +91,7 @@
           <el-icon><ZoomOut /></el-icon>
         </el-button>
         <el-button @click="networkZoomReset" title="重置">
-          {{ Math.round(networkZoomLevel * 100) }}%
+          {{ Math.round(dayWidth) }}px
         </el-button>
         <el-button @click="networkZoomIn" title="放大">
           <el-icon><ZoomIn /></el-icon>
@@ -244,6 +244,7 @@
           @mousemove="handleTimelineMouseMove"
           @task-dragged="handleTaskDragged"
           @context-menu="handleContextMenu"
+          @zoom-change="handleTimelineZoom"
           ref="taskTimelineRef"
         />
 
@@ -259,20 +260,25 @@
               is_critical: t.is_critical
             }))
           )"
+          :task-index-map="networkTaskIndexMap"
+          :timeline-start="timelineDays[0]?.date || ''"
+          :row-height="rowHeight"
+          :day-width="dayWidth"
+          :align-with-task-list="true"
           :show-critical-path="showCriticalPath"
           :show-task-names="networkShowTaskNames"
           :show-time-params="networkShowTimeParams"
           :show-slack="networkShowSlack"
+          :show-duration="true"
           :zoom-level="networkZoomLevel"
-          :layout-mode="networkLayoutMode"
           :tool-mode="networkToolMode"
           :svg-width="Math.max(2000, timelineWidth)"
-          :svg-height="1200"
+          :svg-height="networkHeight"
           :node-radius="18"
           @node-click="handleNetworkNodeClick"
-          @node-dblclick="handleNetworkNodeDblClick"
-          @edge-click="handleNetworkEdgeClick"
-          @task-updated="handleNetworkTaskUpdated"
+          @task-click="handleNetworkTaskClick"
+          @task-dblclick="handleNetworkTaskDblClick"
+          @zoom-change="handleNetworkZoom"
         />
       </div>
     </div>
@@ -516,7 +522,6 @@ const chartViewMode = ref('gantt') // 'gantt' or 'network'
 
 // 网络图视图状态
 const networkToolMode = ref('select') // 'select', 'pan'
-const networkZoomLevel = ref(1)
 const networkShowTimeParams = ref(false)
 const networkShowTaskNames = ref(true)
 const networkShowSlack = ref(false)
@@ -550,6 +555,22 @@ const networkStats = computed(() => {
     criticalActivities,
     totalDuration: totalDays
   }
+})
+
+// 网络图任务索引映射（用于对齐任务列表）
+const networkTaskIndexMap = computed(() => {
+  const map = {}
+  const visibleTasks = filteredTasks.value || []
+  visibleTasks.forEach((task, index) => {
+    map[task.id] = index
+  })
+  return map
+})
+
+// 网络图高度（与任务列表高度一致）
+const networkHeight = computed(() => {
+  const visibleTasks = filteredTasks.value || []
+  return Math.max(1200, visibleTasks.length * rowHeight.value)
 })
 
 // ==================== Undo/Redo 状态 ====================
@@ -1097,48 +1118,41 @@ const handleToggleViewMode = (mode) => {
 }
 
 // ==================== 网络图视图控制 ====================
-// 网络图缩放控制
+// 网络图缩放控制（操作 dayWidth，与时间标尺保持一致）
 const networkZoomIn = () => {
-  networkZoomLevel.value = Math.min(3, networkZoomLevel.value + 0.1)
+  state.dayWidth = Math.min(100, state.dayWidth + 5)
+  eventBus.emit(GanttEvents.ZOOM_CHANGED, { width: state.dayWidth })
 }
 
 const networkZoomOut = () => {
-  networkZoomLevel.value = Math.max(0.1, networkZoomLevel.value - 0.1)
+  state.dayWidth = Math.max(10, state.dayWidth - 5)
+  eventBus.emit(GanttEvents.ZOOM_CHANGED, { width: state.dayWidth })
 }
 
 const networkZoomReset = () => {
-  networkZoomLevel.value = 1
+  // 重置为当前视图模式的默认值
+  const format = state.timelineFormat
+  const config = state.VIEW_CONFIG[format] || state.VIEW_CONFIG['month-day']
+  state.dayWidth = config.default
+  eventBus.emit(GanttEvents.ZOOM_CHANGED, { width: state.dayWidth })
 }
 
 // ==================== 网络图事件处理 ====================
 // 网络图节点点击
 const handleNetworkNodeClick = (node) => {
-  actions.selectTask(node.taskId)
+  // 在 AOA 模式中，节点代表事件，点击节点显示信息
+  console.log('Network node clicked:', node)
 }
 
-// 网络图节点双击（编辑任务）
-const handleNetworkNodeDblClick = (node) => {
-  actions.selectTask(node.taskId)
-  actions.editTask(state.tasks.find(t => t.id === node.taskId))
+// 网络图任务箭头点击
+const handleNetworkTaskClick = (task) => {
+  actions.selectTask(task.id)
 }
 
-// 网络图边点击（查看依赖关系）
-const handleNetworkEdgeClick = (edge) => {
-  ElMessage.info(`依赖关系: 任务 ${edge.fromId} → 任务 ${edge.toId}`)
-}
-
-// 网络图任务位置更新
-const handleNetworkTaskUpdated = async (updateData) => {
-  try {
-    await progressApi.update(updateData.taskId, {
-      position_x: updateData.position_x,
-      position_y: updateData.position_y
-    })
-    await actions.loadData()
-  } catch (error) {
-    console.error('更新任务位置失败:', error)
-    ElMessage.error('更新位置失败')
-  }
+// 网络图任务箭头双击（编辑任务）
+const handleNetworkTaskDblClick = (task) => {
+  actions.selectTask(task.id)
+  actions.editTask(state.tasks.find(t => t.id === task.id))
 }
 const toggleGroup = (groupName) => actions.toggleGroup(groupName)
 
@@ -1278,6 +1292,20 @@ const handleContextMenu = (eventOrData) => {
   nextTick(() => {
     contextMenuRef.value?.open()
   })
+}
+
+// 时间轴缩放处理
+const handleTimelineZoom = (newDayWidth) => {
+  // 直接更新 state.dayWidth
+  state.dayWidth = newDayWidth
+  eventBus.emit(GanttEvents.ZOOM_CHANGED, { width: newDayWidth })
+}
+
+// 网络图缩放处理（与时间轴缩放保持一致）
+const handleNetworkZoom = (newDayWidth) => {
+  // 直接更新 state.dayWidth，这样时间标尺也会跟着缩放
+  state.dayWidth = newDayWidth
+  eventBus.emit(GanttEvents.ZOOM_CHANGED, { width: newDayWidth })
 }
 
 // 右键菜单命令处理

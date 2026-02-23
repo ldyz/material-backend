@@ -10,6 +10,7 @@
     @mousemove="handleAllMouseMove($event)"
     @mouseup="handleCanvasMouseUp"
     @mouseleave="handleCanvasMouseUp"
+    @wheel.prevent="handleWheel"
   >
     <svg
       :width="svgWidth"
@@ -95,7 +96,7 @@
         >
           <!-- 任务条矩形 -->
           <rect
-            v-if="!task.isMilestone"
+            v-if="!task.isMilestone && !task.isDummy"
             :x="0"
             :y="0"
             :width="task.width"
@@ -109,7 +110,7 @@
           />
 
           <!-- 里程碑 (菱形) -->
-          <g v-else class="milestone-group">
+          <g v-else-if="task.isMilestone" class="milestone-group">
             <rect
               :x="task.width / 2 - task.height / 2"
               :y="-task.height / 2"
@@ -121,9 +122,31 @@
             />
           </g>
 
+          <!-- 虚任务 (宝盖形状) -->
+          <g v-else-if="task.isDummy" class="dummy-task-group">
+            <path
+              :d="`M 0,${taskHeight * 0.7} L 0,${taskHeight * 0.3} L ${task.width * 0.15},${taskHeight * 0.15} L ${task.width * 0.5},0 L ${task.width * 0.85},${taskHeight * 0.15} L ${task.width},${taskHeight * 0.3} L ${task.width},${taskHeight * 0.7} Z`"
+              :fill="getTaskBarColor(task)"
+              :stroke="task.is_critical && showCriticalPath ? '#f56c6c' : '#9ca3af'"
+              :stroke-width="1.5"
+              style="filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1)); pointer-events: all;"
+            />
+            <!-- 虚任务边框线 -->
+            <line
+              :x1="0"
+              :y1="taskHeight * 0.3"
+              :x2="task.width"
+              :y2="taskHeight * 0.3"
+              :stroke="task.is_critical && showCriticalPath ? '#f56c6c' : '#6b7280'"
+              stroke-width="1"
+              stroke-dasharray="4,2"
+              style="pointer-events: none;"
+            />
+          </g>
+
           <!-- 进度条 (内部填充) -->
           <rect
-            v-if="!task.isMilestone && task.progress > 0"
+            v-if="!task.isMilestone && !task.isDummy && task.progress > 0"
             :x="0"
             :y="0"
             :width="task.width * (Number(task.progress) / 100)"
@@ -144,12 +167,12 @@
             font-weight="bold"
             style="pointer-events: none; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);"
           >
-            {{ task.isMilestone ? '' : (showTaskNames ? task.name : task.progress + '%') }}
+            {{ task.isMilestone ? '' : (task.isDummy ? '⌒' : (showTaskNames ? task.name : task.progress + '%')) }}
           </text>
 
           <!-- 拖拽手柄 (左侧) -->
           <rect
-            v-if="!task.isMilestone"
+            v-if="!task.isMilestone && !task.isDummy"
             :x="0"
             :y="0"
             :width="8"
@@ -161,7 +184,7 @@
 
           <!-- 拖拽手柄 (右侧) -->
           <rect
-            v-if="!task.isMilestone"
+            v-if="!task.isMilestone && !task.isDummy"
             :x="task.width - 8"
             :y="0"
             :width="8"
@@ -237,7 +260,7 @@
 
 <script setup>
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
-import { isMilestone } from '@/utils/ganttHelpers'
+import { isMilestone, isDummyTask } from '@/utils/ganttHelpers'
 import { ganttStore } from '@/stores/ganttStore'
 import { useGanttDrag, DragMode } from '@/composables/useGanttDrag'
 import { formatDate, addDays } from '@/utils/dateFormat'
@@ -365,7 +388,8 @@ const emit = defineEmits([
   'context-menu',
   'dependency-create',
   'mousemove',
-  'task-dragged'
+  'task-dragged',
+  'zoom-change'
 ])
 
 const timelineRef = ref(null)
@@ -442,6 +466,12 @@ const handleCanvasDblClick = (event) => {
     type: 'new-task',
     action: 'create-immediate'
   })
+}
+
+// 鼠标滚轮缩放
+const handleWheel = (event) => {
+  const delta = event.deltaY > 0 ? -2 : 2
+  emit('zoom-change', Math.max(10, Math.min(100, props.dayWidth + delta)))
 }
 
 // 画布鼠标移动
@@ -600,6 +630,7 @@ const renderTasks = computed(() => {
     const y = index * props.rowHeight + (props.rowHeight - props.taskHeight) / 2
 
     const taskIsMilestone = isMilestone(taskData)
+    const taskIsDummy = isDummyTask(taskData, props.rawTasks || [])
 
     return {
       id: task.id,
@@ -608,6 +639,7 @@ const renderTasks = computed(() => {
       y,
       width,
       isMilestone: taskIsMilestone,
+      isDummy: taskIsDummy,
       height: taskIsMilestone ? props.taskHeight : props.taskHeight,
       progress: taskData.progress || 0,
       status: taskData.status,
@@ -731,6 +763,7 @@ const tempLinePath = computed(() => {
 // 获取任务条颜色
 const getTaskBarColor = (task) => {
   if (task.isMilestone) return '#e6a23c'
+  if (task.isDummy) return '#d1d5db' // 虚任务使用浅灰色
 
   const colors = {
     completed: '#67c23a',

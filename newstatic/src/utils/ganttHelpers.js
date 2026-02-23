@@ -567,6 +567,17 @@ export function isMilestone(task) {
 }
 
 /**
+ * 检查任务是否为虚任务（有子任务的父任务）
+ * @param {Object} task - 任务对象
+ * @param {Array} allTasks - 所有任务数组
+ * @returns {boolean} 是否为虚任务
+ */
+export function isDummyTask(task, allTasks = []) {
+  if (!task || !task.id || !allTasks.length) return false
+  return allTasks.some(t => t.parent_id === task.id)
+}
+
+/**
  * 获取优先级权重（用于排序）
  * @param {string} priority - 优先级
  * @returns {number} 权重值

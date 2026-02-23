@@ -76,22 +76,22 @@
             <rect width="100%" height="100%" fill="url(#gridPattern)" />
           </g>
 
-          <!-- 依赖关系线（虚线） -->
-          <g class="dependency-lines">
+          <!-- 依赖关系线（虚工作） -->
+          <g class="dummy-work-lines">
             <path
               v-for="dep in renderableDependencies"
               :key="dep.key"
               :d="dep.path"
               stroke="#999"
-              stroke-width="1"
-              stroke-dasharray="4,4"
+              stroke-width="1.5"
+              stroke-dasharray="6,4"
               fill="none"
               :marker-end="`url(#arrowhead-dependency)`"
-              class="dependency-line"
+              class="dummy-work-line"
             />
           </g>
 
-          <!-- 任务箭头（活动） -->
+          <!-- 任务箭头（实工作） -->
           <g class="task-arrows">
             <g
               v-for="task in taskArrows"
@@ -104,14 +104,26 @@
               @click="handleTaskClick($event, task)"
               @dblclick="handleTaskDblClick($event, task)"
             >
-              <!-- 任务箭头线 -->
+              <!-- 实工作线（实线部分） -->
               <path
-                :d="task.path"
+                :d="task.realPath"
                 :stroke="task.stroke"
                 :stroke-width="task.strokeWidth"
                 fill="none"
                 :marker-end="`url(#${task.marker})`"
-                class="task-arrow"
+                class="task-arrow-real"
+              />
+
+              <!-- 自由时差（波形线部分） -->
+              <path
+                v-if="task.slackPath"
+                :d="task.slackPath"
+                :stroke="task.isCritical ? '#FF8A65' : '#64B5F6'"
+                stroke-width="1.5"
+                fill="none"
+                :marker-end="`url(#${task.marker})`"
+                class="task-arrow-slack"
+                stroke-dasharray="3,3"
               />
 
               <!-- 任务名称标签 -->
@@ -128,13 +140,25 @@
 
               <!-- 工期信息 -->
               <text
-                v-if="showDuration"
+                v-if="showDuration && !task.isCritical"
                 :x="task.durationX"
                 :y="task.durationY"
                 text-anchor="middle"
                 class="task-duration"
               >
                 {{ task.duration }}天
+              </text>
+
+              <!-- 时差信息 -->
+              <text
+                v-if="showSlack && task.slack > 0"
+                :x="task.slackLabelX"
+                :y="task.slackLabelY"
+                text-anchor="middle"
+                class="task-slack-label"
+                fill="#67C23A"
+              >
+                FF:{{ task.slack }}
               </text>
             </g>
           </g>
@@ -153,42 +177,99 @@
               @mousedown="handleNodeMouseDown($event, node)"
               @click="handleNodeClick($event, node)"
             >
-              <!-- 节点圆形 -->
+              <!-- 节点圆形背景 -->
               <circle
                 :r="nodeRadius"
-                :fill="node.fill"
-                :stroke="node.stroke"
+                fill="#FFFFFF"
+                :stroke="node.isCritical ? '#FF8A65' : '#1976D2'"
                 stroke-width="2"
                 filter="url(#nodeShadow)"
                 class="node-circle"
               />
 
-              <!-- 节点编号 -->
+              <!-- 节点内分割线（水平） -->
+              <line
+                x1="-nodeRadius + 2"
+                y1="0"
+                :x2="nodeRadius - 2"
+                y2="0"
+                stroke="#ccc"
+                stroke-width="1"
+              />
+
+              <!-- 节点内分割线（垂直） -->
+              <line
+                x1="0"
+                y1="-nodeRadius + 2"
+                :x2="0"
+                :y2="nodeRadius - 2"
+                stroke="#ccc"
+                stroke-width="1"
+              />
+
+              <!-- 节点编号（中心） -->
               <text
-                y="5"
+                y="4"
                 text-anchor="middle"
                 class="node-number"
                 fill="#333"
                 font-weight="bold"
+                font-size="11"
               >
                 {{ node.number }}
               </text>
 
-              <!-- 时间参数 -->
-              <g v-if="showTimeParams" class="node-time-params">
-                <text :y="nodeRadius + 14" text-anchor="middle" class="node-time-text">
-                  ES: {{ formatTime(node.ES) }}
-                </text>
-                <text :y="nodeRadius + 26" text-anchor="middle" class="node-time-text">
-                  EF: {{ formatTime(node.EF) }}
-                </text>
-                <text :y="nodeRadius + 38" text-anchor="middle" class="node-time-text">
-                  LS: {{ formatTime(node.LS) }}
-                </text>
-                <text :y="nodeRadius + 50" text-anchor="middle" class="node-time-text">
-                  LF: {{ formatTime(node.LF) }}
-                </text>
-              </g>
+              <!-- 左上：最早开始 ES -->
+              <text
+                v-if="showTimeParams"
+                :x="-nodeRadius/2 - 2"
+                :y="-nodeRadius/2 - 2"
+                text-anchor="end"
+                class="node-time-mini"
+                fill="#67C23A"
+                font-size="8"
+              >
+                {{ node.ES !== undefined ? node.ES : '' }}
+              </text>
+
+              <!-- 右上：最晚开始 LS -->
+              <text
+                v-if="showTimeParams"
+                :x="nodeRadius/2 + 2"
+                :y="-nodeRadius/2 - 2"
+                text-anchor="start"
+                class="node-time-mini"
+                fill="#F56C6C"
+                font-size="8"
+              >
+                {{ node.LS !== undefined ? node.LS : '' }}
+              </text>
+
+              <!-- 左下：最早结束 EF -->
+              <text
+                v-if="showTimeParams"
+                :x="-nodeRadius/2 - 2"
+                :y="nodeRadius/2 + 8"
+                text-anchor="end"
+                class="node-time-mini"
+                fill="#67C23A"
+                font-size="8"
+              >
+                {{ node.EF !== undefined ? node.EF : '' }}
+              </text>
+
+              <!-- 右下：最晚结束 LF -->
+              <text
+                v-if="showTimeParams"
+                :x="nodeRadius/2 + 2"
+                :y="nodeRadius/2 + 8"
+                text-anchor="start"
+                class="node-time-mini"
+                fill="#F56C6C"
+                font-size="8"
+              >
+                {{ node.LF !== undefined ? node.LF : '' }}
+              </text>
             </g>
           </g>
         </g>
@@ -417,7 +498,7 @@ const taskArrows = computed(() => {
     let startX, startY, endX, endY
 
     if (props.alignWithTaskList && props.taskIndexMap[task.id] !== undefined) {
-      // 对齐模式
+      // 对齐模式：Y坐标基于任务列表
       const taskY = props.taskIndexMap[task.id] * props.rowHeight + props.rowHeight / 2
       startX = startDays * props.dayWidth
       startY = taskY
@@ -431,25 +512,46 @@ const taskArrows = computed(() => {
       endY = startY
     }
 
-    // 计算箭头路径（带弯曲度，避免重叠）
-    const path = calculateTaskArrowPath(startX, startY, endX, endY)
+    // 计算实工作路径（从开始到结束）
+    const realPath = `M ${startX} ${startY} L ${endX} ${endY}`
 
+    // 计算总时差
     const duration = Math.ceil((taskEnd - taskStart) / (1000 * 60 * 60 * 24))
+    const slack = task.slack || 0
+
+    // 如果有时差，绘制时差线（波形线）
+    let slackPath = null
+    let slackLabelX = 0
+    let slackLabelY = 0
+
+    if (slack > 0 && !task.is_critical) {
+      // 时差线：从任务结束到结束+时差
+      const slackEndX = endX + slack * props.dayWidth
+      // 使用波浪线路径
+      slackPath = calculateWavePath(endX, endY, slackEndX, endY)
+      slackLabelX = endX + (slack * props.dayWidth) / 2
+      slackLabelY = startY - 12
+    }
 
     return {
       id: task.id,
-      path,
+      realPath, // 实工作线
+      slackPath, // 时差线（波形）
+      path: realPath, // 保持向后兼容
       label: task.name,
       stroke: task.is_critical ? '#FF8A65' : '#64B5F6',
-      strokeWidth: task.is_critical ? 2.5 : 2,
+      strokeWidth: task.is_critical ? 3 : 2,
       marker: task.is_critical ? 'arrowhead-critical' : 'arrowhead-task',
       textColor: '#606266',
       isCritical: task.is_critical,
       duration,
+      slack,
       labelX: (startX + endX) / 2,
       labelY: startY - 8,
       durationX: (startX + endX) / 2,
-      durationY: startY + 18
+      durationY: startY + 18,
+      slackLabelX,
+      slackLabelY
     }
   })
 })
@@ -497,6 +599,43 @@ const renderableDependencies = computed(() => {
   }).filter(Boolean)
 })
 
+// 计算波形线路径（用于表示自由时差）
+function calculateWavePath(startX, startY, endX, endY) {
+  const distance = endX - startX
+  const amplitude = 4 // 波浪振幅
+  const frequency = 8 // 波浪频率
+
+  if (distance <= frequency) {
+    // 距离太短，使用直线
+    return `M ${startX} ${startY} L ${endX} ${endY}`
+  }
+
+  let path = `M ${startX} ${startY}`
+  const numWaves = Math.floor(distance / frequency)
+
+  for (let i = 0; i < numWaves; i++) {
+    const x1 = startX + i * frequency
+    const x2 = startX + (i + 0.5) * frequency
+    const x3 = startX + (i + 1) * frequency
+
+    if (i === 0) {
+      path += ` Q ${x1 + frequency / 4} ${startY - amplitude}, ${x2} ${startY}`
+      path += ` Q ${x2 + frequency / 4} ${startY + amplitude}, ${x3} ${startY}`
+    } else {
+      path += ` Q ${x1 + frequency / 4} ${startY + amplitude}, ${x2} ${startY}`
+      path += ` Q ${x2 + frequency / 4} ${startY - amplitude}, ${x3} ${startY}`
+    }
+  }
+
+  // 处理剩余部分
+  const lastX = startX + numWaves * frequency
+  if (lastX < endX) {
+    path += ` L ${endX} ${endY}`
+  }
+
+  return path
+}
+
 // 计算任务箭头路径（带轻微弧度）
 function calculateTaskArrowPath(startX, startY, endX, endY) {
   const midX = (startX + endX) / 2
@@ -524,11 +663,15 @@ function getEventNodeStroke(task) {
   return '#1976D2'
 }
 
-// 格式化时间显示
+// 格式化时间显示（转换为天数）
 function formatTime(timestamp) {
   if (!timestamp) return '-'
-  const date = new Date(timestamp * 1000)
-  return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+  // 如果是Unix时间戳（秒），转换为天数
+  if (typeof timestamp === 'number' && timestamp > 100000) {
+    const days = Math.floor(timestamp / (24 * 60 * 60))
+    return days.toString()
+  }
+  return timestamp.toString()
 }
 
 // 鼠标滚轮缩放
@@ -677,6 +820,11 @@ onUnmounted(() => {
   fill: #909399;
 }
 
+.node-time-mini {
+  font-family: monospace;
+  font-weight: 600;
+}
+
 .task-arrow-group {
   cursor: pointer;
   transition: opacity 0.2s;
@@ -686,16 +834,20 @@ onUnmounted(() => {
   opacity: 0.8;
 }
 
-.task-arrow-group.is-selected .task-arrow {
+.task-arrow-group.is-selected .task-arrow-real {
   stroke-width: 4 !important;
 }
 
-.task-arrow {
+.task-arrow-real {
   transition: stroke-width 0.15s ease;
 }
 
-.task-arrow:hover {
-  stroke-width: 3.5 !important;
+.task-arrow-real:hover {
+  stroke-width: 3 !important;
+}
+
+.task-arrow-slack {
+  opacity: 0.7;
 }
 
 .task-arrow.is-critical {
@@ -707,6 +859,7 @@ onUnmounted(() => {
   font-size: 12px;
   fill: #606266;
   pointer-events: none;
+  font-weight: 500;
 }
 
 .task-duration {
@@ -715,7 +868,13 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.dependency-line {
+.task-slack-label {
+  font-size: 9px;
+  font-weight: bold;
+  pointer-events: none;
+}
+
+.dummy-work-line {
   cursor: pointer;
   pointer-events: none;
 }

@@ -270,7 +270,6 @@
           :show-time-params="networkShowTimeParams"
           :show-slack="networkShowSlack"
           :show-duration="true"
-          :zoom-level="networkZoomLevel"
           :tool-mode="networkToolMode"
           :svg-width="Math.max(2000, timelineWidth)"
           :svg-height="networkHeight"

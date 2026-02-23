@@ -2007,6 +2007,14 @@ watch(
     currentTaskForResource.value = val
   }
 )
+
+// 监听视图模式切换，重置网络图平移状态
+watch(chartViewMode, (newMode) => {
+  if (newMode === 'gantt') {
+    // 切换到甘特图模式时，重置平移偏移
+    networkPanX.value = 0
+  }
+})
 </script>
 
 <style scoped>

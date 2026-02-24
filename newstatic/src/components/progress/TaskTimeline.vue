@@ -221,7 +221,6 @@
       <g
         v-if="showDependencies"
         class="dependencies-layer"
-        style="pointer-events: none;"
       >
         <path
           v-for="dep in visibleDependencies"
@@ -232,6 +231,9 @@
           fill="none"
           :marker-end="`url(#${arrowMarkerId})`"
           class="dependency-path"
+          style="pointer-events: stroke; cursor: pointer;"
+          @contextmenu.stop="handleDependencyContextMenu($event, dep)"
+          @click.stop="handleDependencyClick($event, dep)"
         />
       </g>
 
@@ -394,6 +396,7 @@ const emit = defineEmits([
   'task-mousedown',
   'context-menu',
   'dependency-create',
+  'dependency-contextmenu',
   'mousemove',
   'task-dragged',
   'zoom-change',
@@ -567,14 +570,12 @@ onMounted(() => {
   })
 
   if (timelineRef.value?.parentElement) {
-    resizeObserver.observe(timelineRef.value.parentElement)
+    const scrollParent = timelineRef.value.parentElement
+    resizeObserver.observe(scrollParent)
 
     // 监听父容器滚动事件，同步到时间轴头部
     const scrollHandler = () => {
-      const scrollParent = timelineRef.value?.parentElement
-      if (scrollParent) {
-        emit('scroll', { scrollLeft: scrollParent.scrollLeft })
-      }
+      emit('scroll', { scrollLeft: scrollParent.scrollLeft })
     }
     scrollParent.addEventListener('scroll', scrollHandler)
     timelineRef.value._scrollHandler = scrollHandler
@@ -867,6 +868,26 @@ const handleTaskMouseDown = (event, task) => {
   emit('task-mousedown', event, rawTask || task, taskBarElement)
 }
 
+// 依赖关系点击
+const handleDependencyClick = (event, dep) => {
+  event.stopPropagation()
+  console.log('Dependency clicked:', dep)
+}
+
+// 依赖关系右键菜单
+const handleDependencyContextMenu = (event, dep) => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  // 获取鼠标在页面上的位置
+  emit('dependency-contextmenu', {
+    event,
+    dependency: dep,
+    x: event.clientX,
+    y: event.clientY
+  })
+}
+
 // ==================== 拖拽排序处理 ====================
 const handleDragStart = (event, task) => {
   if (props.isCreatingDependency) {
@@ -1032,11 +1053,13 @@ defineExpose({
 }
 
 .dependency-path {
-  transition: stroke-width 0.2s;
+  transition: stroke-width 0.2s, stroke 0.2s;
+  cursor: pointer;
 }
 
 .dependency-path:hover {
-  stroke-width: 2 !important;
+  stroke-width: 2.5 !important;
+  stroke: #409EFF !important;
 }
 
 .drag-tooltip {

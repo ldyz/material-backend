@@ -1,6 +1,14 @@
 <template>
   <div class="gantt-toolbar" :class="{ 'is-fullscreen': isFullscreen }">
     <div class="toolbar-left">
+      <!-- 返回按钮 -->
+      <el-button type="info" size="small" @click="$emit('back-to-list')" class="back-button">
+        <el-icon><ArrowLeft /></el-icon>
+        返回项目列表
+      </el-button>
+
+      <el-divider direction="vertical" style="margin: 0 12px;" />
+
       <!-- 日期导航 -->
       <el-button-group size="small">
         <el-button @click="$emit('navigate-date', -1)" title="向左">
@@ -267,6 +275,7 @@ import {
   Timer,
   Clock
 } from '@element-plus/icons-vue'
+import { ElDivider } from 'element-plus'
 
 import { computed } from 'vue'
 
@@ -335,6 +344,7 @@ const showDateFormat = computed(() => {
 })
 
 defineEmits([
+  'back-to-list',
   'navigate-date',
   'go-today',
   'zoom-in',
@@ -404,5 +414,15 @@ defineEmits([
 
 .dropdown-icon.is-active {
   color: #409eff;
+}
+
+.back-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.back-button .el-icon {
+  font-size: 16px;
 }
 </style>

@@ -26,6 +26,7 @@
       :show-network-task-names="networkShowTaskNames"
       :show-network-slack="networkShowSlack"
       :network-layout-mode="networkLayoutMode"
+      @back-to-list="$emit('back-to-list')"
       @navigate-date="navigateDate"
       @go-today="goToToday"
       @zoom-in="zoomIn"
@@ -170,6 +171,7 @@
           @task-dblclick="handleTaskDblClick"
           @task-mousedown="handleTaskMouseDown"
           @dependency-create="handleDependencyCreate"
+          @dependency-contextmenu="handleDependencyContextMenu"
           @mousemove="handleTimelineMouseMove"
           @task-dragged="handleTaskDragged"
           @context-menu="handleContextMenu"
@@ -211,6 +213,8 @@
           @pan-change="handleNetworkPan"
           @node-contextmenu="handleNetworkNodeContextMenu"
           @task-contextmenu="handleNetworkTaskContextMenu"
+          @node-time-change="handleNetworkNodeTimeChange"
+          @node-dependency-create="handleNetworkDependencyCreate"
         />
       </div>
     </div>
@@ -242,6 +246,30 @@
         @convert-to-independent="handleConvertToIndependent"
         ref="contextMenuRef"
       />
+
+      <!-- 依赖关系右键菜单 -->
+      <el-dropdown
+        :virtual-ref="dependencyContextMenuVisible ? {
+          getBoundingClientRect: () => new DOMRect(
+            dependencyContextMenuPosition.x,
+            dependencyContextMenuPosition.y,
+            0,
+            0
+          )
+        } : undefined"
+        virtual-triggering
+        trigger="contextmenu"
+        @command="handleDependencyMenuCommand"
+        @visible-change="handleDependencyMenuVisibleChange"
+      >
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="delete-dependency" :icon="Delete">
+              删除依赖关系
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </teleport>
 
     <!-- 资源分配对话框 -->
@@ -312,7 +340,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ZoomIn, ZoomOut } from '@element-plus/icons-vue'
+import { ZoomIn, ZoomOut, Delete } from '@element-plus/icons-vue'
 import { progressApi } from '@/api'
 import { useGanttDrag } from '@/composables/useGanttDrag'
 import {
@@ -362,10 +390,14 @@ const props = defineProps({
   scheduleData: {
     type: Object,
     default: () => ({})
+  },
+  dataVersion: {
+    type: Number,
+    default: 0
   }
 })
 
-const emit = defineEmits(['task-updated', 'task-selected'])
+const emit = defineEmits(['task-updated', 'task-selected', 'back-to-list'])
 
 // ==================== 初始化 Store ====================
 const store = ganttStore
@@ -440,6 +472,12 @@ const contextMenuVisible = computed({
 })
 const contextMenuTask = computed(() => state.contextMenuTask)
 const contextMenuPosition = computed(() => state.contextMenuPosition)
+
+// 依赖关系右键菜单状态（独立于任务右键菜单）
+const dependencyContextMenuVisible = ref(false)
+const dependencyContextMenuDependency = ref(null)
+const dependencyContextMenuPosition = ref({ x: 0, y: 0 })
+
 const resourceDialogVisible = ref(false)
 const currentTaskForResource = ref(null)
 const resourceManagementDialogVisible = ref(false)
@@ -453,7 +491,8 @@ const bulkEditDialogVisible = ref(false)
 const chartViewMode = ref('gantt') // 'gantt' or 'network'
 
 // 网络图视图状态
-const networkToolMode = ref('select') // 'select', 'pan'
+// 网络图工具模式与全局平移模式同步（pan时为移动，否则为选择）
+const networkToolMode = computed(() => panMode.value ? 'pan' : 'select')
 const networkShowTimeParams = ref(false)
 const networkShowTaskNames = ref(true)
 const networkShowSlack = ref(false)
@@ -518,10 +557,14 @@ const networkTaskIndexMap = computed(() => {
   return map
 })
 
-// 网络图高度（与任务列表高度一致）
+// 网络图高度（与任务列表高度一致，使用 formattedTasks 获取所有任务）
 const networkHeight = computed(() => {
-  const visibleTasks = filteredTasks.value || []
-  return Math.max(1200, visibleTasks.length * rowHeight.value)
+  // 使用 formattedTasks 以包含所有展开的子任务
+  const allTasks = formattedTasks.value || []
+  // 计算任务总高度（考虑分组标题可能会增加额外高度，这里简化处理）
+  const taskListHeight = allTasks.length * rowHeight.value
+  // 设置最小高度为 600，最大为任务列表高度
+  return Math.max(600, taskListHeight)
 })
 
 // ==================== Undo/Redo 状态 ====================
@@ -1103,12 +1146,12 @@ const handleNetworkTaskClick = (task) => {
 // 网络图任务箭头双击（编辑任务）
 const handleNetworkTaskDblClick = (task) => {
   actions.selectTask(task.id)
-  actions.editTask(state.tasks.find(t => t.id === task.id))
+  actions.openEditDialog(state.tasks.find(t => t.id === task.id))
 }
 
 // 网络图节点右键菜单
 const handleNetworkNodeContextMenu = ({ event, node, x, y }) => {
-  // 节点代表事件，显示事件信息
+  // 节点代表事件，找到与节点相关的任务
   const nodeTasks = formattedTasks.value.filter(task => {
     const taskStart = new Date(task.start)
     const taskEnd = new Date(task.end)
@@ -1121,7 +1164,15 @@ const handleNetworkNodeContextMenu = ({ event, node, x, y }) => {
     return startDays === node.days || endDays === node.days
   })
 
-  ElMessage.info(`节点 ${node.number}: 关联 ${nodeTasks.length} 个任务`)
+  // 如果有相关任务，打开第一个任务的右键菜单
+  if (nodeTasks.length > 0) {
+    const firstTask = nodeTasks[0]
+    contextMenuTask.value = state.tasks.find(t => t.id === firstTask.id)
+    contextMenuPosition.value = { x, y }
+    contextMenuVisible.value = true
+  } else {
+    ElMessage.info(`节点 ${node.number}: 没有关联任务`)
+  }
 }
 
 // 网络图任务连线右键菜单
@@ -1130,6 +1181,99 @@ const handleNetworkTaskContextMenu = ({ event, task, x, y }) => {
   contextMenuTask.value = state.tasks.find(t => t.id === task.id)
   contextMenuPosition.value = { x, y }
   contextMenuVisible.value = true
+}
+
+// 网络图节点拖动改变任务时间
+const handleNetworkNodeTimeChange = ({ taskId, nodeType, newDate, daysDelta }) => {
+  const task = state.tasks.find(t => t.id === taskId)
+  if (!task) return
+
+  // 计算新的开始/结束日期
+  let updateData = {
+    id: taskId,
+    name: task.name,
+    start_date: task.start,
+    end_date: task.end,
+    progress: task.progress || 0,
+    priority: task.priority || 1
+  }
+
+  if (nodeType === 'start') {
+    // 改变开始时间，保持结束时间不变（工期会改变）
+    updateData.start_date = newDate
+    // end_date 保持原值不变（已经在上面设置为 task.end）
+  } else {
+    // 改变结束时间
+    updateData.end_date = newDate
+  }
+
+  // 更新本地状态
+  Object.assign(task, {
+    start: updateData.start_date,
+    end: updateData.end_date,
+    startDate: new Date(updateData.start_date),
+    endDate: new Date(updateData.end_date)
+  })
+
+  // 记录待保存的更新
+  state.pendingTaskUpdates.set(taskId, updateData)
+  actions.markUnsaved()
+
+  // 不显示提示，避免批量更新时重复显示
+  // ElMessage.success(`任务时间已更新`)
+}
+
+// 网络图节点间创建依赖关系
+const handleNetworkDependencyCreate = async ({ fromTaskIds, toTaskIds }) => {
+  // 新节点系统：从节点对象中直接获取任务ID
+  // fromTaskIds: 源节点结束的任务ID数组
+  // toTaskIds: 目标节点开始的任野ID数组
+
+  // 取第一个任务ID创建依赖（如果有多个任务，用户可以后续手动添加）
+  const fromTaskId = fromTaskIds[0]
+  const toTaskId = toTaskIds[0]
+
+  // 验证：不能创建到自身的依赖
+  if (fromTaskId === toTaskId) {
+    ElMessage.warning('不能创建任务自身的依赖关系')
+    return
+  }
+
+  // 获取源任务和目标任务
+  const sourceTask = state.tasks.find(t => t.id === fromTaskId)
+  const targetTask = state.tasks.find(t => t.id === toTaskId)
+
+  if (!sourceTask || !targetTask) {
+    ElMessage.error('任务不存在')
+    return
+  }
+
+  // 检查是否是父子关系
+  const isParentChild = actions.checkParentChildRelation(fromTaskId, toTaskId)
+  if (isParentChild) {
+    ElMessage.warning('不能在父子任务之间创建依赖关系')
+    return
+  }
+
+  // 检查是否是从右到左（源任务的结束晚于目标任务的开始）
+  const sourceEndDate = new Date(sourceTask.end)
+  const targetStartDate = new Date(targetTask.start)
+  if (sourceEndDate > targetStartDate) {
+    ElMessage.warning('不能创建从右到左的依赖关系（前置任务必须先于后置任务）')
+    return
+  }
+
+  // 调用API创建依赖关系
+  try {
+    await progressApi.createDependencyVisual(fromTaskId, toTaskId, { type: 'FS', lag: 0 })
+    ElMessage.success('依赖关系创建成功')
+    // 重新加载数据
+    await actions.loadData()
+  } catch (error) {
+    console.error('创建依赖关系失败:', error)
+    const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || '创建依赖关系失败'
+    ElMessage.error(errorMsg)
+  }
 }
 
 const toggleGroup = (groupName) => actions.toggleGroup(groupName)
@@ -1323,6 +1467,66 @@ const handleContextMenuDuplicate = async (task) => {
 const handleContextMenuDelete = async (task) => {
   actions.selectTask(task.id)
   await handleDeleteTask()
+}
+
+// ==================== 依赖关系操作 ====================
+// 依赖关系右键菜单
+const handleDependencyContextMenu = ({ event, dependency, x, y }) => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  console.log('依赖关系右键菜单:', dependency)
+
+  // 设置依赖关系上下文菜单状态
+  dependencyContextMenuDependency.value = dependency
+  dependencyContextMenuPosition.value = { x, y }
+  dependencyContextMenuVisible.value = true
+}
+
+// 删除依赖关系
+const handleDeleteDependency = async (dependency) => {
+  if (!dependency) return
+
+  console.log('删除依赖关系:', dependency)
+
+  try {
+    // 首先需要获取任务的依赖关系列表，找到对应的依赖ID
+    const response = await progressApi.getDependencies(dependency.toId)
+    const dependencies = response.data || []
+
+    // 查找匹配的依赖关系（depends_on == fromId）
+    const targetDep = dependencies.find(dep => dep.depends_on === dependency.fromId)
+
+    if (!targetDep) {
+      ElMessage.error('未找到对应的依赖关系')
+      return
+    }
+
+    // 调用删除API
+    await progressApi.removeDependency(targetDep.id)
+    ElMessage.success('依赖关系已删除')
+
+    // 刷新数据
+    emit('task-updated', null)
+  } catch (error) {
+    console.error('删除依赖关系失败:', error)
+    const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || '删除依赖关系失败'
+    ElMessage.error(errorMsg)
+  }
+}
+
+// 依赖关系菜单命令处理
+const handleDependencyMenuCommand = async (command) => {
+  if (command === 'delete-dependency') {
+    await handleDeleteDependency(dependencyContextMenuDependency.value)
+  }
+}
+
+// 依赖关系菜单可见性变化
+const handleDependencyMenuVisibleChange = (visible) => {
+  if (!visible) {
+    dependencyContextMenuVisible.value = false
+  }
 }
 
 // ==================== 任务层级操作 ====================
@@ -1578,10 +1782,18 @@ const handleSaveTask = async (formData) => {
       const command = new CreateTaskCommand(
         props.projectId,
         taskData,
-        (createdTask) => {
+        async (createdTask) => {
           console.log('任务创建响应:', createdTask)
           ElMessage.success('任务创建成功')
           statusBarRef.value?.showStatus('任务创建成功', 'success', 2000)
+
+          // 等待一小段时间，确保后端完成 CPM 计算
+          await new Promise(resolve => setTimeout(resolve, 500))
+
+          // 重新加载任务数据以获取最新的调度信息
+          await actions.loadData()
+
+          // 通知父组件刷新
           emit('task-updated', createdTask)
         },
         (error) => {
@@ -1865,6 +2077,14 @@ watch(() => props.scheduleData, (newData) => {
     actions.formatTasks()
   }
 }, { deep: true })
+
+// 监听 dataVersion 变化（当任务更新时，强制重新格式化）
+watch(() => props.dataVersion, (newVersion, oldVersion) => {
+  if (newVersion !== oldVersion && newVersion > 0) {
+    console.log('GanttChart - dataVersion changed to', newVersion, ', reformatting tasks')
+    actions.formatTasks()
+  }
+})
 
 onMounted(() => {
   console.log('GanttChart - mounted with refactored components and store')

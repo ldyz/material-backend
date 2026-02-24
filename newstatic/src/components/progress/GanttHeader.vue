@@ -1,6 +1,7 @@
 <template>
   <div class="gantt-header">
     <div class="header-tasks">
+      <div class="header-column column-id">编号</div>
       <div class="header-column column-name">任务名称</div>
       <div class="header-column column-duration">工期</div>
       <div class="header-column column-dates">起止时间</div>
@@ -91,7 +92,7 @@
             class="timeline-month-cell-2"
             :style="{ left: month.position + 'px', width: month.width + 'px' }"
           >
-            <div class="month-label-2">{{ month.label }}</div>
+            <div class="month-label-2">{{ month.month }}月</div>
           </div>
         </div>
         <div class="timeline-days-row-3">
@@ -361,7 +362,7 @@ defineExpose({
 }
 
 .header-tasks {
-  width: 550px;
+  width: 670px;
   padding: 0;
   font-weight: bold;
   color: #303133;
@@ -385,6 +386,13 @@ defineExpose({
 
 .header-column:last-child {
   border-right: none;
+}
+
+.column-id {
+  flex: 0 0 60px;
+  justify-content: center;
+  font-weight: bold;
+  color: #606266;
 }
 
 .column-name {

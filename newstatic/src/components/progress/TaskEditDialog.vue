@@ -10,6 +10,9 @@
       <!-- 基本信息 -->
       <el-tab-pane label="基本信息" name="basic">
         <el-form :model="formData" :rules="rules" ref="formRef" label-width="100px">
+          <el-form-item v-if="editingTask" label="任务编号">
+            <el-input v-model="formData.id" disabled />
+          </el-form-item>
           <el-form-item label="任务名称" prop="name">
             <el-input v-model="formData.name" placeholder="请输入任务名称" />
           </el-form-item>
@@ -42,9 +45,17 @@
             </div>
           </el-form-item>
           <el-form-item label="进度" prop="progress">
-            <el-slider v-model="formData.progress" :marks="{ 0: '0%', 50: '50%', 100: '100%' }" />
+            <el-slider
+              v-model="formData.progress"
+              :marks="{ 0: '0%', 50: '50%', 100: '100%' }"
+              :disabled="dateFieldsDisabled"
+            />
+            <div v-if="dateFieldsDisabled" style="color: #909399; font-size: 12px; margin-top: 4px;">
+              <el-icon><InfoFilled /></el-icon>
+              父任务的进度由子任务自动计算得出
+            </div>
           </el-form-item>
-          <el-form-item label="优先级" prop="priority">
+          <el-form-item label="优先级" prop="priority" v-if="!dateFieldsDisabled">
             <el-radio-group v-model="formData.priority">
               <el-radio-button label="urgent">紧急</el-radio-button>
               <el-radio-button label="high">高</el-radio-button>
@@ -52,15 +63,27 @@
               <el-radio-button label="low">低</el-radio-button>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="备注">
+          <el-form-item label="备注" v-if="!dateFieldsDisabled">
             <el-input v-model="formData.notes" type="textarea" :rows="3" placeholder="任务备注" />
           </el-form-item>
+          <el-alert v-if="dateFieldsDisabled" type="info" :closable="false" style="margin-top: 16px;">
+            <template #title>
+              <span style="font-size: 13px;">父任务仅可编辑名称，其他信息由子任务自动计算</span>
+            </template>
+          </el-alert>
         </el-form>
       </el-tab-pane>
 
       <!-- 资源管理 -->
-      <el-tab-pane label="资源分配" name="resources">
-        <div class="resources-section">
+      <el-tab-pane label="资源分配" name="resources" :disabled="dateFieldsDisabled">
+        <div v-if="dateFieldsDisabled" class="disabled-section-info">
+          <el-empty description="父任务的资源不可直接编辑" :image-size="80">
+            <template #description>
+              <p style="color: #909399; font-size: 13px;">父任务的资源分配由子任务汇总得出，不可直接编辑</p>
+            </template>
+          </el-empty>
+        </div>
+        <div v-else class="resources-section">
           <div class="resources-header">
             <span class="resources-title">已分配资源</span>
             <el-button type="primary" size="small" @click="showAddResourceDialog">
@@ -106,8 +129,15 @@
       </el-tab-pane>
 
       <!-- 任务依赖 -->
-      <el-tab-pane label="任务依赖" name="dependencies">
-        <div class="dependencies-section">
+      <el-tab-pane label="任务依赖" name="dependencies" :disabled="dateFieldsDisabled">
+        <div v-if="dateFieldsDisabled" class="disabled-section-info">
+          <el-empty description="父任务的依赖关系不可直接编辑" :image-size="80">
+            <template #description>
+              <p style="color: #909399; font-size: 13px;">父任务不能设置依赖关系，请为子任务设置依赖</p>
+            </template>
+          </el-empty>
+        </div>
+        <div v-else class="dependencies-section">
           <!-- 紧前任务 -->
           <div class="dep-group">
             <div class="dep-header">
@@ -693,6 +723,7 @@ watch(
   (newTask) => {
     if (newTask) {
       formData.value = {
+        id: newTask.id,
         name: newTask.name || '',
         start: newTask.start || '',
         end: newTask.end || '',
@@ -887,5 +918,15 @@ defineExpose({
 
 :deep(.el-empty) {
   padding: 20px 0;
+}
+
+/* 禁用区域信息 */
+.disabled-section-info {
+  padding: 20px;
+  text-align: center;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

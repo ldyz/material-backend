@@ -69,95 +69,48 @@
             @drop="handleDrop($event, task)"
             @dragend="handleDragEnd"
           >
+            <!-- 任务编号 -->
+            <div class="row-column column-id">
+              {{ task.id }}
+            </div>
+
             <!-- 任务名称 -->
-            <div
-              class="row-column column-name"
-              @dblclick="startEdit(task, 'name', $event)"
-              :class="{ 'is-editing': editingCell?.taskId === task.id && editingCell?.field === 'name' }"
-            >
-              <template v-if="editingCell?.taskId === task.id && editingCell?.field === 'name'">
-                <el-input
-                  ref="editInput"
-                  v-model="editingCell.value"
-                  size="small"
-                  @blur="saveEdit"
-                  @keyup.enter="saveEdit"
-                  @keyup.esc="cancelEdit"
-                  autofocus
+            <div class="row-column column-name">
+              <!-- 树形缩进和展开/收起按钮 -->
+              <div class="task-tree-indent" :style="{ paddingLeft: (getTaskDepth(task) * 20) + 'px' }">
+                <el-icon
+                  v-if="hasChildren(task)"
+                  class="tree-toggle-icon"
+                  :class="{ 'is-collapsed': isTaskCollapsed(task) }"
+                  @click.stop="toggleTaskCollapse(task)"
+                >
+                  <ArrowDown />
+                </el-icon>
+                <span v-else class="tree-toggle-placeholder"></span>
+                <el-icon v-if="isMilestone(task)" class="milestone-icon"><Star /></el-icon>
+                <div class="task-name-text" :title="task.name">{{ task.name }}</div>
+              </div>
+              <div class="task-progress-mini">
+                <el-progress
+                  :percentage="task.progress || 0"
+                  :stroke-width="4"
+                  :show-text="false"
                 />
-              </template>
-              <template v-else>
-                <!-- 树形缩进和展开/收起按钮 -->
-                <div class="task-tree-indent" :style="{ paddingLeft: (getTaskDepth(task) * 20) + 'px' }">
-                  <el-icon
-                    v-if="hasChildren(task)"
-                    class="tree-toggle-icon"
-                    :class="{ 'is-collapsed': isTaskCollapsed(task) }"
-                    @click.stop="toggleTaskCollapse(task)"
-                  >
-                    <ArrowDown />
-                  </el-icon>
-                  <span v-else class="tree-toggle-placeholder"></span>
-                  <el-icon v-if="isMilestone(task)" class="milestone-icon"><Star /></el-icon>
-                  <div class="task-name-text" :title="task.name">{{ task.name }}</div>
-                </div>
-                <div class="task-progress-mini">
-                  <el-progress
-                    :percentage="task.progress || 0"
-                    :stroke-width="4"
-                    :show-text="false"
-                  />
-                </div>
-              </template>
+              </div>
             </div>
 
             <!-- 工期 -->
-            <div
-              class="row-column column-duration"
-              @dblclick="startEdit(task, 'duration', $event)"
-              :class="{ 'is-editing': editingCell?.taskId === task.id && editingCell?.field === 'duration' }"
-            >
-              <template v-if="editingCell?.taskId === task.id && editingCell?.field === 'duration'">
-                <el-input
-                  v-model.number="editingCell.value"
-                  size="small"
-                  type="number"
-                  @blur="saveEdit"
-                  @keyup.enter="saveEdit"
-                  @keyup.esc="cancelEdit"
-                  autofocus
-                />
-              </template>
-              <template v-else>
-                {{ getTaskDuration(task) }} 天
-              </template>
+            <div class="row-column column-duration">
+              {{ getTaskDuration(task) }} 天
             </div>
 
             <!-- 起止时间 -->
-            <div
-              class="row-column column-dates"
-              @dblclick="startEdit(task, 'dates', $event)"
-              :class="{ 'is-editing': editingCell?.taskId === task.id && editingCell?.field === 'dates' }"
-            >
-              <template v-if="editingCell?.taskId === task.id && editingCell?.field === 'dates'">
-                <el-date-picker
-                  v-model="editingCell.value"
-                  type="daterange"
-                  size="small"
-                  format="YYYY/MM/DD"
-                  value-format="YYYY-MM-DD"
-                  @blur="saveEdit"
-                  @change="saveEdit"
-                  autofocus
-                />
-              </template>
-              <template v-else>
-                <div class="date-range">
-                  <span class="date-start">{{ task.start ? formatDateShort(task.start) : '-' }}</span>
-                  <span class="date-separator">→</span>
-                  <span class="date-end">{{ task.end ? formatDateShort(task.end) : '-' }}</span>
-                </div>
-              </template>
+            <div class="row-column column-dates">
+              <div class="date-range">
+                <span class="date-start">{{ task.start ? formatDateShort(task.start) : '-' }}</span>
+                <span class="date-separator">→</span>
+                <span class="date-end">{{ task.end ? formatDateShort(task.end) : '-' }}</span>
+              </div>
             </div>
 
             <!-- 资源 -->
@@ -208,94 +161,48 @@
         @dragleave="handleDragLeave($event, task)"
         @drop="handleDrop($event, task)"
       >
+        <!-- 任务编号 -->
+        <div class="row-column column-id">
+          {{ task.id }}
+        </div>
+
         <!-- 任务名称 -->
-        <div
-          class="row-column column-name"
-          @dblclick="startEdit(task, 'name', $event)"
-          :class="{ 'is-editing': editingCell?.taskId === task.id && editingCell?.field === 'name' }"
-        >
-          <template v-if="editingCell?.taskId === task.id && editingCell?.field === 'name'">
-            <el-input
-              v-model="editingCell.value"
-              size="small"
-              @blur="saveEdit"
-              @keyup.enter="saveEdit"
-              @keyup.esc="cancelEdit"
-              autofocus
+        <div class="row-column column-name">
+          <!-- 树形缩进和展开/收起按钮 -->
+          <div class="task-tree-indent" :style="{ paddingLeft: (getTaskDepth(task) * 20) + 'px' }">
+            <el-icon
+              v-if="hasChildren(task)"
+              class="tree-toggle-icon"
+              :class="{ 'is-collapsed': isTaskCollapsed(task) }"
+              @click.stop="toggleTaskCollapse(task)"
+            >
+              <ArrowDown />
+            </el-icon>
+            <span v-else class="tree-toggle-placeholder"></span>
+            <el-icon v-if="isMilestone(task)" class="milestone-icon"><Star /></el-icon>
+            <div class="task-name-text" :title="task.name">{{ task.name }}</div>
+          </div>
+          <div class="task-progress-mini">
+            <el-progress
+              :percentage="task.progress || 0"
+              :stroke-width="4"
+              :show-text="false"
             />
-          </template>
-          <template v-else>
-            <!-- 树形缩进和展开/收起按钮 -->
-            <div class="task-tree-indent" :style="{ paddingLeft: (getTaskDepth(task) * 20) + 'px' }">
-              <el-icon
-                v-if="hasChildren(task)"
-                class="tree-toggle-icon"
-                :class="{ 'is-collapsed': isTaskCollapsed(task) }"
-                @click.stop="toggleTaskCollapse(task)"
-              >
-                <ArrowDown />
-              </el-icon>
-              <span v-else class="tree-toggle-placeholder"></span>
-              <el-icon v-if="isMilestone(task)" class="milestone-icon"><Star /></el-icon>
-              <div class="task-name-text" :title="task.name">{{ task.name }}</div>
-            </div>
-            <div class="task-progress-mini">
-              <el-progress
-                :percentage="task.progress || 0"
-                :stroke-width="4"
-                :show-text="false"
-              />
-            </div>
-          </template>
+          </div>
         </div>
 
         <!-- 工期 -->
-        <div
-          class="row-column column-duration"
-          @dblclick="startEdit(task, 'duration', $event)"
-          :class="{ 'is-editing': editingCell?.taskId === task.id && editingCell?.field === 'duration' }"
-        >
-          <template v-if="editingCell?.taskId === task.id && editingCell?.field === 'duration'">
-            <el-input
-              v-model.number="editingCell.value"
-              size="small"
-              type="number"
-              @blur="saveEdit"
-              @keyup.enter="saveEdit"
-              @keyup.esc="cancelEdit"
-              autofocus
-            />
-          </template>
-          <template v-else>
-            {{ getTaskDuration(task) }} 天
-          </template>
+        <div class="row-column column-duration">
+          {{ getTaskDuration(task) }} 天
         </div>
 
         <!-- 起止时间 -->
-        <div
-          class="row-column column-dates"
-          @dblclick="startEdit(task, 'dates', $event)"
-          :class="{ 'is-editing': editingCell?.taskId === task.id && editingCell?.field === 'dates' }"
-        >
-          <template v-if="editingCell?.taskId === task.id && editingCell?.field === 'dates'">
-            <el-date-picker
-              v-model="editingCell.value"
-              type="daterange"
-              size="small"
-              format="YYYY/MM/DD"
-              value-format="YYYY-MM-DD"
-              @blur="saveEdit"
-              @change="saveEdit"
-              autofocus
-            />
-          </template>
-          <template v-else>
-            <div class="date-range">
-              <span class="date-start">{{ task.start ? formatDateShort(task.start) : '-' }}</span>
-              <span class="date-separator">→</span>
-              <span class="date-end">{{ task.end ? formatDateShort(task.end) : '-' }}</span>
-            </div>
-          </template>
+        <div class="row-column column-dates">
+          <div class="date-range">
+            <span class="date-start">{{ task.start ? formatDateShort(task.start) : '-' }}</span>
+            <span class="date-separator">→</span>
+            <span class="date-end">{{ task.end ? formatDateShort(task.end) : '-' }}</span>
+          </div>
         </div>
 
         <!-- 资源 -->
@@ -330,6 +237,7 @@
         @dblclick="handleEmptyRowDblClick"
         title="点击或双击添加新任务"
       >
+        <div class="row-column column-id"></div>
         <div class="row-column column-name">
           <div class="task-tree-indent">
             <span class="tree-toggle-placeholder"></span>
@@ -338,9 +246,8 @@
           </div>
         </div>
         <div class="row-column column-duration"></div>
-        <div class="row-column column-start"></div>
-        <div class="row-column column-end"></div>
-        <div class="row-column column-progress"></div>
+        <div class="row-column column-dates"></div>
+        <div class="row-column column-resources"></div>
       </div>
     </template>
 
@@ -356,9 +263,9 @@
 </template>
 
 <script setup>
-import { computed, ref, nextTick } from 'vue'
+import { computed, ref } from 'vue'
 import { Star, ArrowDown, Rank, Plus } from '@element-plus/icons-vue'
-import { diffDays, formatDate } from '@/utils/dateFormat'
+import { diffDays } from '@/utils/dateFormat'
 import { isMilestone } from '@/utils/ganttHelpers'
 import { ganttStore } from '@/stores/ganttStore'
 
@@ -406,13 +313,8 @@ const emit = defineEmits([
   'row-dblclick',
   'toggle-group',
   'context-menu',
-  'cell-edit',
   'task-dragged'
 ])
-
-// 编辑状态
-const editingCell = ref(null)
-const editInput = ref(null)
 
 // 拖拽状态
 const draggedTask = ref(null)
@@ -465,83 +367,10 @@ const visibleTasks = computed(() => {
   return props.tasks.filter(task => !isTaskHidden(task))
 })
 
-// 开始编辑
-const startEdit = (task, field, event) => {
-  event.stopPropagation()
-
-  let initialValue
-  if (field === 'name') {
-    initialValue = task.name
-  } else if (field === 'duration') {
-    initialValue = getTaskDuration(task)
-  } else if (field === 'dates') {
-    initialValue = [task.start, task.end]
-  }
-
-  editingCell.value = {
-    taskId: task.id,
-    field,
-    value: initialValue,
-    originalTask: { ...task }
-  }
-
-  // 聚焦输入框
-  nextTick(() => {
-    if (field === 'name' || field === 'duration') {
-      editInput.value?.focus?.()
-      editInput.value?.select?.()
-    }
-  })
-}
-
-// 保存编辑
-const saveEdit = async () => {
-  if (!editingCell.value) return
-
-  const { taskId, field, value, originalTask } = editingCell.value
-
-  try {
-    let updateData = {}
-
-    if (field === 'name') {
-      updateData = {
-        name: value
-      }
-    } else if (field === 'duration') {
-      // 根据工期计算新的结束日期
-      const startDate = new Date(originalTask.start)
-      const endDate = new Date(startDate)
-      endDate.setDate(startDate.getDate() + value)
-      updateData = {
-        start_date: formatDate(startDate),
-        end_date: formatDate(endDate)
-      }
-    } else if (field === 'dates') {
-      if (value && value.length === 2) {
-        updateData = {
-          start_date: value[0],
-          end_date: value[1]
-        }
-      }
-    }
-
-    emit('cell-edit', { taskId, updateData })
-  } catch (error) {
-    console.error('保存编辑失败:', error)
-  } finally {
-    editingCell.value = null
-  }
-}
-
-// 取消编辑
-const cancelEdit = () => {
-  editingCell.value = null
-}
-
 // 处理右键菜单（已有任务）
 const handleContextMenu = (event, task) => {
-  // 如果正在编辑或拖拽，不显示右键菜单
-  if (editingCell.value || draggedTask.value) return
+  // 如果正在拖拽，不显示右键菜单
+  if (draggedTask.value) return
 
   event.preventDefault()
   event.stopPropagation()
@@ -806,7 +635,7 @@ const getResourceTagType = (type) => {
 
 <style scoped>
 .task-table-wrapper {
-  width: 550px;
+  width: 670px;
   border-right: 1px solid #dcdfe6;
   flex-shrink: 0;
   position: sticky;
@@ -939,6 +768,14 @@ const getResourceTagType = (type) => {
 
 .row-column:last-child {
   border-right: none;
+}
+
+.row-column.column-id {
+  flex: 0 0 60px;
+  justify-content: center;
+  font-weight: bold;
+  color: #606266;
+  font-size: 13px;
 }
 
 .row-column.column-name {

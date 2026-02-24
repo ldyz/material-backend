@@ -400,27 +400,62 @@ const getters = {
 
   // 时间轴月份行（用于日视图双层显示的上层）
   timelineHeaderMonths: computed(() => {
-    const days = getters.timelineDays.value
-    if (days.length === 0) return []
+    // 直接使用 state.filteredTasks 来计算，避免循环引用
+    if (state.filteredTasks.length === 0) return []
+
+    console.log('[timelineHeaderMonths] 计算开始，任务数量:', state.filteredTasks.length)
+
+    const tasks = state.filteredTasks
+    const minDate = new Date(Math.min(...tasks.map(t => t.startDate.getTime())))
+    const maxDate = new Date(Math.max(...tasks.map(t => t.endDate.getTime())))
+
+    console.log('[timelineHeaderMonths] 任务日期范围:', minDate.toISOString(), '到', maxDate.toISOString())
+
+    // 添加缓冲区（与 timelineDays 相同的逻辑）
+    let bufferDays = 7
+    const totalDays = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24))
+    if (totalDays <= 14) {
+      bufferDays = 14
+    } else if (totalDays <= 30) {
+      bufferDays = 7
+    } else if (totalDays <= 90) {
+      bufferDays = 7
+    } else {
+      bufferDays = 3
+    }
+
+    const startDate = new Date(minDate)
+    startDate.setDate(startDate.getDate() - bufferDays)
+
+    const endDate = new Date(maxDate)
+    endDate.setDate(endDate.getDate() + bufferDays)
+
+    console.log('[timelineHeaderMonths] 计算日期范围（含缓冲区）:', startDate.toISOString(), '到', endDate.toISOString())
 
     const months = []
     let currentMonth = null
 
-    days.forEach((day, index) => {
-      const date = new Date(day.date)
-      const year = date.getFullYear()
-      const month = date.getMonth() + 1
+    // 遍历日期范围
+    const currentDate = new Date(startDate)
+    let dayIndex = 0
+
+    while (currentDate <= endDate) {
+      const year = currentDate.getFullYear()
+      const month = currentDate.getMonth() + 1
       const monthKey = `${year}-${month}`
 
       if (monthKey !== currentMonth) {
-        // 开始新月份
         currentMonth = monthKey
-        months.push({
+        const monthData = {
           key: monthKey,
           label: `${year}年${month}月`,
-          position: day.position,
-          width: 0  // 稍后计算
-        })
+          year,
+          month,
+          position: dayIndex * state.dayWidth,
+          width: 0
+        }
+        months.push(monthData)
+        console.log('[timelineHeaderMonths] 添加月份:', monthData)
       }
 
       // 累加当前月份的宽度
@@ -428,8 +463,12 @@ const getters = {
         const lastMonth = months[months.length - 1]
         lastMonth.width += state.dayWidth
       }
-    })
 
+      currentDate.setDate(currentDate.getDate() + 1)
+      dayIndex++
+    }
+
+    console.log('[timelineHeaderMonths] 计算完成，月份数量:', months.length, '数据:', months)
     return months
   }),
 
@@ -615,10 +654,7 @@ const getters = {
     const duration = diffDays(state.previewTask.start, state.previewTask.end)
 
     return `${mode}: ${state.previewTask.start} ~ ${state.previewTask.end} (${duration}天)`
-  }),
-
-  // 暴露时间轴月份行（用于双层显示）
-  timelineHeaderMonths: computed(() => state.timelineHeaderMonths)
+  })
 }
 
 // ==================== Actions (同步操作) ====================
@@ -798,6 +834,7 @@ const actions = {
   /**
    * 更新汇总任务（父任务）
    * 有子任务的父任务自动变成汇总任务，日期由子任务决定
+   * 进度由子任务计算得出
    */
   updateSummaryTasks() {
     // 找出所有有子任务的任务
@@ -850,10 +887,21 @@ const actions = {
         }
       }
 
-      // 更新父任务的日期和标记
+      // 计算父任务进度：基于所有直接子任务的简单平均
+      const directChildren = state.tasks.filter(t => t.parent_id === parentId)
+      let totalProgress = 0
+      for (const child of directChildren) {
+        totalProgress += (child.progress || 0)
+      }
+      const avgProgress = directChildren.length > 0
+        ? Math.round(totalProgress / directChildren.length)
+        : 0
+
+      // 更新父任务的日期、进度和标记
       if (minStartDate && maxEndDate) {
         parentTask.start = formatDate(minStartDate)
         parentTask.end = formatDate(maxEndDate)
+        parentTask.progress = avgProgress  // 进度由子任务计算
         parentTask.is_summary = true // 标记为汇总任务
         parentTask.startDate = minStartDate
         parentTask.endDate = maxEndDate
@@ -970,8 +1018,8 @@ const actions = {
 
     // 获取时间轴容器的可用宽度
     const containerWidth = state.containerSize.width || 1200
-    // 减去任务列表宽度（550px）和其他边距（20px）
-    const availableWidth = Math.max(600, containerWidth - 570)
+    // 减去任务列表宽度（670px）和其他边距（20px）
+    const availableWidth = Math.max(600, containerWidth - 690)
 
     // 计算每天的最佳像素宽度，确保所有天都能显示
     const optimalDayWidth = Math.floor(availableWidth / totalDays)
@@ -1039,20 +1087,36 @@ const actions = {
 
       case 'resize_left':
         const newStart = addDays(original.start, dayOffset)
-        if (newStart <= new Date(original.end)) {
+        // 验证：开始时间不能晚于结束时间，至少保持1天工期
+        const maxStart = new Date(original.end)
+        if (newStart < maxStart) {
           preview = {
             ...original,
             start: formatDate(newStart)
+          }
+        } else {
+          // 如果到达或超过结束时间，设置为结束时间（0或负工期）
+          preview = {
+            ...original,
+            start: formatDate(maxStart)
           }
         }
         break
 
       case 'resize_right':
         const newEnd = addDays(original.end, dayOffset)
-        if (newEnd >= new Date(original.start)) {
+        // 验证：结束时间不能早于开始时间，至少保持1天工期
+        const minEnd = new Date(original.start)
+        if (newEnd > minEnd) {
           preview = {
             ...original,
             end: formatDate(newEnd)
+          }
+        } else {
+          // 如果到达或早于开始时间，设置为开始时间（0或负工期）
+          preview = {
+            ...original,
+            end: formatDate(minEnd)
           }
         }
         break
@@ -1062,8 +1126,20 @@ const actions = {
       const duration = diffDays(preview.start, preview.end)
       preview.duration = Math.max(duration, 0)
 
-      // 应用依赖关系约束到预览任务
-      state.previewTask = this.applyDependencyConstraints(preview, state.draggedTask?.id)
+      // 额外验证：确保开始不晚于结束
+      if (new Date(preview.start) > new Date(preview.end)) {
+        // 如果开始时间仍然晚于结束时间，强制设置为相同日期
+        preview.end = preview.start
+        preview.duration = 0
+      }
+
+      // 只在移动模式下应用依赖关系约束
+      // resize_left 和 resize_right 模式只改变单个边界，不应该应用依赖约束
+      if (state.dragMode === 'move') {
+        state.previewTask = this.applyDependencyConstraints(preview, state.draggedTask?.id)
+      } else {
+        state.previewTask = preview
+      }
     } else {
       state.previewTask = null
     }
@@ -1074,6 +1150,7 @@ const actions = {
   /**
    * 更新父任务的日期（基于子任务计算）
    * 当子任务的日期发生变化时，需要更新所有父任务的日期范围
+   * 同时计算父任务的进度
    */
   updateParentTaskDates(taskId) {
     const task = state.tasks.find(t => t.id === taskId)
@@ -1103,12 +1180,22 @@ const actions = {
         }
       })
 
-      // 更新父任务的日期
+      // 计算父任务进度：基于所有直接子任务的简单平均
+      let totalProgress = 0
+      for (const child of children) {
+        totalProgress += (child.progress || 0)
+      }
+      const avgProgress = children.length > 0
+        ? Math.round(totalProgress / children.length)
+        : 0
+
+      // 更新父任务的日期和进度
       const startDate = formatDate(earliestStart)
       const endDate = formatDate(latestEnd)
 
       parent.start = startDate
       parent.end = endDate
+      parent.progress = avgProgress  // 进度由子任务计算
       parent.startDate = earliestStart
       parent.endDate = latestEnd
 
@@ -1130,16 +1217,58 @@ const actions = {
    * 结束拖拽
    */
   endDrag(newTask, originalTask) {
+    // 验证：开始时间不能晚于结束时间
+    const startDate = new Date(newTask.start)
+    const endDate = new Date(newTask.end)
+
+    // 如果开始时间晚于结束时间，进行调整
+    if (startDate > endDate) {
+      // 根据拖动模式决定如何调整
+      if (state.dragMode === 'resize_left') {
+        // 调整开始时间：将开始时间设置为结束时间（最小1天工期）
+        newTask = {
+          ...newTask,
+          start: newTask.end // 设置为相同日期
+        }
+      } else if (state.dragMode === 'resize_right') {
+        // 调整结束时间：将结束时间设置为开始时间（最小1天工期）
+        newTask = {
+          ...newTask,
+          end: newTask.start // 设置为相同日期
+        }
+      } else {
+        // 移动模式：保持原有的工期长度
+        const originalDuration = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24))
+        newTask = {
+          ...newTask,
+          start: newTask.end, // 将开始时间设置为结束时间
+          end: formatDate(new Date(new Date(newTask.end).getTime() + originalDuration * 24 * 60 * 60 * 1000))
+        }
+      }
+    }
+
     // 根据拖动模式决定是否应用依赖约束
     let adjustedTask
     if (state.dragMode === 'resize_right') {
       // 调整结束日期：不应用前置约束，只更新结束日期，保持开始日期不变
+      // 从 originalTask 中提取需要的字段，不包含 startDate/endDate/duration 以避免使用旧值
+      const { startDate, endDate, duration, ...rest } = originalTask
       adjustedTask = {
-        ...newTask,
-        start: originalTask.start // 保持原始开始日期
+        ...rest,
+        start: originalTask.start,  // 保持原始开始日期
+        end: newTask.end  // 使用新的结束日期
+      }
+    } else if (state.dragMode === 'resize_left') {
+      // 调整开始日期：不应用前置约束，只更新开始日期，保持结束日期不变
+      // 从 originalTask 中提取需要的字段，不包含 startDate/endDate/duration 以避免使用旧值
+      const { startDate, endDate, duration, ...rest } = originalTask
+      adjustedTask = {
+        ...rest,
+        start: newTask.start,  // 使用新的开始日期
+        end: originalTask.end  // 保持原始结束日期
       }
     } else {
-      // 移动或调整开始日期：应用依赖约束
+      // 移动模式：应用依赖约束
       adjustedTask = this.applyDependencyConstraints(newTask, originalTask.id)
     }
 
@@ -1164,9 +1293,12 @@ const actions = {
       task.endDate = new Date(adjustedTask.end)
     }
 
-    // 只在非 resize_right 模式下调整后置任务的开始时间
-    // resize_right 模式只改变结束时间，不应该影响后置任务
-    if (state.dragMode !== 'resize_right') {
+    // 只在 move 或 resize_right 模式下调整后置任务的开始时间
+    // resize_left 模式只改变开始日期，结束日期不变，不应该影响后置任务
+    // - resize_left: 改变开始日期，结束日期不变 → 后置任务依赖的是结束日期，无需调整
+    // - resize_right: 改变结束日期，开始日期不变 → 后置任务应该跟随调整
+    // - move: 整体移动，后置任务应该跟随调整
+    if (state.dragMode === 'move' || state.dragMode === 'resize_right') {
       this.adjustSuccessorTasks(originalTask.id)
     }
 
@@ -1224,8 +1356,10 @@ const actions = {
         const newStart = new Date(latestPredecessorEnd)
         const newEnd = addDays(newStart, duration)
 
+        // 排除旧的 Date 对象和计算字段，只保留需要的属性
+        const { startDate, endDate, duration: dur, ...rest } = task
         return {
-          ...task,
+          ...rest,
           start: formatDate(newStart),
           end: formatDate(newEnd)
         }

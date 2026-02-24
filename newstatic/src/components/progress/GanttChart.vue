@@ -61,6 +61,11 @@
       @toggle-network-task-names="networkShowTaskNames = !networkShowTaskNames"
       @toggle-network-slack="networkShowSlack = !networkShowSlack"
       @network-layout-change="networkLayoutMode = $event"
+      @calculate-critical-path="handleCalculateCriticalPath"
+      @analyze-node-properties="handleAnalyzeNodeProperties"
+      @check-path-optimization="handleCheckPathOptimization"
+      @validate-rules="handleValidateRules"
+      @export-analysis-report="handleExportAnalysisReport"
     />
 
     <!-- 统计信息 -->
@@ -182,6 +187,7 @@
 
         <!-- 网络图视图 -->
         <NetworkView
+          ref="networkViewRef"
           v-if="chartViewMode === 'network'"
           :tasks="formattedTasks"
           :dependencies="formattedTasks.flatMap(t =>
@@ -420,6 +426,7 @@ const ganttChartRef = ref(null)
 const ganttContainer = ref(null)
 const ganttBodyRef = ref(null)
 const taskTimelineRef = ref(null)
+const networkViewRef = ref(null)
 const statusBarRef = ref(null)
 const contextMenuRef = ref(null)
 
@@ -1266,9 +1273,29 @@ const handleNetworkDependencyCreate = async ({ fromTaskIds, toTaskIds }) => {
   // 调用API创建依赖关系
   try {
     await progressApi.createDependencyVisual(fromTaskId, toTaskId, { type: 'FS', lag: 0 })
+
+    // 立即更新本地状态，添加前置依赖关系
+    if (!targetTask.predecessors) {
+      targetTask.predecessors = []
+    }
+    if (!targetTask.predecessors.includes(fromTaskId)) {
+      targetTask.predecessors.push(fromTaskId)
+    }
+
+    // 同时更新源任务的后置依赖
+    if (!sourceTask.successors) {
+      sourceTask.successors = []
+    }
+    if (!sourceTask.successors.includes(toTaskId)) {
+      sourceTask.successors.push(toTaskId)
+    }
+
     ElMessage.success('依赖关系创建成功')
-    // 重新加载数据
-    await actions.loadData()
+
+    // 异步重新加载数据以获取最新的完整状态
+    actions.loadData().catch(err => {
+      console.warn('后台重新加载数据失败:', err)
+    })
   } catch (error) {
     console.error('创建依赖关系失败:', error)
     const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || '创建依赖关系失败'
@@ -1284,6 +1311,229 @@ const handleRefresh = () => emit('task-updated', null)
 // 全屏切换（使用 CSS 模拟，避免弹出层问题）
 const toggleFullscreen = () => {
   actions.setFullscreen(!state.isFullscreen)
+}
+
+// ==================== AOA图分析功能 ====================
+
+// 计算关键路径
+const handleCalculateCriticalPath = () => {
+  const tasks = formattedTasks.value
+  const criticalTasks = tasks.filter(t => t.is_critical)
+
+  if (criticalTasks.length === 0) {
+    ElMessage.warning('没有找到关键路径任务')
+    return
+  }
+
+  // 计算关键路径的总工期
+  const criticalPathDuration = criticalTasks.reduce((max, task) => {
+    return Math.max(max, task.duration || 0)
+  }, 0)
+
+  ElMessageBox.alert(`
+    <div style="text-align: left;">
+      <p><strong>关键路径分析结果：</strong></p>
+      <p>• 关键任务数量：${criticalTasks.length}</p>
+      <p>• 关键路径总工期：${criticalPathDuration} 天</p>
+      <p><strong>关键任务列表：</strong></p>
+      ${criticalTasks.map(t => `<p>• ${t.name} (工期: ${t.duration}天)</p>`).join('')}
+    </div>
+  `, '关键路径', {
+    dangerouslyUseHTMLString: true,
+    confirmButtonText: '确定'
+  })
+}
+
+// 节点属性分析
+const handleAnalyzeNodeProperties = () => {
+  const nodes = networkViewRef.value?.eventNodes || []
+
+  if (nodes.length === 0) {
+    ElMessage.warning('没有节点可分析')
+    return
+  }
+
+  // 分析节点属性
+  const mergedNodes = nodes.filter(n => n.isMerged)
+  const startNodes = nodes.filter(n => n.tasks.start.length > 0)
+  const endNodes = nodes.filter(n => n.tasks.end.length > 0)
+
+  ElMessageBox.alert(`
+    <div style="text-align: left;">
+      <p><strong>节点属性分析：</strong></p>
+      <p>• 总节点数：${nodes.length}</p>
+      <p>• 合并节点数（共享节点）：${mergedNodes.length}</p>
+      <p>• 起始节点数：${startNodes.length}</p>
+      <p>• 结束节点数：${endNodes.length}</p>
+      <p><strong>R11规范符合度：${((mergedNodes.length / nodes.length) * 100).toFixed(1)}%</strong></p>
+    </div>
+  `, '节点属性分析', {
+    dangerouslyUseHTMLString: true,
+    confirmButtonText: '确定'
+  })
+}
+
+// 路径优化检查
+const handleCheckPathOptimization = () => {
+  const tasks = formattedTasks.value
+  const tasksWithSlack = tasks.filter(t => t.slack > 0)
+
+  if (tasksWithSlack.length === 0) {
+    ElMessage.info('所有任务都在关键路径上，无可优化空间')
+    return
+  }
+
+  // 找出优化潜力最大的任务
+  const optimizableTasks = tasksWithSlack
+    .sort((a, b) => b.slack - a.slack)
+    .slice(0, 5)
+
+  const totalSlack = tasksWithSlack.reduce((sum, t) => sum + t.slack, 0)
+
+  ElMessageBox.alert(`
+    <div style="text-align: left;">
+      <p><strong>路径优化分析：</strong></p>
+      <p>• 可优化任务数：${tasksWithSlack.length}</p>
+      <p>• 总时差（优化潜力）：${totalSlack} 天</p>
+      <p><strong>优化潜力最大的5个任务：</strong></p>
+      ${optimizableTasks.map(t => `<p>• ${t.name} (时差: ${t.slack}天)</p>`).join('')}
+      <p style="color: #909399; font-size: 12px;">建议：可以考虑延长这些任务的工期或调整资源配置</p>
+    </div>
+  `, '路径优化检查', {
+    dangerouslyUseHTMLString: true,
+    confirmButtonText: '确定'
+  })
+}
+
+// 规则验证（R4/R11）
+const handleValidateRules = () => {
+  const nodes = networkViewRef.value?.eventNodes || []
+  const tasks = formattedTasks.value
+  const violations = []
+
+  // R4: 起点节点编号 < 终点节点编号
+  tasks.forEach(task => {
+    const startNode = nodes.find(n => n.tasks.start.includes(task.id))
+    const endNode = nodes.find(n => n.tasks.end.includes(task.id))
+
+    if (startNode && endNode && startNode.number >= endNode.number) {
+      violations.push({
+        rule: 'R4',
+        task: task.name,
+        message: `起点(${startNode.number}) >= 终点(${endNode.number})`
+      })
+    }
+  })
+
+  // R11: 共享节点检查
+  // R11: 相同开始日期 + 相同前置条件的任务应该共享同一个开始节点
+  const unmergedNodes = tasks.filter(task => {
+    const predecessors = task.predecessors || []
+    const taskStartDate = task.start ? task.start.split('T')[0] : ''
+
+    // 查找有相同前置条件 AND 相同开始日期的其他任务
+    const sameConditionTasks = tasks.filter(t => {
+      if (t.id === task.id) return false
+      const tPreds = t.predecessors || []
+      const tStartDate = t.start ? t.start.split('T')[0] : ''
+
+      // 必须前置条件相同 AND 开始日期相同
+      return tPreds.length === predecessors.length &&
+             tPreds.every(p => predecessors.includes(p)) &&
+             tStartDate === taskStartDate
+    })
+
+    // 如果没有其他任务有相同条件，不需要共享节点
+    if (sameConditionTasks.length === 0) return false
+
+    // 检查这些任务是否实际上共享了同一个开始节点
+    const taskStartNode = nodes.find(n => n.tasks.start.includes(task.id))
+    if (!taskStartNode) return false
+
+    // 检查所有相同条件的任务是否都在同一个开始节点中
+    const allInSameNode = sameConditionTasks.every(t =>
+      taskStartNode.tasks.start.includes(t.id)
+    )
+
+    // 如果不在同一个节点，则是R11违规
+    return !allInSameNode
+  })
+
+  unmergedNodes.forEach(task => {
+    violations.push({
+      rule: 'R11',
+      task: task.name,
+      message: '应与其他任务共享开始节点'
+    })
+  })
+
+  if (violations.length === 0) {
+    ElMessage.success('规则验证通过！未发现违规项')
+    return
+  }
+
+  ElMessageBox.alert(`
+    <div style="text-align: left;">
+      <p><strong>规则验证结果：</strong></p>
+      <p style="color: #F56C6C;">发现 ${violations.length} 项违规</p>
+      ${violations.slice(0, 10).map(v => `
+        <p style="color: #F56C6C;">
+          <strong>${v.rule} 违规</strong> - ${v.task}<br/>
+          <span style="font-size: 12px;">${v.message}</span>
+        </p>
+      `).join('')}
+      ${violations.length > 10 ? `<p style="color: #909399;">...还有 ${violations.length - 10} 项</p>` : ''}
+    </div>
+  `, '规则验证', {
+    dangerouslyUseHTMLString: true,
+    confirmButtonText: '确定'
+  })
+}
+
+// 导出分析报告
+const handleExportAnalysisReport = () => {
+  const tasks = formattedTasks.value
+  const nodes = networkViewRef.value?.eventNodes || []
+  const criticalTasks = tasks.filter(t => t.is_critical)
+
+  const report = {
+    generatedAt: new Date().toISOString(),
+    summary: {
+      totalTasks: tasks.length,
+      criticalTasks: criticalTasks.length,
+      totalNodes: nodes.length,
+      totalDuration: tasks.reduce((max, t) => Math.max(max, t.duration || 0), 0)
+    },
+    criticalPath: {
+      tasks: criticalTasks.map(t => ({
+        id: t.id,
+        name: t.name,
+        duration: t.duration,
+        earlyStart: t.early_start,
+        earlyFinish: t.early_finish,
+        lateStart: t.late_start,
+        lateFinish: t.late_finish
+      }))
+    },
+    allTasks: tasks.map(t => ({
+      id: t.id,
+      name: t.name,
+      duration: t.duration,
+      slack: t.slack,
+      isCritical: t.is_critical,
+      predecessors: t.predecessors
+    }))
+  }
+
+  // 导出为JSON文件
+  const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = `aoa-analysis-${Date.now()}.json`
+  link.click()
+  URL.revokeObjectURL(link.href)
+
+  ElMessage.success('分析报告已导出')
 }
 
 // ==================== 导出功能 ====================

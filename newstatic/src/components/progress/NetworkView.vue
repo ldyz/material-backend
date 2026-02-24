@@ -16,11 +16,12 @@
       >
         <defs>
           <!-- 任务箭头标记 - 普通任务 -->
+          <!-- 箭头路径尖端在(9, 3.5)，refX需要是圆半径减去箭头长度(9)再加偏移 -->
           <marker
             id="arrowhead-task"
-            markerWidth="10"
-            markerHeight="7"
-            refX="9"
+            :markerWidth="10"
+            :markerHeight="7"
+            :refX="nodeRadius + 7"
             refY="3.5"
             orient="auto"
             markerUnits="userSpaceOnUse"
@@ -30,9 +31,9 @@
           <!-- 任务箭头标记 - 关键任务 -->
           <marker
             id="arrowhead-critical"
-            markerWidth="10"
-            markerHeight="7"
-            refX="9"
+            :markerWidth="10"
+            :markerHeight="7"
+            :refX="nodeRadius + 7"
             refY="3.5"
             orient="auto"
             markerUnits="userSpaceOnUse"
@@ -42,9 +43,9 @@
           <!-- 依赖关系箭头标记 -->
           <marker
             id="arrowhead-dependency"
-            markerWidth="8"
-            markerHeight="8"
-            refX="7"
+            :markerWidth="8"
+            :markerHeight="8"
+            :refX="nodeRadius + 6"
             refY="4"
             orient="auto"
             markerUnits="userSpaceOnUse"
@@ -80,9 +81,11 @@
           <!-- 依赖关系线（虚工作） -->
           <g class="dummy-work-lines">
             <g
-              v-for="dep in renderableDependencies"
+              v-for="dep in editableDependencies"
               :key="dep.key"
+              :class="{ 'is-selected': selectedPathId === dep.key, 'has-custom-path': dep.hasCustomPath }"
               class="dummy-work-group"
+              @click="handleDependencyClick($event, dep)"
             >
               <!-- R17: 虚工作必须用虚线 -->
               <path
@@ -94,7 +97,7 @@
                 :marker-end="`url(#arrowhead-dependency)`"
                 class="dummy-work-line"
               />
-              <!-- R18: 虚工作必须标注为"虚" -->
+              <!-- R18: 虚工作必须标注关系类型和滞后 -->
               <text
                 v-if="dep.isDummy"
                 :x="dep.labelX"
@@ -105,7 +108,7 @@
                 font-size="10"
                 font-weight="bold"
               >
-                虚
+                {{ dep.depType }}{{ dep.lag > 0 ? '+' + dep.lag : '' }}
               </text>
             </g>
           </g>
@@ -125,14 +128,15 @@
           <!-- 任务箭头（实工作） -->
           <g class="task-arrows">
             <g
-              v-for="task in taskArrows"
+              v-for="task in editableTaskArrows"
               :key="task.id"
               :class="{
                 'is-critical': task.isCritical,
-                'is-selected': selectedTaskId === task.id
+                'is-selected': selectedTaskId === task.id || selectedPathId === task.id,
+                'has-custom-path': task.hasCustomPath
               }"
               class="task-arrow-group"
-              @click="handleTaskClick($event, task)"
+              @click="handleTaskArrowClick($event, task)"
               @dblclick="handleTaskDblClick($event, task)"
             >
               <!-- 实工作线（实线部分） -->
@@ -208,6 +212,44 @@
               stroke-width="1"
               class="intersection-point"
             />
+          </g>
+
+          <!-- 路径编辑弯折点 -->
+          <g v-if="isEditingPath || selectedPathId" class="waypoint-editor">
+            <!-- 任务箭头的弯折点 -->
+            <g v-for="task in editableTaskArrows" :key="`waypoints-task-${task.id}`">
+              <circle
+                v-for="(wp, index) in task.waypoints"
+                :key="`wp-task-${task.id}-${index}`"
+                :cx="wp.x"
+                :cy="wp.y"
+                r="6"
+                fill="#409EFF"
+                stroke="#fff"
+                stroke-width="2"
+                class="waypoint-point"
+                :class="{ 'is-selected': selectedPathId === task.id && selectedWaypointIndex === index }"
+                @mousedown.stop="handleWaypointMouseDown($event, task.id, index, wp.x, wp.y)"
+                @dblclick.stop="handleWaypointDoubleClick($event, task.id, index)"
+              />
+            </g>
+            <!-- 依赖箭头的弯折点 -->
+            <g v-for="dep in editableDependencies" :key="`waypoints-dep-${dep.key}`">
+              <circle
+                v-for="(wp, index) in dep.waypoints"
+                :key="`wp-dep-${dep.key}-${index}`"
+                :cx="wp.x"
+                :cy="wp.y"
+                r="6"
+                fill="#67C23A"
+                stroke="#fff"
+                stroke-width="2"
+                class="waypoint-point"
+                :class="{ 'is-selected': selectedPathId === dep.key && selectedWaypointIndex === index }"
+                @mousedown.stop="handleWaypointMouseDown($event, dep.key, index, wp.x, wp.y)"
+                @dblclick.stop="handleWaypointDoubleClick($event, dep.key, index)"
+              />
+            </g>
           </g>
 
           <!-- 事件节点 -->
@@ -505,6 +547,13 @@ const tempLineEnd = ref(null)
 const selectedNodeId = ref(null)
 const selectedTaskId = ref(null)
 
+// 路径编辑状态
+const isEditingPath = ref(false)  // 是否处于路径编辑模式
+const selectedPathId = ref(null)  // 当前选中的路径ID
+const selectedWaypointIndex = ref(null)  // 当前选中的弯折点索引
+const draggedWaypoint = ref(null)  // 正在拖动的弯折点 {pathId, index, x, y}
+const customPaths = ref(new Map())  // 自定义路径存储: Map<pathId, {waypoints: [{x, y}, ...], autoRoute: boolean}
+
 // 监听平移变化，通知父组件
 watch(panX, (newX) => {
   emit('pan-change', { x: newX, y: panY.value })
@@ -532,62 +581,80 @@ const eventNodes = computed(() => {
     taskSuccessors.set(task.id, task.successors || [])
   })
 
-  // ==================== 第二步：为每个任务创建独立的节点 ====================
-  // 为了确保每个任务都能在任务列表对应行上显示节点
-  // 每个任务有独立的开始和结束节点
+  // ==================== 第二步：按紧前/紧后条件创建共享节点 ====================
+  // R11: 相同紧前条件 → 共享开始节点
+  // R11: 相同紧后条件 → 共享结束节点
 
-  const nodeStates = new Map()  // key: task_id + '_start' 或 task_id + '_end', value: { date, x, taskId, type }
+  const nodeStates = new Map()  // key: 节点签名, value: { date, x, tasks: {start:[], end:[]}, taskYPositions: Map }
 
-  // 为每个任务的开始创建节点
+  // 生成节点签名的函数
+  const getStartNodeSignature = (date, predecessors) => {
+    const sortedPred = [...predecessors].sort((a, b) => a - b).join(',')
+    return `START_${date}_${sortedPred}`
+  }
+
+  const getEndNodeSignature = (date, successors) => {
+    const sortedSucc = [...successors].sort((a, b) => a - b).join(',')
+    return `END_${date}_${sortedSucc}`
+  }
+
+  // 为每个任务的开始创建/查找节点
   realTasks.value.forEach(task => {
     const taskStart = new Date(task.start)
     const startDateKey = formatDate(taskStart)
     const startDays = Math.ceil((taskStart - timelineStartDate.value) / (1000 * 60 * 60 * 24))
+    const predecessors = task.predecessors || []
 
-    const startSignature = `${task.id}_start`
-    nodeStates.set(startSignature, {
-      date: startDateKey,
-      x: startDays * props.dayWidth,
-      taskId: task.id,
-      type: 'start'
-    })
+    // R11: 相同紧前条件 → 共享同一个开始节点
+    const signature = getStartNodeSignature(startDateKey, predecessors)
+
+    if (!nodeStates.has(signature)) {
+      nodeStates.set(signature, {
+        date: startDateKey,
+        x: startDays * props.dayWidth,
+        tasks: { start: [], end: [] },
+        taskYPositions: new Map() // 记录每个任务的目标Y坐标
+      })
+    }
+
+    const nodeState = nodeStates.get(signature)
+    nodeState.tasks.start.push(task.id)
+
+    // 记录该任务的目标Y坐标（用于后续计算引出方向）
+    if (props.taskIndexMap[task.id] !== undefined) {
+      nodeState.taskYPositions.set(task.id, props.taskIndexMap[task.id] * props.rowHeight + props.rowHeight / 2)
+    }
   })
 
-  // 为每个任务的结束创建节点
+  // 为每个任务的结束创建/查找节点
   realTasks.value.forEach(task => {
     const taskEnd = new Date(task.end)
     const endDateKey = formatDate(taskEnd)
     const endDays = Math.ceil((taskEnd - timelineStartDate.value) / (1000 * 60 * 60 * 24))
+    const successors = task.successors || []
 
-    const endSignature = `${task.id}_end`
-    nodeStates.set(endSignature, {
-      date: endDateKey,
-      x: endDays * props.dayWidth,
-      taskId: task.id,
-      type: 'end'
-    })
+    // R11: 相同紧后条件 → 共享同一个结束节点
+    const signature = getEndNodeSignature(endDateKey, successors)
+
+    if (!nodeStates.has(signature)) {
+      nodeStates.set(signature, {
+        date: endDateKey,
+        x: endDays * props.dayWidth,
+        tasks: { start: [], end: [] },
+        taskYPositions: new Map()
+      })
+    }
+
+    const nodeState = nodeStates.get(signature)
+    nodeState.tasks.end.push(task.id)
+
+    // 记录该任务的目标Y坐标
+    if (props.taskIndexMap[task.id] !== undefined) {
+      nodeState.taskYPositions.set(task.id, props.taskIndexMap[task.id] * props.rowHeight + props.rowHeight / 2)
+    }
   })
 
-  // ==================== 第三步：合并相同日期和位置的节点 ====================
-  // 如果多个任务的开始/结束节点在相同日期且没有前置/后置依赖差异，可以合并
-  // 但为了确保可视化对齐，我们保持每个任务有独立的节点显示
-
-  // ==================== 第三步：合并无前置/无后续任务的节点 ====================
-
-  // 合并所有没有前置任务的开始节点（可选，为了保持图的简洁性）
-  // 注意：这会违反严格的AOA规范，但能提供更好的可视化效果
-  const noPredecessorTasks = realTasks.value.filter(t => !t.predecessors || t.predecessors.length === 0)
-  if (noPredecessorTasks.length > 1 && false) { // 设为false以禁用合并，保持每个任务独立
-    // 如果需要合并，可以在这里实现
-  }
-
-  // 合并所有没有后续任务的结束节点（可选）
-  const noSuccessorTasks = realTasks.value.filter(t => !t.successors || t.successors.length === 0)
-  if (noSuccessorTasks.length > 1 && false) { // 设为false以禁用合并，保持每个任务独立
-    // 如果需要合并，可以在这里实现
-  }
-
-  // ==================== 第四步：按拓扑顺序编号 ====================
+  // ==================== 第三步：R13/R14 - 创建唯一的开始和结束节点 ====================
   // R4: 起点编号 < 终点编号
   // 使用拓扑排序确保节点编号符合依赖关系
 
@@ -640,23 +707,14 @@ const eventNodes = computed(() => {
     }
   })
 
-  // 按拓扑顺序排序节点
-  const taskOrder = new Map()
-  sortedTasks.forEach((taskId, index) => {
-    taskOrder.set(taskId, index)
-  })
-
+  // 按X坐标排序节点（时间顺序）
   statesArray.sort((a, b) => {
-    // 先按拓扑顺序排序（确保依赖的任务排在前面）
-    const orderA = taskOrder.get(a.taskId) ?? 999999
-    const orderB = taskOrder.get(b.taskId) ?? 999999
-    if (orderA !== orderB) {
-      return orderA - orderB
+    // 共享节点模式下，主要按X坐标（时间）排序
+    if (a.x !== b.x) {
+      return a.x - b.x
     }
-    // 同一任务，开始节点优先
-    if (a.type === 'start' && b.type === 'end') return -1
-    if (a.type === 'end' && b.type === 'start') return 1
-    return 0
+    // X坐标相同时，按日期字符串排序保证稳定性
+    return (a.date || '').localeCompare(b.date || '')
   })
 
   // 为每个节点分配编号
@@ -664,45 +722,54 @@ const eventNodes = computed(() => {
   const taskEndNodes = new Map()   // taskId -> node
 
   statesArray.forEach(state => {
-    const task = realTasks.value.find(t => t.id === state.taskId)
+    // 收集该节点关联的所有任务ID
+    const allTaskIds = [...state.tasks.start, ...state.tasks.end]
+
+    // 找到第一个任务用于获取时间参数
+    const firstTaskId = allTaskIds[0]
+    const firstTask = realTasks.value.find(t => t.id === firstTaskId)
+
+    // 计算节点的Y坐标：使用所有关联任务Y坐标的中位数
+    const yPositions = Array.from(state.taskYPositions.values()).sort((a, b) => a - b)
+    const nodeY = yPositions.length > 0 ? yPositions[Math.floor(yPositions.length / 2)] : 100
+
     const node = {
-      id: `node-${state.taskId}-${state.type}`,
+      id: `node-${nodeNumber}`,
       number: nodeNumber++,
       x: state.x,
-      y: 0,
+      baseX: state.x,  // 保存原始X坐标
+      y: nodeY, // 使用中位数Y坐标
+      baseY: nodeY,
       date: state.date,
-      taskId: state.taskId,
-      type: state.type,
-      tasks: {
-        start: state.type === 'start' ? [state.taskId] : [],
-        end: state.type === 'end' ? [state.taskId] : []
-      },
-      isMerged: false, // 每个任务独立节点，不合并
-      ES: state.type === 'start' ? (task ? task.early_start : undefined) : undefined,
-      EF: state.type === 'start' ? (task ? task.early_finish : undefined) : undefined,
-      LS: state.type === 'end' ? (task ? task.late_start : undefined) : undefined,
-      LF: state.type === 'end' ? (task ? task.late_finish : undefined) : undefined
+      tasks: state.tasks,
+      taskYPositions: state.taskYPositions, // 保存每个任务的Y坐标用于渲染
+      isMerged: allTaskIds.length > 1,
+      // 从第一个任务获取时间参数
+      ES: state.tasks.start.length > 0 ? (firstTask ? firstTask.early_start : undefined) : undefined,
+      EF: state.tasks.start.length > 0 ? (firstTask ? firstTask.early_finish : undefined) : undefined,
+      LS: state.tasks.end.length > 0 ? (firstTask ? firstTask.late_start : undefined) : undefined,
+      LF: state.tasks.end.length > 0 ? (firstTask ? firstTask.late_finish : undefined) : undefined
     }
     numberedNodes.push(node)
 
-    // 记录任务的开始和结束节点
-    if (state.type === 'start') {
-      taskStartNodes.set(state.taskId, node)
-    } else {
-      taskEndNodes.set(state.taskId, node)
-    }
+    // 记录每个任务的开始和结束节点
+    state.tasks.start.forEach(taskId => {
+      taskStartNodes.set(taskId, node)
+    })
+    state.tasks.end.forEach(taskId => {
+      taskEndNodes.set(taskId, node)
+    })
   })
 
   // ==================== 第五步：验证R4规则 ====================
   // R4: 箭线方向必须满足：起点节点编号 < 终点节点编号
-  numberedNodes.forEach(node => {
-    if (node.type === 'start') {
-      const startNode = node
-      const endNode = taskEndNodes.get(node.taskId)
+  // 在共享节点模式下，检查每个任务的开始节点编号是否小于结束节点编号
+  realTasks.value.forEach(task => {
+    const startNode = taskStartNodes.get(task.id)
+    const endNode = taskEndNodes.get(task.id)
 
-      if (endNode && startNode.number >= endNode.number) {
-        console.warn(`❌ R4违规: 任务${node.taskId} 起点(${startNode.number}) >= 终点(${endNode.number})`)
-      }
+    if (startNode && endNode && startNode.number >= endNode.number) {
+      console.warn(`❌ R4违规: 任务${task.id} 起点(${startNode.number}) >= 终点(${endNode.number})`)
     }
   })
 
@@ -725,32 +792,21 @@ const eventNodes = computed(() => {
 
   numberedNodes.forEach((node) => {
     // 判断是否为关键节点
-    const task = realTasks.value.find(t => t.id === node.taskId)
-    node.isCritical = task && task.is_critical
+    const allTaskIds = [...node.tasks.start, ...node.tasks.end]
+    const isCritical = allTaskIds.some(taskId => {
+      const task = realTasks.value.find(t => t.id === taskId)
+      return task && task.is_critical
+    })
+    node.isCritical = isCritical
 
-    // 计算Y坐标，确保与任务列表对齐
+    // 应用拖动偏移
     const offset = nodeOffsets.value.get(node.id) || { x: 0, y: 0 }
-
-    // 使用taskIndexMap对齐任务列表
-    if (props.taskIndexMap[node.taskId] !== undefined) {
-      const baseTaskIndex = props.taskIndexMap[node.taskId]
-      node.baseY = baseTaskIndex * props.rowHeight + props.rowHeight / 2
-      node.y = node.baseY + offset.y
-    } else {
-      // 如果taskIndexMap中没有该任务，从realTasks中查找
-      const taskIndex = realTasks.value.findIndex(t => t.id === node.taskId)
-      if (taskIndex !== -1) {
-        node.baseY = taskIndex * props.rowHeight + props.rowHeight / 2
-        node.y = node.baseY + offset.y
-      } else {
-        // 找不到，使用默认位置
-        node.baseY = 100
-        node.y = node.baseY + offset.y
-      }
+    // 保存原始X坐标到baseX（如果还没设置）
+    if (node.baseX === undefined) {
+      node.baseX = node.x
     }
-
-    node.baseX = node.x
     node.x = node.x + offset.x
+    node.y = node.y + offset.y
   })
 
   return numberedNodes
@@ -787,110 +843,39 @@ const selectedNode = computed(() => {
   }
 })
 
-// 计算从圆边缘到圆边缘的箭头路径
-const calculateArrowPathFromCircle = (fromX, fromY, toX, toY, radius) => {
-  // 计算从起点到终点的方向向量
-  const dx = toX - fromX
-  const dy = toY - fromY
-  const distance = Math.sqrt(dx * dx + dy * dy)
-
-  // 如果起点和终点重合，返回空路径
-  if (distance < 0.1) {
-    return ''
-  }
-
-  // 计算单位方向向量
-  const ux = dx / distance
-  const uy = dy / distance
-
-  // 计算箭头起点和终点（在圆边缘上）
-  const arrowStartX = fromX + ux * radius
-  const arrowStartY = fromY + uy * radius
-  const arrowEndX = toX - ux * radius
-  const arrowEndY = toY - uy * radius
-
-  // 计算水平和垂直距离
-  const horizontalDist = Math.abs(arrowEndX - arrowStartX)
-  const verticalDist = Math.abs(arrowEndY - arrowStartY)
-
-  // 如果垂直距离很小（小于10像素），使用直线
-  if (verticalDist < 10) {
-    return `M ${arrowStartX} ${arrowStartY} L ${arrowEndX} ${arrowEndY}`
-  }
-
-  // 如果水平距离很小（小于10像素），使用直线
-  if (horizontalDist < 10) {
-    return `M ${arrowStartX} ${arrowStartY} L ${arrowEndX} ${arrowEndY}`
-  }
-
-  // 根据垂直距离选择连接方式
-  // 垂直距离较大时使用斜45度，较小时使用直角
-  if (verticalDist > 30) {
-    // 使用斜45度连接
-    return calculateDiagonalPath(arrowStartX, arrowStartY, arrowEndX, arrowEndY)
-  } else {
-    // 使用直角连接
-    return calculateOrthogonalPath(arrowStartX, arrowStartY, arrowEndX, arrowEndY)
-  }
-}
-
-// 计算带斜45度过渡的路径（水平 -> 斜45度 -> 水平）
-// 斜45度只用于中间过渡段，不能直接斜连接
-function calculateDiagonalPath(startX, startY, endX, endY) {
-  const dx = endX - startX
-  const dy = endY - startY
-  const absDx = Math.abs(dx)
-  const absDy = Math.abs(dy)
-
-  // 确保有足够的空间进行三段式过渡
-  const minTransitionLength = 30 // 最小过渡长度
-  if (absDx < minTransitionLength * 2) {
-    // 空间不足，使用直角
-    return calculateOrthogonalPath(startX, startY, endX, endY)
-  }
-
-  // 三段式路径：水平 -> 斜45度 -> 水平
-  const transitionLength = Math.min(minTransitionLength, absDx / 3)
-
-  // 第一段：水平线（从起点）
-  const firstEndX = startX + transitionLength
-  const firstEndY = startY
-
-  // 第二段：斜45度线（垂直偏移）
-  const diagonalLength = absDy
-  const secondEndX = firstEndX + diagonalLength
-  const secondEndY = endY
-
-  // 第三段：水平线（到终点）
-  const path = `M ${startX} ${startY} L ${firstEndX} ${firstEndY} L ${secondEndX} ${secondEndY} L ${endX} ${endY}`
-
-  return path
-}
-
+// 计算多方向引出的箭头路径
+// 从共享节点引出，向上/中/下三个方向，然后到达目标任务行后90度转向
 // 任务箭头（连接起点和终点节点）
 const taskArrows = computed(() => {
   if (!realTasks.value.length || !timelineStartDate.value) return []
 
   return realTasks.value.map(task => {
-    // 直接通过节点ID查找该任务的开始和结束节点
-    const startNodeId = `node-${task.id}-start`
-    const endNodeId = `node-${task.id}-end`
-
-    const startNode = eventNodes.value.find(node => node.id === startNodeId)
-    const endNode = eventNodes.value.find(node => node.id === endNodeId)
+    // 查找该任务的开始和结束节点（共享节点）
+    const startNode = eventNodes.value.find(node =>
+      node.tasks.start.includes(task.id)
+    )
+    const endNode = eventNodes.value.find(node =>
+      node.tasks.end.includes(task.id)
+    )
 
     // 计算位置
     let startX, startY, endX, endY
 
     // 使用节点的实际位置（包含拖动偏移）
+    // 定义任务开始和结束时间，用于计算工期
+    const taskStartDate = new Date(task.start)
+    const taskEndDate = new Date(task.end)
+
+    // 计算任务的实际开始时间X坐标
+    const taskStartDays = Math.ceil((taskStartDate - timelineStartDate.value) / (1000 * 60 * 60 * 24))
+    const taskActualStartX = taskStartDays * props.dayWidth
+
     if (startNode) {
       startX = startNode.x
       startY = startNode.y
     } else {
       // 如果找不到节点，使用时间计算位置
-      const taskStart = new Date(task.start)
-      const startDays = Math.ceil((taskStart - timelineStartDate.value) / (1000 * 60 * 60 * 24))
-      startX = startDays * props.dayWidth
+      startX = taskActualStartX
       startY = 100
     }
 
@@ -899,24 +884,50 @@ const taskArrows = computed(() => {
       endY = endNode.y
     } else {
       // 如果找不到节点，使用时间计算位置
-      const taskEnd = new Date(task.end)
-      const endDays = Math.ceil((taskEnd - timelineStartDate.value) / (1000 * 60 * 60 * 24))
+      const endDays = Math.ceil((taskEndDate - timelineStartDate.value) / (1000 * 60 * 60 * 24))
       endX = endDays * props.dayWidth
       endY = 100
     }
 
-    // R19: 验证箭线只能向右（x2 ≥ x1）
-    if (startX > endX) {
-      console.warn(`❌ R19违规: 任务"${task.name}" 箭线向左 startX(${startX.toFixed(0)}) > endX(${endX.toFixed(0)})`)
-      // 强制修正：确保箭线向右
-      endX = Math.max(startX, endX)
+    // 获取当前任务在任务列表中的Y坐标
+    const taskTargetY = props.taskIndexMap[task.id] !== undefined
+      ? props.taskIndexMap[task.id] * props.rowHeight + props.rowHeight / 2
+      : startY
+
+    // 实工作线的起点：从节点位置开始
+    const realStartX = startX
+    const realStartY = startY
+
+    // 检查开始节点是否被多个任务共享
+    const isSharedStartNode = startNode && startNode.isMerged && startNode.tasks.start.length > 1
+
+    // 计算标签Y偏移（避免共享节点的任务标签重叠）
+    let labelYOffset = 0
+    if (isSharedStartNode) {
+      // 找到当前任务在共享节点的tasks.start中的索引
+      const taskIndex = startNode.tasks.start.indexOf(task.id)
+      if (taskIndex >= 0) {
+        // 每个任务向上偏移16px，避免重叠
+        labelYOffset = taskIndex * 16
+      }
     }
 
-    // 计算实工作路径（从开始到结束）- 使用圆边缘到圆边缘的路径
-    const realPath = calculateArrowPathFromCircle(startX, startY, endX, endY, props.nodeRadius)
+    // R19: 验证箭线只能向右（x2 ≥ x1）
+    if (realStartX > endX) {
+      console.warn(`❌ R19违规: 任务"${task.name}" 箭线向左 startX(${realStartX.toFixed(0)}) > endX(${endX.toFixed(0)})`)
+      endX = Math.max(realStartX, endX)
+    }
+
+    // 计算路径：使用优化的最短路径算法，同时获取标签位置
+    const pathResult = calculateOptimizedPath(
+      realStartX, realStartY, endX, endY, taskTargetY, props.nodeRadius, false
+    )
+    const realPath = pathResult.path
+    const labelBaseX = pathResult.labelX
+    const labelBaseY = pathResult.labelY
 
     // 计算总时差
-    const duration = Math.ceil((taskEnd - taskStart) / (1000 * 60 * 60 * 24))
+    const duration = Math.ceil((taskEndDate - taskStartDate) / (1000 * 60 * 60 * 24))
     const slack = task.slack || 0
 
     // 如果有时差，绘制时差线（波形线）
@@ -925,21 +936,14 @@ const taskArrows = computed(() => {
     let slackLabelY = 0
 
     if (slack > 0 && !task.is_critical) {
-      // 时差线：从圆边缘开始，到圆边缘结束
+      // 时差线：从圆右侧边缘开始，向右延伸
+      // 起点在圆边缘，终点在时差结束位置
+      const slackStartX = endX + props.nodeRadius - 2  // 圆右边缘附近
       const slackEndX = endX + slack * props.dayWidth
-      // 计算时差线的起点（从圆边缘开始）
-      const dx = slackEndX - endX
-      const distance = Math.abs(dx)
-      if (distance > 0) {
-        const ux = dx / distance
-        const arrowStartX = endX + ux * props.nodeRadius
-        const arrowStartY = endY
-        const arrowEndX = slackEndX
-        const arrowEndY = endY
-        slackPath = calculateWavePath(arrowStartX, arrowStartY, arrowEndX, arrowEndY)
-        slackLabelX = arrowStartX + (arrowEndX - arrowStartX) / 2
-        slackLabelY = arrowStartY - 12
-      }
+      // 终点坐标设为结束位置，箭头会自动指向该位置
+      slackPath = calculateWavePath(slackStartX, endY, slackEndX, endY)
+      slackLabelX = slackStartX + (slackEndX - slackStartX) / 2
+      slackLabelY = endY - 12
     }
 
     return {
@@ -955,12 +959,36 @@ const taskArrows = computed(() => {
       isCritical: task.is_critical,
       duration,
       slack,
-      labelX: (startX + endX) / 2,
-      labelY: startY - 8,
-      durationX: (startX + endX) / 2,
-      durationY: startY + 18,
+      labelX: labelBaseX,
+      labelY: labelBaseY - 8 - labelYOffset,
+      durationX: labelBaseX,
+      durationY: labelBaseY + 18 - labelYOffset,
       slackLabelX,
       slackLabelY
+    }
+  })
+})
+
+// 带编辑信息的任务箭头（包含自定义路径和弯折点）
+const editableTaskArrows = computed(() => {
+  return taskArrows.value.map(task => {
+    const customPath = customPaths.value.get(task.id)
+    return {
+      ...task,
+      waypoints: customPath?.waypoints || [],
+      hasCustomPath: !!customPath
+    }
+  })
+})
+
+// 带编辑信息的依赖箭头（包含自定义路径和弯折点）
+const editableDependencies = computed(() => {
+  return renderableDependencies.value.map(dep => {
+    const customPath = customPaths.value.get(dep.key)
+    return {
+      ...dep,
+      waypoints: customPath?.waypoints || [],
+      hasCustomPath: !!customPath
     }
   })
 })
@@ -1078,7 +1106,58 @@ function getLineIntersection(x1, y1, x2, y2, x3, y3, x4, y4) {
   return null
 }
 
+// 跟踪每个节点的出线方向使用情况（用于避免线条重叠）
+const nodeExitDirectionUsage = computed(() => {
+  const usage = {} // { nodeId: { right: count, top: count, bottom: count } }
+
+  // 初始化所有节点的使用计数
+  eventNodes.value.forEach(node => {
+    usage[node.id] = { right: 0, top: 0, bottom: 0 }
+  })
+
+  // 分析任务箭头的出线方向
+  taskArrows.value.forEach(task => {
+    const path = task.realPath
+    const commands = path.match(/[MLH][^,]*/g)
+    if (!commands || commands.length < 2) return
+
+    // 解析路径的起点和第二个点，确定出线方向
+    const startCmd = commands[0]
+    const startCoords = startCmd.slice(1).split(/[, ]+/).filter(s => s).map(Number)
+    const startX = startCoords[0]
+    const startY = startCoords[1]
+
+    if (commands.length > 1) {
+      const secondCmd = commands[1]
+      const secondCoords = secondCmd.slice(1).split(/[, ]+/).filter(s => s).map(Number)
+      const secondX = secondCoords[0]
+      const secondY = secondCoords[1]
+
+      // 找到包含这个起点的节点
+      const node = eventNodes.value.find(n => {
+        const dx = Math.abs(n.x - startX)
+        const dy = Math.abs(n.y - startY)
+        return dx < 5 && dy < 5
+      })
+
+      if (node) {
+        // 判断出线方向
+        if (Math.abs(secondY - startY) < 5 && secondX > startX) {
+          usage[node.id].right++
+        } else if (secondY < startY) {
+          usage[node.id].top++
+        } else if (secondY > startY) {
+          usage[node.id].bottom++
+        }
+      }
+    }
+  })
+
+  return usage
+})
+
 // 依赖关系（虚工作）- 按照双代号时标网络图规范
+// 支持四种关系类型：FS/SS/FF/SF
 const renderableDependencies = computed(() => {
   if (!props.dependencies.length) return []
 
@@ -1088,28 +1167,66 @@ const renderableDependencies = computed(() => {
 
     if (!fromTask || !toTask) return null
 
-    // 直接通过节点ID查找
-    const fromNodeId = `node-${fromTask.id}-end`
-    const toNodeId = `node-${toTask.id}-start`
+    // 获取关系类型和滞后时间
+    const depType = dep.type || 'FS'
+    const lag = dep.lag || 0
 
-    const fromNode = eventNodes.value.find(node => node.id === fromNodeId)
-    const toNode = eventNodes.value.find(node => node.id === toNodeId)
+    // 根据关系类型确定连接的节点
+    let fromNode, toNode
+
+    // 查找节点（现在是共享节点）
+    if (depType === 'FS') {
+      // Finish-to-Start: 前置结束 → 后续开始
+      fromNode = eventNodes.value.find(node => node.tasks.end.includes(fromTask.id))
+      toNode = eventNodes.value.find(node => node.tasks.start.includes(toTask.id))
+    } else if (depType === 'SS') {
+      // Start-to-Start: 前置开始 → 后续开始
+      fromNode = eventNodes.value.find(node => node.tasks.start.includes(fromTask.id))
+      toNode = eventNodes.value.find(node => node.tasks.start.includes(toTask.id))
+    } else if (depType === 'FF') {
+      // Finish-to-Finish: 前置结束 → 后续结束
+      fromNode = eventNodes.value.find(node => node.tasks.end.includes(fromTask.id))
+      toNode = eventNodes.value.find(node => node.tasks.end.includes(toTask.id))
+    } else if (depType === 'SF') {
+      // Start-to-Finish: 前置开始 → 后续结束
+      fromNode = eventNodes.value.find(node => node.tasks.start.includes(fromTask.id))
+      toNode = eventNodes.value.find(node => node.tasks.end.includes(toTask.id))
+    }
 
     if (!fromNode || !toNode) return null
 
-    // 计算从圆边缘到圆边缘的路径
-    const fromX = fromNode.x
-    const fromY = fromNode.y
-    const toX = toNode.x
-    const toY = toNode.y
+    // 计算起点和终点坐标
+    let fromX = fromNode.x
+    let fromY = fromNode.y
+    let toX = toNode.x
+    let toY = toNode.y
 
-    // 使用虚线路径连接两个节点
-    const path = calculateArrowPathFromCircle(fromX, fromY, toX, toY, props.nodeRadius)
+    // 处理时间滞后（lag）
+    if (lag > 0) {
+      // 滞后时间增加水平偏移
+      toX += lag * props.dayWidth
+    }
+
+    // 计算路径 - 使用多方向进出的智能路由
+    let path
+    if (depType === 'FS' && fromNode.id === toNode.id) {
+      // FS且同一节点：使用垂直虚线（从上侧出，垂直向下经过圆心附近）
+      const startY = fromNode.y - props.nodeRadius
+      // 让路径向下延伸超过圆心，然后箭头标记会让箭头尖端停在合适位置
+      const endY = toNode.y + props.nodeRadius / 2
+      path = `M ${fromX} ${startY} L ${toX} ${endY}`
+    } else {
+      // 使用多方向路径算法，传入出线方向使用情况以避免重叠
+      const exitUsage = nodeExitDirectionUsage.value[fromNode.id] || {right: 0, top: 0, bottom: 0}
+      path = calculateMultiDirectionPath(fromX, fromY, toX, toY, props.nodeRadius, exitUsage)
+    }
 
     return {
       key: `dep-${dep.depends_on}-${dep.task_id}-${index}`,
       path,
       isDummy: true,
+      depType,  // 关系类型
+      lag,      // 滞后时间
       labelX: (fromX + toX) / 2,
       labelY: (fromY + toY) / 2 - 5
     }
@@ -1133,11 +1250,12 @@ const tempLinePath = computed(() => {
 })
 
 // 计算正交路径（只包含水平和垂直线段）
+// 约束：所有转角必须为90度，终点在圆心
 function calculateOrthogonalPath(startX, startY, endX, endY) {
   const dx = Math.abs(endX - startX)
   const dy = Math.abs(endY - startY)
 
-  // 如果起点和终点在同一行或同一列，直接画直线
+  // 如果起点和终点在同一行或同一列，直接画直线到圆心
   if (dx < 5) {
     return `M ${startX} ${startY} L ${endX} ${endY}`
   }
@@ -1157,7 +1275,361 @@ function calculateOrthogonalPath(startX, startY, endX, endY) {
     midX = endX + dx * 0.5
   }
 
+  // 终点在圆心(endX, endY)
   return `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`
+}
+
+// ==================== 优化的路径算法（类A*算法）====================
+// 重要约束：所有路径必须使用正交路径（只有水平和垂直线段），所有转角必须是90度
+
+/**
+ * 计算最短正交路径（支持多方向进出）
+ * 约束：只使用水平和垂直线段，所有转角必须为90度
+ * @param {number} fromX - 起点X（节点中心）
+ * @param {number} fromY - 起点Y（节点中心）
+ * @param {number} toX - 终点X（节点中心）
+ * @param {number} toY - 终点Y（节点中心）
+ * @param {number} targetY - 任务行Y坐标（中间必须经过的点）
+ * @param {number} radius - 圆半径
+ * @param {boolean} isFromStartLine - 是否从起点线引出（已废弃，保留兼容性）
+ * @returns {{path: string, labelX: number, labelY: number}} 路径和标签位置
+ */
+function calculateOptimizedPath(fromX, fromY, toX, toY, targetY, radius, isFromStartLine = false) {
+  const dy = toY - fromY
+  const dx = toX - fromX
+
+  // 策略0: 终点在起点右侧且Y坐标相近 - 直接水平连接（0弯折）
+  if (dx > 0 && Math.abs(dy) < 10) {
+    const startX = fromX + radius
+    const labelX = (startX + toX) / 2
+    const labelY = fromY
+    return {
+      path: `M ${startX} ${fromY} L ${toX} ${toY}`,
+      labelX,
+      labelY
+    }
+  }
+
+  // 策略1: 终点在右侧但Y坐标相差较大 - 优先选择经过任务行的路径
+  if (dx > 0) {
+    const startX = fromX + radius
+    const horizontalLength = toX - startX
+
+    // 如果任务行的水平线段足够长，使用经过任务行的路径
+    if (horizontalLength > 50) {
+      const labelX = (startX + toX) / 2
+      const labelY = targetY
+      return {
+        path: `M ${startX} ${fromY} L ${startX} ${targetY} L ${toX} ${targetY} L ${toX} ${toY}`,
+        labelX,
+        labelY
+      }
+    } else {
+      // 直接垂直连接（1弯折）
+      const bendX = fromX + dx * 0.6
+      const labelX = (startX + bendX) / 2
+      const labelY = fromY
+      return {
+        path: `M ${startX} ${fromY} L ${bendX} ${fromY} L ${bendX} ${toY} L ${toX} ${toY}`,
+        labelX,
+        labelY
+      }
+    }
+  }
+
+  // 策略2: 终点在左侧或垂直方向
+  // 如果终点在上方
+  if (dy < -10) {
+    // 方案1: 右侧出线 → 水平 → 向下经过任务行 → 向上到圆心
+    if (dx > -radius * 2) {
+      const startX = fromX + radius
+      const bendX = Math.max(fromX + radius, toX + radius * 0.5)
+      // 标签在任务行的水平线段上
+      const labelX = (bendX + toX) / 2
+      const labelY = targetY
+      return {
+        path: `M ${startX} ${fromY} L ${bendX} ${fromY} L ${bendX} ${targetY} L ${toX} ${targetY} L ${toX} ${toY}`,
+        labelX,
+        labelY
+      }
+    } else {
+      // 空间不足，从上方出线
+      const startX = fromX
+      const startY = fromY - radius
+      const midY = fromY + dy / 2
+      const labelX = (startX + toX) / 2
+      const labelY = midY
+      return {
+        path: `M ${startX} ${startY} L ${startX} ${midY} L ${toX} ${midY} L ${toX} ${toY}`,
+        labelX,
+        labelY
+      }
+    }
+  }
+
+  // 如果终点在下方
+  if (dy > 10) {
+    // 方案1: 右侧出线 → 水平 → 向上经过任务行 → 向下到圆心
+    if (dx > -radius * 2) {
+      const startX = fromX + radius
+      const bendX = Math.max(fromX + radius, toX + radius * 0.5)
+      // 标签在任务行的水平线段上
+      const labelX = (bendX + toX) / 2
+      const labelY = targetY
+      return {
+        path: `M ${startX} ${fromY} L ${bendX} ${fromY} L ${bendX} ${targetY} L ${toX} ${targetY} L ${toX} ${toY}`,
+        labelX,
+        labelY
+      }
+    } else {
+      // 空间不足，从下方出线
+      const startX = fromX
+      const startY = fromY + radius
+      const midY = fromY + dy / 2
+      const labelX = (startX + toX) / 2
+      const labelY = midY
+      return {
+        path: `M ${startX} ${startY} L ${startX} ${midY} L ${toX} ${midY} L ${toX} ${toY}`,
+        labelX,
+        labelY
+      }
+    }
+  }
+
+  // 策略3: 从起点线引出时（兼容旧逻辑）
+  if (isFromStartLine) {
+    const startX = fromX + radius
+    const labelX = (startX + toX) / 2
+    const labelY = fromY
+    return {
+      path: `M ${startX} ${fromY} L ${startX + 15} ${fromY} L ${startX + 15} ${targetY} L ${toX} ${targetY} L ${toX} ${toY}`,
+      labelX,
+      labelY
+    }
+  }
+
+  // 默认 - 使用正交路径
+  const startX = fromX + radius
+  const midX = startX + (toX - startX) / 2
+  const labelX = (startX + toX) / 2
+  const labelY = fromY
+  return {
+    path: `M ${startX} ${fromY} L ${midX} ${fromY} L ${midX} ${toY} L ${toX} ${toY}`,
+    labelX,
+    labelY
+  }
+}
+/**
+ * 计算支持多方向进出的正交路径（专门用于依赖关系/虚工作）
+ * 约束：只使用水平和垂直线段，所有转角必须为90度
+ * 支持从节点的上/中（右）/下三个方向出，从左/上/下三个方向进
+ * 优先级：弯折最少 > 路径最短 > 方向优先级（各方向较平衡）
+ * 注意：右侧出线不是强制优先级，各方向优先级较接近
+ * @param {number} fromX - 起点X（节点中心）
+ * @param {number} fromY - 起点Y（节点中心）
+ * @param {number} toX - 终点X（节点中心）
+ * @param {number} toY - 终点Y（节点中心）
+ * @param {number} radius - 圆半径
+ * @param {object} exitUsage - 出线方向使用情况 {right: count, top: count, bottom: count}
+ * @returns {string} SVG路径字符串（正交路径，所有转角为90度）
+ */
+function calculateMultiDirectionPath(fromX, fromY, toX, toY, radius, exitUsage = {right: 0, top: 0, bottom: 0}) {
+  const dy = toY - fromY
+  const dx = toX - fromX
+
+  // 定义所有可能的路径方案
+  // 重要：终点都在圆心(toX, toY)，箭头标记的refX会处理偏移
+  // 根据出线方向使用情况动态调整优先级
+  const pathOptions = []
+
+  // 计算每个方向的优先级惩罚（已使用的方向降低优先级）
+  const rightPenalty = exitUsage.right * 30  // 每个已有的右侧出线降低30优先级
+  const topPenalty = exitUsage.top * 30     // 每个已有的上侧出线降低30优先级
+  const bottomPenalty = exitUsage.bottom * 30  // 每个已有的下侧出线降低30优先级
+
+  // 方案1: 水平对齐时的直线连接（0弯折）
+  if (Math.abs(dy) < 10) {
+    // 终点在右侧：从右侧出线
+    if (dx > 0) {
+      pathOptions.push({
+        name: 'right-to-center',
+        bends: 0,
+        startX: fromX + radius,
+        startY: fromY,
+        endX: toX,
+        endY: toY,
+        midPoints: [],
+        length: Math.abs(dx),
+        priority: 100 - rightPenalty
+      })
+    }
+    // 终点在左侧：从左侧出线（0弯折）
+    if (dx < 0) {
+      pathOptions.push({
+        name: 'left-to-center',
+        bends: 0,
+        startX: fromX - radius,
+        startY: fromY,
+        endX: toX,
+        endY: toY,
+        midPoints: [],
+        length: Math.abs(dx),
+        priority: 100 - rightPenalty  // 使用同样的优先级
+      })
+    }
+  }
+
+  // 方案2: 右出到圆心（1弯折：水平→垂直）
+  if (dx > 0 && Math.abs(dy) >= 10) {
+    const bendX = fromX + dx * 0.6
+    pathOptions.push({
+      name: 'right-to-center-1bend',
+      bends: 1,
+      startX: fromX + radius,
+      startY: fromY,
+      endX: toX,
+      endY: toY,
+      midPoints: [
+        { x: bendX, y: fromY },
+        { x: bendX, y: toY }
+      ],
+      length: Math.abs(bendX - (fromX + radius)) + Math.abs(fromY - toY),
+      priority: 90 - rightPenalty  // 基础优先级 - 右侧使用惩罚
+    })
+  }
+
+  // 方案3: 右侧出线，向左回绕（2弯折）
+  if (dx <= 0 && Math.abs(dy) >= 10) {
+    const bendX = fromX + radius + Math.max(50, Math.abs(dx))
+    pathOptions.push({
+      name: 'right-to-left-around',
+      bends: 2,
+      startX: fromX + radius,
+      startY: fromY,
+      endX: toX,
+      endY: toY,
+      midPoints: [
+        { x: bendX, y: fromY },
+        { x: bendX, y: toY }
+      ],
+      length: Math.abs(bendX - (fromX + radius)) + Math.abs(fromY - toY) + Math.abs(bendX - toX),
+      priority: 80 - rightPenalty  // 基础优先级 - 右侧使用惩罚
+    })
+  }
+
+  // 方案4: 上出到圆心（1弯折：垂直-水平）
+  if (dy < -10 && dx > 0) {
+    pathOptions.push({
+      name: 'top-to-center',
+      bends: 1,
+      startX: fromX,
+      startY: fromY - radius,
+      endX: toX,
+      endY: toY,
+      midPoints: [
+        { x: fromX, y: fromY - radius },
+        { x: toX, y: fromY - radius }
+      ],
+      length: Math.abs(fromY - radius - toY) + Math.abs(dx),
+      priority: 95 - topPenalty  // 基础优先级 - 上侧使用惩罚
+    })
+  }
+
+  // 方案5: 下出到圆心（1弯折：垂直-水平）
+  if (dy > 10 && dx > 0) {
+    pathOptions.push({
+      name: 'bottom-to-center',
+      bends: 1,
+      startX: fromX,
+      startY: fromY + radius,
+      endX: toX,
+      endY: toY,
+      midPoints: [
+        { x: fromX, y: fromY + radius },
+        { x: toX, y: fromY + radius }
+      ],
+      length: Math.abs(fromY + radius - toY) + Math.abs(dx),
+      priority: 95 - bottomPenalty  // 基础优先级 - 下侧使用惩罚
+    })
+  }
+
+  // 方案6: 上出到圆心（2弯折：垂直-水平-垂直）
+  if (Math.abs(dy) >= 10) {  // 只有dy足够大时才使用
+    const midY = fromY + dy / 2
+    pathOptions.push({
+      name: 'top-to-center-2bend',
+      bends: 2,
+      startX: fromX,
+      startY: fromY - radius,
+      endX: toX,
+      endY: toY,
+      midPoints: [
+        { x: fromX, y: midY },
+        { x: toX, y: midY }
+      ],
+      length: Math.abs(dy) + Math.abs(dx),
+      priority: 70 - topPenalty  // 基础优先级 - 上侧使用惩罚
+    })
+  }
+
+  // 方案7: 下出到圆心（2弯折：垂直-水平-垂直）
+  if (Math.abs(dy) >= 10) {  // 只有dy足够大时才使用
+    const midY = fromY + dy / 2
+    pathOptions.push({
+      name: 'bottom-to-center-2bend',
+      bends: 2,
+      startX: fromX,
+      startY: fromY + radius,
+      endX: toX,
+      endY: toY,
+      midPoints: [
+        { x: fromX, y: midY },
+        { x: toX, y: midY }
+      ],
+      length: Math.abs(dy) + Math.abs(dx),
+      priority: 70 - bottomPenalty  // 基础优先级 - 下侧使用惩罚
+    })
+  }
+
+  // 选择最优路径：
+  // 1. 优先选择弯折最少的（弯折数权重最高）
+  // 2. 弯折相同时，选择优先级最高的（各方向优先级较平衡）
+  // 3. 弯折和优先级都相同时，选择路径最短的
+  // 使用加权排序：弯折数 × 10000 + priority × 100 - length
+  // 这样确保弯折数的影响远大于priority和length
+  pathOptions.sort((a, b) => {
+    const scoreA = a.bends * 10000 - a.priority * 100 - a.length
+    const scoreB = b.bends * 10000 - b.priority * 100 - b.length
+    return scoreA - scoreB  // 分数低的优先（弯折少、priority高、length短）
+  })
+
+  const selected = pathOptions[0] || {
+    name: 'default',
+    bends: 2,
+    startX: fromX + radius,
+    startY: fromY,
+    endX: toX,
+    endY: toY,
+    midPoints: [  // 使用正交路径：水平→垂直
+      { x: fromX + radius + (toX - fromX) / 2, y: fromY },
+      { x: fromX + radius + (toX - fromX) / 2, y: toY }
+    ]
+  }
+
+  // 构建路径
+  let path = `M ${selected.startX} ${selected.startY}`
+
+  // 添加中间点
+  if (selected.midPoints) {
+    selected.midPoints.forEach(point => {
+      path += ` L ${point.x} ${point.y}`
+    })
+  }
+
+  // 添加终点（圆心）
+  path += ` L ${selected.endX} ${selected.endY}`
+
+  return path
 }
 
 // 计算波形线路径（用于表示自由时差）
@@ -1246,10 +1718,169 @@ function handleWheel(event) {
 function handleMouseDown(event) {
   // 如果点击的是背景，开始平移
   if (event.target.tagName === 'svg' || event.target.tagName === 'rect') {
+    // 取消选中路径
+    if (selectedPathId.value) {
+      selectedPathId.value = null
+      selectedWaypointIndex.value = null
+      return
+    }
     isPanning.value = true
     dragStartPos.value = { x: event.clientX - panX.value, y: event.clientY - panY.value }
   }
 }
+
+// 弯折点鼠标按下 - 开始拖动
+function handleWaypointMouseDown(event, pathId, index, x, y) {
+  event.stopPropagation()
+  draggedWaypoint.value = {
+    pathId,
+    index,
+    startX: x,
+    startY: y,
+    mouseX: event.clientX,
+    mouseY: event.clientY
+  }
+  selectedPathId.value = pathId
+  selectedWaypointIndex.value = index
+}
+
+// 弯折点双击 - 删除弯折点
+function handleWaypointDoubleClick(event, pathId, index) {
+  event.stopPropagation()
+  const customPath = customPaths.value.get(pathId)
+  if (customPath && customPath.waypoints.length > 0) {
+    customPath.waypoints.splice(index, 1)
+    // 如果没有弯折点了，删除自定义路径
+    if (customPath.waypoints.length === 0) {
+      customPaths.value.delete(pathId)
+    }
+    // 自动保存
+    saveCustomPaths()
+  }
+}
+
+// 任务箭头点击 - 选中路径或添加弯折点
+function handleTaskArrowClick(event, task) {
+  if (props.toolMode !== 'select') return
+
+  event.stopPropagation()
+
+  // 如果点击的是已选中的路径，尝试添加弯折点
+  if (selectedPathId.value === task.id) {
+    // 获取点击位置相对于SVG的坐标
+    const svgRect = svgRef.value.getBoundingClientRect()
+    const clickX = event.clientX - svgRect.left - panX.value
+    const clickY = event.clientY - svgRect.top - panY.value
+
+    addWaypointToPath(task.id, clickX, clickY)
+  } else {
+    // 选中路径
+    selectedPathId.value = task.id
+    selectedWaypointIndex.value = null
+  }
+}
+
+// 依赖箭头点击 - 选中路径或添加弯折点
+function handleDependencyClick(event, dep) {
+  if (props.toolMode !== 'select') return
+
+  event.stopPropagation()
+
+  // 如果点击的是已选中的路径，尝试添加弯折点
+  if (selectedPathId.value === dep.key) {
+    // 获取点击位置相对于SVG的坐标
+    const svgRect = svgRef.value.getBoundingClientRect()
+    const clickX = event.clientX - svgRect.left - panX.value
+    const clickY = event.clientY - svgRect.top - panY.value
+
+    addWaypointToPath(dep.key, clickX, clickY)
+  } else {
+    // 选中路径
+    selectedPathId.value = dep.key
+    selectedWaypointIndex.value = null
+  }
+}
+
+// 添加弯折点到路径
+function addWaypointToPath(pathId, x, y) {
+  if (!customPaths.value.has(pathId)) {
+    customPaths.value.set(pathId, { waypoints: [], autoRoute: false })
+  }
+  const customPath = customPaths.value.get(pathId)
+
+  // 找到合适的插入位置（按X坐标排序）
+  let insertIndex = customPath.waypoints.findIndex(wp => wp.x > x)
+  if (insertIndex === -1) {
+    insertIndex = customPath.waypoints.length
+  }
+
+  customPath.waypoints.splice(insertIndex, 0, { x, y })
+  saveCustomPaths()
+}
+
+// 保存自定义路径到localStorage
+function saveCustomPaths() {
+  const data = Array.from(customPaths.value.entries()).map(([key, value]) => [key, value])
+  localStorage.setItem('network-custom-paths', JSON.stringify(data))
+}
+
+// 从localStorage加载自定义路径
+function loadCustomPaths() {
+  const saved = localStorage.getItem('network-custom-paths')
+  if (saved) {
+    try {
+      const data = JSON.parse(saved)
+      customPaths.value = new Map(data)
+    } catch (e) {
+      console.error('Failed to load custom paths:', e)
+      customPaths.value = new Map()
+    }
+  }
+}
+
+// 使用弯折点重新计算路径
+function buildPathWithWaypoints(fromX, fromY, toX, toY, waypoints) {
+  if (!waypoints || waypoints.length === 0) {
+    return null
+  }
+
+  // 构建路径：起点 → 弯折点1 → 弯折点2 → ... → 终点
+  let path = `M ${fromX} ${fromY}`
+
+  // 按X坐标排序弯折点
+  const sortedWaypoints = [...waypoints].sort((a, b) => a.x - b.x)
+
+  for (const wp of sortedWaypoints) {
+    path += ` L ${wp.x} ${wp.y}`
+  }
+
+  path += ` L ${toX} ${toY}`
+  return path
+}
+
+// 导出自定义路径数据供下载
+function exportCustomPaths() {
+  const data = Array.from(customPaths.value.entries()).map(([key, value]) => [key, value])
+  return JSON.stringify(data, null, 2)
+}
+
+// 导入自定义路径数据
+function importCustomPaths(jsonData) {
+  try {
+    const data = JSON.parse(jsonData)
+    customPaths.value = new Map(data)
+    saveCustomPaths()
+    return true
+  } catch (e) {
+    console.error('Failed to import custom paths:', e)
+    return false
+  }
+}
+
+// 组件挂载时加载自定义路径
+onMounted(() => {
+  loadCustomPaths()
+})
 
 // 节点鼠标按下
 function handleNodeMouseDown(event, node) {
@@ -1321,6 +1952,20 @@ function handleMouseMove(event) {
     panY.value = event.clientY - dragStartPos.value.y
   }
 
+  // 拖动弯折点
+  if (draggedWaypoint.value) {
+    const dx = event.clientX - draggedWaypoint.value.mouseX
+    const dy = event.clientY - draggedWaypoint.value.mouseY
+    const newX = draggedWaypoint.value.startX + dx
+    const newY = draggedWaypoint.value.startY + dy
+
+    const customPath = customPaths.value.get(draggedWaypoint.value.pathId)
+    if (customPath && customPath.waypoints[draggedWaypoint.value.index]) {
+      customPath.waypoints[draggedWaypoint.value.index] = { x: newX, y: newY }
+    }
+    return
+  }
+
   // 创建依赖关系模式：更新临时连线终点
   if (isCreatingDependency.value && tempLineEnd.value) {
     const rect = svgRef.value.getBoundingClientRect()
@@ -1350,6 +1995,13 @@ function handleMouseMove(event) {
 
 // 鼠标释放
 function handleMouseUp(event) {
+  // 弯折点拖动结束
+  if (draggedWaypoint.value) {
+    draggedWaypoint.value = null
+    saveCustomPaths()
+    return
+  }
+
   // 创建依赖关系模式：检测是否在另一个节点上释放
   if (isCreatingDependency.value && dependencySourceNode.value) {
     // 查找鼠标位置下的节点
@@ -1497,14 +2149,6 @@ function handleNodeContextMenu(event, node) {
   })
 }
 
-// 任务点击
-function handleTaskClick(event, task) {
-  event.stopPropagation()
-  selectedTaskId.value = task.id
-  selectedNodeId.value = null
-  emit('task-click', task)
-}
-
 // 任务右键菜单
 function handleTaskContextMenu(event, task) {
   event.preventDefault()
@@ -1542,6 +2186,18 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
+})
+
+// 导出供父组件访问
+defineExpose({
+  eventNodes,
+  taskArrows,
+  exportCustomPaths,
+  importCustomPaths,
+  clearCustomPaths: () => {
+    customPaths.value.clear()
+    saveCustomPaths()
+  }
 })
 </script>
 
@@ -1733,5 +2389,51 @@ onUnmounted(() => {
   width: 1px;
   height: 16px;
   background: #dcdfe6;
+}
+
+/* 路径编辑相关样式 */
+.waypoint-point {
+  cursor: move;
+  transition: all 0.2s;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2));
+}
+
+.waypoint-point:hover {
+  r: 8;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.3));
+}
+
+.waypoint-point.is-selected {
+  r: 9;
+  stroke-width: 3;
+  filter: drop-shadow(0 2px 6px rgba(64, 158, 255, 0.5));
+}
+
+.dummy-work-group {
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.dummy-work-group:hover {
+  opacity: 0.8;
+}
+
+.dummy-work-group.is-selected .dummy-work-line {
+  stroke: #409EFF;
+  stroke-width: 2.5;
+}
+
+.task-arrow-group.has-custom-path .task-arrow-real,
+.dummy-work-group.has-custom-path .dummy-work-line {
+  stroke-dasharray: none;
+  stroke-opacity: 0.8;
+}
+
+.waypoint-editor {
+  pointer-events: none;
+}
+
+.waypoint-editor > * {
+  pointer-events: auto;
 }
 </style>

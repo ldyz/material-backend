@@ -178,6 +178,36 @@
         <el-option label="从上到下" value="top-down"></el-option>
       </el-select>
 
+      <!-- AOA图分析工具 -->
+      <el-dropdown split-button type="warning" size="small" style="margin-left: 12px" v-if="chartViewMode === 'network'">
+        <el-icon><Operation /></el-icon>
+        AOA分析
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item @click="$emit('calculate-critical-path')">
+              <el-icon><Flag /></el-icon>
+              计算关键路径
+            </el-dropdown-item>
+            <el-dropdown-item @click="$emit('analyze-node-properties')">
+              <el-icon><DataAnalysis /></el-icon>
+              节点属性分析
+            </el-dropdown-item>
+            <el-dropdown-item @click="$emit('check-path-optimization')">
+              <el-icon><TrendCharts /></el-icon>
+              路径优化检查
+            </el-dropdown-item>
+            <el-dropdown-item divided @click="$emit('validate-rules')">
+              <el-icon><CircleCheck /></el-icon>
+              规则验证（R4/R11）
+            </el-dropdown-item>
+            <el-dropdown-item @click="$emit('export-analysis-report')">
+              <el-icon><Download /></el-icon>
+              导出分析报告
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+
       <!-- 资源库管理 -->
       <el-button type="success" size="small" @click="$emit('open-resource-management')" style="margin-left: 12px">
         <el-icon style="margin-right: 4px;"><Setting /></el-icon>
@@ -273,7 +303,12 @@ import {
   FullScreen,
   Close,
   Timer,
-  Clock
+  Clock,
+  Operation,
+  DataAnalysis,
+  TrendCharts,
+  CircleCheck,
+  Download
 } from '@element-plus/icons-vue'
 import { ElDivider } from 'element-plus'
 

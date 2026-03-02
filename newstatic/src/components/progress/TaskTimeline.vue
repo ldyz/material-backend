@@ -10,7 +10,7 @@
     @mousemove="handleAllMouseMove($event)"
     @mouseup="handleCanvasMouseUp"
     @mouseleave="handleCanvasMouseUp"
-    @wheel.prevent="handleWheel"
+    @wheel="handleWheel"
   >
     <svg
       :width="svgWidth"
@@ -387,6 +387,10 @@ const props = defineProps({
   showTaskNames: {
     type: Boolean,
     default: false
+  },
+  contentHeight: {
+    type: Number,
+    default: undefined
   }
 })
 
@@ -479,10 +483,15 @@ const handleCanvasDblClick = (event) => {
   })
 }
 
-// 鼠标滚轮缩放
+// 鼠标滚轮缩放 - 只有按住 Ctrl 键时才缩放
 const handleWheel = (event) => {
-  const delta = event.deltaY > 0 ? -2 : 2
-  emit('zoom-change', Math.max(10, Math.min(100, props.dayWidth + delta)))
+  // 只有按住 Ctrl 键时才进行时间轴缩放
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault()
+    const delta = event.deltaY > 0 ? -2 : 2
+    emit('zoom-change', Math.max(10, Math.min(100, props.dayWidth + delta)))
+  }
+  // 否则允许正常的垂直滚动（不阻止默认行为）
 }
 
 // 画布鼠标移动
@@ -980,7 +989,6 @@ defineExpose({
 
 <style scoped>
 .task-timeline {
-  flex: 1;
   position: relative;
   min-width: 800px;
   overflow: hidden;

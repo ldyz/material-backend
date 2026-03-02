@@ -8,10 +8,10 @@
       </div>
     </div>
 
-    <!-- 统计卡片 -->
-    <div class="stats-section">
+    <!-- 统计卡片 - 根据权限过滤 -->
+    <div class="stats-section" v-if="visibleStatistics.length > 0">
       <el-row :gutter="20">
-        <el-col :xs="12" :sm="8" :md="6" v-for="stat in statistics" :key="stat.title">
+        <el-col :xs="12" :sm="8" :md="6" v-for="stat in visibleStatistics" :key="stat.title">
           <div class="stat-card" :class="stat.status">
             <div class="stat-icon" :style="{ background: stat.color }">
               <el-icon :size="28" color="white">
@@ -60,9 +60,9 @@
               查看全部
             </el-button>
           </div>
-          <div class="actions-grid">
+          <div class="actions-grid" v-if="visibleQuickActions.length > 0">
             <div
-              v-for="action in quickActions"
+              v-for="action in visibleQuickActions"
               :key="action.key"
               class="action-item"
               @click="handleAction(action)"
@@ -77,6 +77,9 @@
                 <div class="action-desc">{{ action.desc }}</div>
               </div>
             </div>
+          </div>
+          <div v-else class="empty-actions">
+            <p>暂无可用的快捷操作</p>
           </div>
         </div>
       </el-col>
@@ -136,44 +139,58 @@ const statistics = ref([
     value: '-',
     icon: Box,
     color: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    status: 'success'
+    status: 'success',
+    permissions: ['material_view']
   },
   {
     title: '项目总数',
     value: '-',
     icon: Flag,
     color: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-    status: 'primary'
+    status: 'primary',
+    permissions: ['project_view']
   },
   {
     title: '库存预警',
     value: '-',
     icon: ShoppingCart,
     color: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-    status: 'warning'
+    status: 'warning',
+    permissions: ['stock_view', 'stock_alerts']
   },
   {
     title: '待处理出库',
     value: '-',
     icon: Document,
     color: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-    status: 'info'
+    status: 'info',
+    permissions: ['requisition_view']
   },
   {
     title: '本月入库',
     value: '-',
     icon: Upload,
     color: 'linear-gradient(135deg, #30cfd0 0%, #330867 100%)',
-    status: 'success'
+    status: 'success',
+    permissions: ['inbound_view']
   },
   {
     title: '本月出库',
     value: '-',
     icon: Download,
     color: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
-    status: 'primary'
+    status: 'primary',
+    permissions: ['requisition_view']
   }
 ])
+
+// 可见统计数据（根据权限过滤）
+const visibleStatistics = computed(() => {
+  return statistics.value.filter(stat => {
+    if (!stat.permissions || stat.permissions.length === 0) return true
+    return stat.permissions.some(perm => authStore.hasPermission(perm))
+  })
+})
 
 // 预约统计数据
 const appointmentStats = ref([
@@ -216,7 +233,8 @@ const quickActions = ref([
     icon: Plus,
     color: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     path: '/materials',
-    action: 'create'
+    action: 'create',
+    permissions: ['material_create']
   },
   {
     key: 'create_inbound',
@@ -225,7 +243,8 @@ const quickActions = ref([
     icon: Upload,
     color: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
     path: '/inbound',
-    action: 'create'
+    action: 'create',
+    permissions: ['inbound_create']
   },
   {
     key: 'create_requisition',
@@ -234,7 +253,8 @@ const quickActions = ref([
     icon: DocumentCopy,
     color: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
     path: '/requisitions',
-    action: 'create'
+    action: 'create',
+    permissions: ['requisition_create']
   },
   {
     key: 'create_plan',
@@ -243,7 +263,8 @@ const quickActions = ref([
     icon: List,
     color: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
     path: '/material-plans',
-    action: 'create'
+    action: 'create',
+    permissions: ['material_plan_create']
   },
   {
     key: 'manage_stock',
@@ -252,7 +273,8 @@ const quickActions = ref([
     icon: Management,
     color: 'linear-gradient(135deg, #30cfd0 0%, #330867 100%)',
     path: '/stock',
-    action: 'view'
+    action: 'view',
+    permissions: ['stock_view']
   },
   {
     key: 'view_logs',
@@ -260,10 +282,19 @@ const quickActions = ref([
     desc: '查看系统操作日志',
     icon: Bell,
     color: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
-    path: '/system',
-    action: 'logs'
+    path: '/operation-logs',
+    action: 'view',
+    permissions: ['audit_view']
   }
 ])
+
+// 可见快捷操作（根据权限过滤）
+const visibleQuickActions = computed(() => {
+  return quickActions.value.filter(action => {
+    if (!action.permissions || action.permissions.length === 0) return true
+    return action.permissions.some(perm => authStore.hasPermission(perm))
+  })
+})
 
 // 获取统计数据
 const fetchStatistics = async () => {
@@ -539,6 +570,18 @@ onMounted(() => {
 .action-desc {
   font-size: 12px;
   color: #909399;
+}
+
+/* 空状态 */
+.empty-actions {
+  padding: 40px 20px;
+  text-align: center;
+  color: #909399;
+}
+
+.empty-actions p {
+  margin: 0;
+  font-size: 14px;
 }
 
 /* 响应式 */

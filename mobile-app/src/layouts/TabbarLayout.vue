@@ -33,11 +33,12 @@
 import { ref, watch, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAutoUpdate } from '@/composables/useAppUpdate'
+import { useAuthStore } from '@/stores/auth'
 import AppUpdateDialog from '@/components/AppUpdateDialog.vue'
-import { canManageAppointments, isWorker } from '@/utils/roleUtils'
 
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
 
 const activeTab = ref('dashboard')
 const showUpdateDialog = ref(false)
@@ -49,38 +50,77 @@ const { hasUpdate, forceUpdate, performCheck } = useAutoUpdate({
   checkInterval: 24 * 60 * 60 * 1000 // 每24小时检查一次
 })
 
-// 从 localStorage 获取用户信息
-const userInfo = ref(JSON.parse(localStorage.getItem('userInfo') || '{}'))
-
-// 根据角色动态生成菜单项
+// 根据权限动态生成菜单项
 const menuItems = computed(() => {
-  // 默认菜单（所有人可见）
-  const defaultMenus = [
-    { name: 'dashboard', label: '首页', icon: 'wap-home-o' },
-    { name: 'appointments', label: '预约', icon: 'calendar-o' },
-    { name: 'profile', label: '我的', icon: 'user-o' }
+  const items = [
+    // 首页 - 所有人可见
+    { name: 'dashboard', label: '首页', icon: 'wap-home-o', permissions: [] }
   ]
 
-  // 管理员/项目经理菜单
-  if (canManageAppointments(userInfo.value)) {
-    return [
-      { name: 'dashboard', label: '首页', icon: 'wap-home-o' },
-      { name: 'appointments', label: '预约管理', icon: 'calendar-o' },
-      { name: 'inbound', label: '入库管理', icon: 'logistics' },
-      { name: 'profile', label: '我的', icon: 'user-o' }
-    ]
+  // 预约管理 - 需要预约查看权限
+  if (authStore.hasPermission('appointment_view')) {
+    items.push({
+      name: 'appointments',
+      label: '预约',
+      icon: 'calendar-o',
+      permissions: ['appointment_view']
+    })
   }
 
-  // 作业人员菜单
-  if (isWorker(userInfo.value)) {
-    return [
-      { name: 'dashboard', label: '首页', icon: 'wap-home-o' },
-      { name: 'profile', label: '我的', icon: 'user-o' }
-    ]
+  // 物资计划 - 需要物资计划查看权限
+  if (authStore.hasPermission('material_plan_view')) {
+    items.push({
+      name: 'plans',
+      label: '计划',
+      icon: 'todo-list-o',
+      permissions: ['material_plan_view']
+    })
   }
 
-  // 默认返回普通菜单
-  return defaultMenus
+  // 入库管理 - 需要入库查看权限
+  if (authStore.hasPermission('inbound_view')) {
+    items.push({
+      name: 'inbound',
+      label: '入库',
+      icon: 'logistics',
+      permissions: ['inbound_view']
+    })
+  }
+
+  // 出库管理 - 需要出库查看权限
+  if (authStore.hasPermission('requisition_view')) {
+    items.push({
+      name: 'requisition',
+      label: '出库',
+      icon: 'send-gift-o',
+      permissions: ['requisition_view']
+    })
+  }
+
+  // 施工日志 - 需要施工日志查看权限
+  if (authStore.hasAnyPermission(['constructionlog_view', 'constructionlog_create'])) {
+    items.push({
+      name: 'construction-log',
+      label: '日志',
+      icon: 'notes-o',
+      permissions: ['constructionlog_view', 'constructionlog_create']
+    })
+  }
+
+  // 进度管理 - 需要进度查看权限
+  if (authStore.hasPermission('progress_view')) {
+    items.push({
+      name: 'progress',
+      label: '进度',
+      icon: 'bar-chart-o',
+      permissions: ['progress_view']
+    })
+  }
+
+  // 我的 - 所有人可见
+  items.push({ name: 'profile', label: '我的', icon: 'user-o', permissions: [] })
+
+  return items
 })
 
 // 监听是否有更新
@@ -111,6 +151,10 @@ watch(
       activeTab.value = 'inbound'
     } else if (path.startsWith('/requisition')) {
       activeTab.value = 'requisition'
+    } else if (path.startsWith('/construction-log')) {
+      activeTab.value = 'construction-log'
+    } else if (path.startsWith('/progress')) {
+      activeTab.value = 'progress'
     } else if (path.startsWith('/profile')) {
       activeTab.value = 'profile'
     }

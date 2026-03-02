@@ -38,7 +38,7 @@
                 'unavailable': !worker.is_available,
                 'is-supervisor': isSupervisorSelected(worker.id)
               }]"
-              @click="toggleWorker(worker)"
+              @click="worker.is_available ? toggleWorker(worker) : null"
             >
               <div class="worker-avatar">
                 <el-avatar
@@ -207,8 +207,8 @@ async function loadWorkers() {
 }
 
 function toggleWorker(worker) {
+  // 不可用的作业人员无法被选中（通过@click条件判断阻止）
   if (!worker.is_available) {
-    ElMessage.warning('该作业人员当前时间段已被占用')
     return
   }
 

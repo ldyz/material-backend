@@ -1,5 +1,9 @@
 <template>
-  <div class="task-table-wrapper" :class="{ 'is-collapsed': isCollapsed }">
+  <div
+    class="task-table-wrapper"
+    :class="{ 'is-collapsed': isCollapsed, 'has-fixed-height': taskListHeight !== null }"
+    :style="{ width: taskListWidth + 'px', height: taskListHeight ? taskListHeight + 'px' : 'auto' }"
+  >
     <!-- 拖拽提示浮层 -->
     <div v-if="draggedTask" class="drag-indicator">
       <div class="drag-indicator-content">
@@ -70,12 +74,12 @@
             @dragend="handleDragEnd"
           >
             <!-- 任务编号 -->
-            <div class="row-column column-id">
+            <div class="row-column column-id" :style="{ width: columnWidths.id + 'px', flex: 'none' }">
               {{ task.id }}
             </div>
 
             <!-- 任务名称 -->
-            <div class="row-column column-name">
+            <div class="row-column column-name" :style="{ width: columnWidths.name + 'px', flex: 'none' }">
               <!-- 树形缩进和展开/收起按钮 -->
               <div class="task-tree-indent" :style="{ paddingLeft: (getTaskDepth(task) * 20) + 'px' }">
                 <el-icon
@@ -100,12 +104,12 @@
             </div>
 
             <!-- 工期 -->
-            <div class="row-column column-duration">
+            <div class="row-column column-duration" :style="{ width: columnWidths.duration + 'px', flex: 'none' }">
               {{ getTaskDuration(task) }} 天
             </div>
 
             <!-- 起止时间 -->
-            <div class="row-column column-dates">
+            <div class="row-column column-dates" :style="{ width: columnWidths.dates + 'px', flex: 'none' }">
               <div class="date-range">
                 <span class="date-start">{{ task.start ? formatDateShort(task.start) : '-' }}</span>
                 <span class="date-separator">→</span>
@@ -114,7 +118,7 @@
             </div>
 
             <!-- 资源 -->
-            <div class="row-column column-resources">
+            <div class="row-column column-resources" :style="{ flex: '1 1 auto' }">
               <div v-if="task.resources && task.resources.length > 0" class="resource-tags">
                 <el-tag
                   v-for="(res, idx) in task.resources.slice(0, 2)"
@@ -162,12 +166,12 @@
         @drop="handleDrop($event, task)"
       >
         <!-- 任务编号 -->
-        <div class="row-column column-id">
+        <div class="row-column column-id" :style="{ width: columnWidths.id + 'px', flex: 'none' }">
           {{ task.id }}
         </div>
 
         <!-- 任务名称 -->
-        <div class="row-column column-name">
+        <div class="row-column column-name" :style="{ width: columnWidths.name + 'px', flex: 'none' }">
           <!-- 树形缩进和展开/收起按钮 -->
           <div class="task-tree-indent" :style="{ paddingLeft: (getTaskDepth(task) * 20) + 'px' }">
             <el-icon
@@ -192,12 +196,12 @@
         </div>
 
         <!-- 工期 -->
-        <div class="row-column column-duration">
+        <div class="row-column column-duration" :style="{ width: columnWidths.duration + 'px', flex: 'none' }">
           {{ getTaskDuration(task) }} 天
         </div>
 
         <!-- 起止时间 -->
-        <div class="row-column column-dates">
+        <div class="row-column column-dates" :style="{ width: columnWidths.dates + 'px', flex: 'none' }">
           <div class="date-range">
             <span class="date-start">{{ task.start ? formatDateShort(task.start) : '-' }}</span>
             <span class="date-separator">→</span>
@@ -206,7 +210,7 @@
         </div>
 
         <!-- 资源 -->
-        <div class="row-column column-resources">
+        <div class="row-column column-resources" :style="{ flex: '1 1 auto' }">
           <div v-if="task.resources && task.resources.length > 0" class="resource-tags">
             <el-tag
               v-for="(res, idx) in task.resources.slice(0, 2)"
@@ -237,17 +241,17 @@
         @dblclick="handleEmptyRowDblClick"
         title="点击或双击添加新任务"
       >
-        <div class="row-column column-id"></div>
-        <div class="row-column column-name">
+        <div class="row-column column-id" :style="{ width: columnWidths.id + 'px', flex: 'none' }"></div>
+        <div class="row-column column-name" :style="{ width: columnWidths.name + 'px', flex: 'none' }">
           <div class="task-tree-indent">
             <span class="tree-toggle-placeholder"></span>
             <el-icon class="add-task-icon"><Plus /></el-icon>
             <div class="task-name-text is-placeholder">点击添加新任务</div>
           </div>
         </div>
-        <div class="row-column column-duration"></div>
-        <div class="row-column column-dates"></div>
-        <div class="row-column column-resources"></div>
+        <div class="row-column column-duration" :style="{ width: columnWidths.duration + 'px', flex: 'none' }"></div>
+        <div class="row-column column-dates" :style="{ width: columnWidths.dates + 'px', flex: 'none' }"></div>
+        <div class="row-column column-resources" :style="{ flex: '1 1 auto' }"></div>
       </div>
     </template>
 
@@ -258,16 +262,80 @@
     <div v-else-if="props.tasks.length === 0" class="table-empty">
       <el-empty :description="emptyDescription" />
     </div>
+
+    <!-- 高度调整手柄 -->
+    <div
+      class="height-resize-handle"
+      @mousedown.stop="startHeightResize"
+      :title="taskListHeight ? '双击恢复自动高度' : '拖动调整高度'"
+      @dblclick="resetHeight"
+    ></div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onUnmounted } from 'vue'
 import { Star, ArrowDown, Rank, Plus } from '@element-plus/icons-vue'
 import { diffDays } from '@/utils/dateFormat'
 import { isMilestone } from '@/utils/ganttHelpers'
 import { ganttStore } from '@/stores/ganttStore'
+
+const { state, actions } = ganttStore
+
+// 从 store 获取列宽配置和高度配置
+const columnWidths = computed(() => state.columnWidths)
+const taskListWidth = computed(() => state.taskListWidth)
+const taskListHeight = computed(() => state.taskListHeight)
+
+// 高度调整状态
+const resizingHeight = ref(false)
+const startY = ref(0)
+const startHeight = ref(0)
+
+// 开始高度调整
+const startHeightResize = (event) => {
+  resizingHeight.value = true
+  startY.value = event.clientY
+  const wrapper = event.target.closest('.task-table-wrapper')
+  startHeight.value = wrapper?.offsetHeight || state.taskListHeight || 400
+
+  document.addEventListener('mousemove', onHeightResizeMove)
+  document.addEventListener('mouseup', onHeightResizeEnd)
+
+  event.preventDefault()
+}
+
+// 高度调整移动
+const onHeightResizeMove = (event) => {
+  if (!resizingHeight.value) return
+
+  const diff = event.clientY - startY.value
+  const newHeight = Math.max(
+    state.minTaskListHeight,
+    Math.min(startHeight.value + diff, state.maxTaskListHeight)
+  )
+
+  actions.setTaskListHeight(newHeight)
+}
+
+// 结束高度调整
+const onHeightResizeEnd = () => {
+  resizingHeight.value = false
+  document.removeEventListener('mousemove', onHeightResizeMove)
+  document.removeEventListener('mouseup', onHeightResizeEnd)
+}
+
+// 重置高度为自动
+const resetHeight = () => {
+  actions.setTaskListHeight(null)
+}
+
+// 清理事件监听
+onUnmounted(() => {
+  document.removeEventListener('mousemove', onHeightResizeMove)
+  document.removeEventListener('mouseup', onHeightResizeEnd)
+})
 
 const props = defineProps({
   tasks: {
@@ -305,6 +373,10 @@ const props = defineProps({
   isCollapsed: {
     type: Boolean,
     default: false
+  },
+  contentHeight: {
+    type: Number,
+    default: undefined
   }
 })
 
@@ -320,9 +392,6 @@ const emit = defineEmits([
 const draggedTask = ref(null)
 const dragOverTaskId = ref(null)
 const dropPosition = ref(null) // 'before', 'after', or 'child'
-
-// 使用 store 中的折叠状态
-const { state, actions } = ganttStore
 
 // 获取任务层级（深度）
 const getTaskDepth = (task) => {
@@ -635,18 +704,29 @@ const getResourceTagType = (type) => {
 
 <style scoped>
 .task-table-wrapper {
-  width: 670px;
   border-right: 1px solid #dcdfe6;
   flex-shrink: 0;
-  position: sticky;
-  left: 0;
+  position: relative;
   z-index: 10;
   background: #fff;
   box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
-  /* 高度由内容决定 */
-  transition: width 0.3s ease, opacity 0.3s ease, transform 0.3s ease, min-width 0.3s ease;
+  transition: width 0.3s ease, opacity 0.3s ease, transform 0.3s ease, height 0.3s ease;
+  /* 确保高度变化时不会溢出 */
+  max-height: 100%;
+  overflow: hidden;
+}
+
+/* 固定高度时显示滚动 */
+.task-table-wrapper.has-fixed-height {
+  overflow-y: auto;
+}
+
+/* 固定高度时table-content不需要额外高度限制 */
+.task-table-wrapper.has-fixed-height .table-content {
+  flex: 1;
+  overflow: visible;
 }
 
 /* 折叠状态 */
@@ -771,7 +851,6 @@ const getResourceTagType = (type) => {
 }
 
 .row-column.column-id {
-  flex: 0 0 60px;
   justify-content: center;
   font-weight: bold;
   color: #606266;
@@ -779,7 +858,6 @@ const getResourceTagType = (type) => {
 }
 
 .row-column.column-name {
-  flex: 0 0 200px;
   flex-direction: column;
   justify-content: center;
   gap: 4px;
@@ -787,19 +865,16 @@ const getResourceTagType = (type) => {
 }
 
 .row-column.column-duration {
-  flex: 0 0 70px;
   justify-content: center;
   color: #606266;
   font-weight: 500;
 }
 
 .row-column.column-dates {
-  flex: 0 0 150px;
   justify-content: center;
 }
 
 .row-column.column-resources {
-  flex: 1;
   justify-content: flex-start;
   padding-left: 12px;
 }
@@ -993,5 +1068,47 @@ const getResourceTagType = (type) => {
   border-radius: 4px;
   font-size: 12px;
   border: 1px solid rgba(64, 158, 255, 0.4);
+}
+
+/* 高度调整手柄 */
+.height-resize-handle {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  background: transparent;
+  transition: background 0.2s;
+  z-index: 20;
+  flex-shrink: 0;
+}
+
+.height-resize-handle:hover {
+  background: rgba(103, 194, 58, 0.2);
+  border-top: 2px solid #67c23a;
+}
+
+.height-resize-handle:active {
+  background: rgba(103, 194, 58, 0.3);
+  border-top: 2px solid #67c23a;
+}
+
+/* 高度调整手柄指示器 */
+.height-resize-handle::before {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.2s;
+}
+
+.height-resize-handle:hover::before {
+  background: #67c23a;
 }
 </style>

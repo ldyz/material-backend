@@ -90,10 +90,20 @@
         <el-col :span="12">
           <el-form-item label="时间段" prop="time_slot">
             <el-select v-model="formData.time_slot" placeholder="请选择" style="width: 100%">
-              <el-option label="上午 (8:00-11:30)" value="morning" />
-              <el-option label="中午 (12:00-13:30)" value="noon" />
-              <el-option label="下午 (13:30-16:30)" value="afternoon" />
-              <el-option label="全天" value="full_day" />
+              <el-option
+                v-for="slot in timeSlotOptions"
+                :key="slot.value"
+                :label="slot.label"
+                :value="slot.value"
+                :disabled="isTimeSlotDisabled(slot.value)"
+              >
+                <div class="time-slot-option">
+                  <span class="time-slot-label">{{ slot.label }}</span>
+                  <span v-if="getTimeSlotCount(slot.value) > 0" class="time-slot-count" :class="getTimeSlotStatus(slot.value)">
+                    {{ getTimeSlotCount(slot.value) }}单
+                  </span>
+                </div>
+              </el-option>
             </el-select>
           </el-form-item>
         </el-col>
@@ -154,21 +164,21 @@
           <el-button @click="handleShowWorkerSelector" :disabled="loadingWorkers">
             选择作业人员
           </el-button>
-          <span v-if="formData.assigned_worker_id" class="selected-worker-hint">
-            已选择: {{ getSelectedWorkerName() }}
+          <span v-if="selectedWorkerIds.length > 0" class="selected-worker-hint">
+            已选择 {{ selectedWorkerIds.length }} 人
           </span>
         </div>
         <div v-else v-loading="loadingWorkers" class="worker-selector-container">
           <div class="worker-selector-header">
-            <span class="worker-selector-title">选择作业人员</span>
+            <span class="worker-selector-title">选择作业人员（可多选）</span>
             <el-button type="text" @click="handleHideWorkerSelector">收起</el-button>
           </div>
           <div class="worker-selector-grid">
             <div
               v-for="worker in workerList"
               :key="worker.id"
-              :class="['worker-selector-card', { 'selected': formData.assigned_worker_id === worker.id }]"
-              @click="selectWorker(worker.id)"
+              :class="['worker-selector-card', { 'selected': isWorkerSelected(worker.id) }]"
+              @click="toggleWorkerSelection(worker.id)"
             >
               <div class="worker-card-avatar">
                 <el-avatar
@@ -178,7 +188,7 @@
                 >
                   {{ (worker.full_name || worker.username || '?').charAt(0) }}
                 </el-avatar>
-                <div v-if="formData.assigned_worker_id === worker.id" class="selected-badge">
+                <div v-if="isWorkerSelected(worker.id)" class="selected-badge">
                   <el-icon><Check /></el-icon>
                 </div>
               </div>
@@ -225,6 +235,14 @@ const workTypeOptions = [
   { value: 'blind_plate', label: '盲板抽堵' }
 ]
 
+// 时间段选项
+const timeSlotOptions = [
+  { value: 'morning', label: '上午 (8:00-11:30)' },
+  { value: 'noon', label: '中午 (12:00-13:30)' },
+  { value: 'afternoon', label: '下午 (13:30-16:30)' },
+  { value: 'full_day', label: '全天' }
+]
+
 const selectedWorkTypes = ref([])
 
 const props = defineProps({
@@ -251,6 +269,7 @@ const formRef = ref(null)
 const submitting = ref(false)
 const workDate = ref('')
 const dailyAppointments = ref({}) // 存储每日预约数据，格式: { '2026-02-11': { total: 5, urgent: 2 } }
+const timeSlotStatistics = ref({}) // 存储时间段统计数据，格式: { '2026-02-11': { morning: 2, noon: 1, afternoon: 3, full_day: 1 } }
 const totalWorkers = ref(0) // 总作业人员数量
 const currentViewDate = ref(new Date()) // 当前日历视图的日期（用于构建完整日期）
 
@@ -314,6 +333,67 @@ async function fetchDailyAppointments() {
   } catch (error) {
     console.error('获取每日预约数据失败:', error)
   }
+}
+
+// 获取时间段统计数据
+async function fetchTimeSlotStatistics() {
+  if (!workDate.value) return
+
+  try {
+    const response = await appointmentApi.getTimeSlotStatistics({
+      date: workDate.value
+    })
+
+    const apiData = response.data
+    const data = apiData?.data || apiData
+
+    // 将统计数据存储到日期对应的对象中
+    if (data?.statistics && Array.isArray(data.statistics)) {
+      const slotStats = {}
+      data.statistics.forEach((item) => {
+        slotStats[item.time_slot] = {
+          count: item.total_count,
+          totalWorkers: item.total_workers
+        }
+      })
+      timeSlotStatistics.value[workDate.value] = slotStats
+    } else {
+      timeSlotStatistics.value[workDate.value] = {}
+    }
+  } catch (error) {
+    console.error('获取时间段统计数据失败:', error)
+    timeSlotStatistics.value[workDate.value] = {}
+  }
+}
+
+// 获取时间段的任务数量
+function getTimeSlotCount(slotValue) {
+  if (!workDate.value) return 0
+  const slotStats = timeSlotStatistics.value[workDate.value]
+  return slotStats?.[slotValue]?.count || 0
+}
+
+// 获取时间段的状态类
+function getTimeSlotStatus(slotValue) {
+  const count = getTimeSlotCount(slotValue)
+  if (count === 0) return ''
+
+  const slotStats = timeSlotStatistics.value[workDate.value]?.[slotValue]
+  if (!slotStats) return ''
+
+  const totalWorkers = slotStats.totalWorkers || totalWorkers.value
+  if (totalWorkers === 0) return 'normal'
+
+  const ratio = count / totalWorkers
+  if (ratio >= 1) return 'overload'
+  if (ratio >= 0.75) return 'busy'
+  return 'normal'
+}
+
+// 判断时间段是否禁用
+function isTimeSlotDisabled(slotValue) {
+  const status = getTimeSlotStatus(slotValue)
+  return status === 'overload'
 }
 
 // 获取日期单元格的CSS类名（已弃用，保留用于兼容性）
@@ -535,8 +615,12 @@ const formData = ref({
   is_urgent: false,
   priority: 0,
   urgent_reason: '',
-  assigned_worker_id: null
+  assigned_worker_id: null, // 保留用于兼容
+  assigned_worker_ids: [] // 新增多选支持
 })
+
+// 选中的作业人员ID列表
+const selectedWorkerIds = ref([])
 
 const formRules = {
   work_date: [{ required: true, message: '请选择作业日期', trigger: 'change' }],
@@ -583,20 +667,30 @@ function handleHideWorkerSelector() {
 
 // 获取已选择的人员名称
 function getSelectedWorkerName() {
-  if (!formData.value.assigned_worker_id) return ''
-  const worker = workerList.value.find(w => w.id === formData.value.assigned_worker_id)
-  return worker ? (worker.full_name || worker.username) : ''
+  if (selectedWorkerIds.value.length === 0) return ''
+  const workers = workerList.value.filter(w => selectedWorkerIds.value.includes(w.id))
+  return workers.map(w => w.full_name || w.username).join('、')
 }
 
-// 选择作业人员
-function selectWorker(workerId) {
-  if (formData.value.assigned_worker_id === workerId) {
-    // 取消选择
-    formData.value.assigned_worker_id = null
+// 检查作业人员是否被选中
+function isWorkerSelected(workerId) {
+  return selectedWorkerIds.value.includes(workerId)
+}
+
+// 切换作业人员选择状态（支持多选）
+function toggleWorkerSelection(workerId) {
+  const index = selectedWorkerIds.value.indexOf(workerId)
+  if (index > -1) {
+    // 取消选中
+    selectedWorkerIds.value.splice(index, 1)
   } else {
-    // 选择新的
-    formData.value.assigned_worker_id = workerId
+    // 选中
+    selectedWorkerIds.value.push(workerId)
   }
+  // 同步到 formData
+  formData.value.assigned_worker_ids = [...selectedWorkerIds.value]
+  // 保留兼容性：如果是单选，第一个值作为 assigned_worker_id
+  formData.value.assigned_worker_id = selectedWorkerIds.value.length > 0 ? selectedWorkerIds.value[0] : null
 }
 
 // 根据用户ID生成头像背景色
@@ -622,6 +716,26 @@ watch(() => props.appointment, (val) => {
     if (val.work_type) {
       selectedWorkTypes.value = val.work_type.split(',').filter(v => v)
     }
+    // 加载已选择的作业人员
+    // assigned_worker_ids 可能是 JSON 字符串格式 "[1,2,3]" 或数组
+    if (val.assigned_worker_ids) {
+      if (typeof val.assigned_worker_ids === 'string') {
+        try {
+          selectedWorkerIds.value = JSON.parse(val.assigned_worker_ids)
+        } catch (e) {
+          console.error('解析 assigned_worker_ids 失败:', e)
+          selectedWorkerIds.value = []
+        }
+      } else if (Array.isArray(val.assigned_worker_ids)) {
+        selectedWorkerIds.value = [...val.assigned_worker_ids]
+      } else {
+        selectedWorkerIds.value = []
+      }
+    } else if (val.assigned_worker_id) {
+      selectedWorkerIds.value = [val.assigned_worker_id]
+    } else {
+      selectedWorkerIds.value = []
+    }
   } else {
     resetForm()
   }
@@ -638,6 +752,10 @@ watch(dialogVisible, (val) => {
 
 watch(workDate, (val) => {
   formData.value.work_date = val
+  // 当选择日期时，获取时间段统计数据
+  if (val) {
+    fetchTimeSlotStatistics()
+  }
 })
 
 function resetForm() {
@@ -653,10 +771,12 @@ function resetForm() {
     is_urgent: false,
     priority: 0,
     urgent_reason: '',
-    assigned_worker_id: null
+    assigned_worker_id: null,
+    assigned_worker_ids: []
   }
   workDate.value = ''
   selectedWorkTypes.value = []
+  selectedWorkerIds.value = []
   showWorkerSelector.value = false
   formRef.value?.clearValidate()
 }
@@ -666,9 +786,24 @@ async function handleSubmit() {
     await formRef.value.validate()
     submitting.value = true
 
+    // 准备提交数据，确保包含多选的作业人员
+    // 获取选中的作业人员名称（逗号分隔）
+    const selectedWorkers = workerList.value.filter(w => selectedWorkerIds.value.includes(w.id))
+    const workerNames = selectedWorkers.map(w => w.full_name || w.username).join(',')
+
+    const submitData = {
+      ...formData.value,
+      // 后端期望 assigned_worker_ids 是 JSON 字符串格式 "[1,2,3]"
+      assigned_worker_ids: JSON.stringify(selectedWorkerIds.value),
+      // 作业人员名称是逗号分隔的字符串
+      assigned_worker_names: workerNames,
+      // 保留兼容性
+      assigned_worker_id: selectedWorkerIds.value.length > 0 ? selectedWorkerIds.value[0] : null
+    }
+
     if (props.mode === 'create') {
       // 创建时直接提交
-      const createResult = await appointmentApi.create(formData.value)
+      const createResult = await appointmentApi.create(submitData)
       // 创建成功后提交
       const appointmentId = createResult.data?.id || createResult.id
       if (appointmentId) {
@@ -676,7 +811,7 @@ async function handleSubmit() {
       }
       ElMessage.success('提交成功')
     } else {
-      await appointmentApi.update(props.appointment.id, formData.value)
+      await appointmentApi.update(props.appointment.id, submitData)
       ElMessage.success('保存成功')
     }
 
@@ -1065,5 +1200,42 @@ function handleClose() {
 
 :deep(.el-date-table td.available .el-date-table-cell__text) {
   color: #606266;
+}
+
+/* 时间段选择器样式 */
+.time-slot-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.time-slot-label {
+  flex: 1;
+}
+
+.time-slot-count {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.time-slot-count.normal {
+  background-color: #e6f7ff;
+  color: #1890ff;
+  border: 1px solid #91d5ff;
+}
+
+.time-slot-count.busy {
+  background-color: #fff7e6;
+  color: #fa8c16;
+  border: 1px solid #ffd591;
+}
+
+.time-slot-count.overload {
+  background-color: #fff1f0;
+  color: #f5222d;
+  border: 1px solid #ffa39e;
 }
 </style>

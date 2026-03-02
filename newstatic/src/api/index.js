@@ -4109,6 +4109,21 @@ export const appointmentApi = {
     })
   },
 
+  /**
+   * 获取时间段统计数据
+   *
+   * @param {Object} params - 查询参数
+   * @param {string} params.date - 日期 (YYYY-MM-DD)
+   * @returns {Promise} 返回时间段统计数据
+   */
+  getTimeSlotStatistics(params) {
+    return request({
+      url: '/appointments/time-slot-statistics',
+      method: 'GET',
+      params
+    })
+  },
+
   // ========== 日历相关API ==========
 
   /**

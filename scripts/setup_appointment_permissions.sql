@@ -5,7 +5,7 @@
 -- 1. 插入角色
 INSERT INTO roles (id, name, description, created_at, updated_at) VALUES
 (10, '预约管理员', '负责创建和管理施工预约单，包括客户等预约申请人员', NOW(), NOW()),
-(11, '施工员', '负责第一级审批，确认可以承接预约作业', NOW(), NOW()),
+(11, '预约施工员', '负责第一级审批，确认可以承接预约作业', NOW(), NOW()),
 (12, '作业人员', '负责执行具体施工作业的人员', NOW(), NOW())
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
@@ -32,13 +32,16 @@ ON CONFLICT (id) DO UPDATE SET
 -- 3. 分配角色权限
 
 -- 预约管理员权限（客户）
+-- 注意：不包含 user_view 权限，避免看到系统管理菜单
+-- 需要 project_view 权限以在创建预约单时选择项目
 INSERT INTO role_permissions (role_id, permission_id, created_at)
 SELECT 10, id, NOW() FROM permissions WHERE name IN (
   'appointment_view',
   'appointment_create',
   'appointment_edit',
   'appointment_delete',
-  'appointment_submit'
+  'appointment_submit',
+  'project_view'
 )
 ON CONFLICT DO NOTHING;
 

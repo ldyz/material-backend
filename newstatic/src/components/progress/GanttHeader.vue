@@ -1,11 +1,27 @@
 <template>
   <div class="gantt-header">
-    <div class="header-tasks">
-      <div class="header-column column-id">编号</div>
-      <div class="header-column column-name">任务名称</div>
-      <div class="header-column column-duration">工期</div>
-      <div class="header-column column-dates">起止时间</div>
-      <div class="header-column column-resources">资源</div>
+    <div class="header-tasks" :style="{ width: taskListWidth + 'px' }">
+      <div class="header-column column-id" :style="{ width: columnWidths.id + 'px' }">
+        编号
+        <div class="resize-handle" data-column="id" @mousedown.stop="startColumnResize"></div>
+      </div>
+      <div class="header-column column-name" :style="{ width: columnWidths.name + 'px' }">
+        任务名称
+        <div class="resize-handle" data-column="name" @mousedown.stop="startColumnResize"></div>
+      </div>
+      <div class="header-column column-duration" :style="{ width: columnWidths.duration + 'px' }">
+        工期
+        <div class="resize-handle" data-column="duration" @mousedown.stop="startColumnResize"></div>
+      </div>
+      <div class="header-column column-dates" :style="{ width: columnWidths.dates + 'px' }">
+        起止时间
+        <div class="resize-handle" data-column="dates" @mousedown.stop="startColumnResize"></div>
+      </div>
+      <div class="header-column column-resources" :style="{ flex: '1 1 auto' }">
+        资源
+      </div>
+      <!-- 任务列表宽度调节手柄 -->
+      <div class="tasklist-resize-handle" @mousedown.stop="startTaskListResize"></div>
     </div>
     <div class="header-timeline" :class="timelineHeightClass" ref="timelineHeaderRef" :style="{ transform: `translateX(${panOffset}px)` }">
       <!-- 根据时间轴格式动态渲染 -->
@@ -166,7 +182,10 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ganttStore } from '@/stores/ganttStore'
+
+const { state, actions } = ganttStore
 
 const props = defineProps({
   timelineFormat: {
@@ -209,6 +228,95 @@ const props = defineProps({
     type: Number,
     default: 0
   }
+})
+
+// 从 store 获取列宽配置
+const columnWidths = computed(() => state.columnWidths)
+const taskListWidth = computed(() => state.taskListWidth)
+
+// 列宽调整状态
+const resizingColumn = ref(null)
+const startX = ref(0)
+const startWidth = ref(0)
+
+// 任务列表宽度调整状态
+const resizingTaskList = ref(false)
+const taskListStartX = ref(0)
+const taskListStartWidth = ref(0)
+
+// 开始列宽调整
+const startColumnResize = (event) => {
+  const column = event.target.dataset.column
+  if (!column) return
+
+  resizingColumn.value = column
+  startX.value = event.clientX
+  startWidth.value = state.columnWidths[column]
+
+  document.addEventListener('mousemove', onColumnResizeMove)
+  document.addEventListener('mouseup', onColumnResizeEnd)
+
+  event.preventDefault()
+}
+
+// 列宽调整移动
+const onColumnResizeMove = (event) => {
+  if (!resizingColumn.value) return
+
+  const diff = event.clientX - startX.value
+  const newWidth = Math.max(
+    resizingColumn.value === 'name' ? 100 : 50,
+    Math.min(startWidth.value + diff, 400)
+  )
+
+  actions.setColumnWidth(resizingColumn.value, newWidth)
+}
+
+// 结束列宽调整
+const onColumnResizeEnd = () => {
+  resizingColumn.value = null
+  document.removeEventListener('mousemove', onColumnResizeMove)
+  document.removeEventListener('mouseup', onColumnResizeEnd)
+}
+
+// 开始任务列表宽度调整
+const startTaskListResize = (event) => {
+  resizingTaskList.value = true
+  taskListStartX.value = event.clientX
+  taskListStartWidth.value = state.taskListWidth
+
+  document.addEventListener('mousemove', onTaskListResizeMove)
+  document.addEventListener('mouseup', onTaskListResizeEnd)
+
+  event.preventDefault()
+}
+
+// 任务列表宽度调整移动
+const onTaskListResizeMove = (event) => {
+  if (!resizingTaskList.value) return
+
+  const diff = event.clientX - taskListStartX.value
+  const newWidth = Math.max(
+    state.minTaskListWidth,
+    Math.min(taskListStartWidth.value + diff, state.maxTaskListWidth)
+  )
+
+  actions.setTaskListWidth(newWidth)
+}
+
+// 结束任务列表宽度调整
+const onTaskListResizeEnd = () => {
+  resizingTaskList.value = false
+  document.removeEventListener('mousemove', onTaskListResizeMove)
+  document.removeEventListener('mouseup', onTaskListResizeEnd)
+}
+
+// 清理事件监听
+onUnmounted(() => {
+  document.removeEventListener('mousemove', onColumnResizeMove)
+  document.removeEventListener('mouseup', onColumnResizeEnd)
+  document.removeEventListener('mousemove', onTaskListResizeMove)
+  document.removeEventListener('mouseup', onTaskListResizeEnd)
 })
 
 const timelineHeaderRef = ref(null)
@@ -382,6 +490,8 @@ defineExpose({
   display: flex;
   align-items: center;
   border-right: 1px solid #e4e7ed;
+  position: relative;
+  flex-shrink: 0;
 }
 
 .header-column:last-child {
@@ -389,29 +499,68 @@ defineExpose({
 }
 
 .column-id {
-  flex: 0 0 60px;
   justify-content: center;
   font-weight: bold;
   color: #606266;
 }
 
 .column-name {
-  flex: 0 0 200px;
+  /* 动态宽度 */
 }
 
 .column-duration {
-  flex: 0 0 70px;
   justify-content: center;
 }
 
 .column-dates {
-  flex: 0 0 150px;
   justify-content: center;
 }
 
 .column-resources {
   flex: 1;
   justify-content: center;
+}
+
+/* 列宽调整手柄 */
+.resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.2s;
+  z-index: 10;
+}
+
+.resize-handle:hover {
+  background: #409eff;
+}
+
+.resize-handle:active {
+  background: #409eff;
+}
+
+/* 任务列表宽度调整手柄 */
+.tasklist-resize-handle {
+  position: absolute;
+  right: -5px;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: ew-resize;
+  background: transparent;
+  transition: background 0.2s;
+  z-index: 201;
+}
+
+.tasklist-resize-handle:hover {
+  background: #67c23a;
+}
+
+.tasklist-resize-handle:active {
+  background: #67c23a;
 }
 
 .header-timeline {

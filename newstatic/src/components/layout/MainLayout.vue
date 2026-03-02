@@ -314,7 +314,18 @@ const initMenus = () => {
 }
 
 // 组件挂载时初始化菜单
-onMounted(() => {
+onMounted(async () => {
+  // 如果已登录，刷新用户权限（确保菜单是最新的）
+  if (authStore.isAuthenticated) {
+    try {
+      await authStore.refreshUserInfo()
+    } catch (error) {
+      console.warn('刷新用户权限失败:', error)
+      // 即使刷新失败，也继续使用缓存的权限
+    }
+  }
+
+  // 初始化菜单（使用最新的权限）
   initMenus()
   handleResize()
   window.addEventListener('resize', handleResize)

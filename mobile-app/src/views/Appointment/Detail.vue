@@ -57,6 +57,9 @@
         <template #field-work_date="{ field, value }">
           {{ formatDateTime(appointment.work_date, appointment.time_slot) }}
         </template>
+        <template #field-work_type="{ field, value }">
+          {{ formatWorkType(appointment.work_type) }}
+        </template>
       </DetailInfoGroup>
 
       <!-- 优先级信息 -->
@@ -79,7 +82,7 @@
         :fields="assignmentFields"
       >
         <template #field-assigned_worker_name="{ field, value }">
-          {{ appointment.assigned_worker_name || '未分配' }}
+          {{ appointment.assigned_worker_names || appointment.assigned_worker_name || '未分配' }}
         </template>
       </DetailInfoGroup>
 
@@ -404,7 +407,7 @@ const workInfoFields = computed(() => [
   { key: 'work_date', label: '作业时间', type: 'custom' },
   { key: 'work_location', label: '作业地点' },
   { key: 'work_content', label: '作业内容' },
-  { key: 'work_type', label: '作业类型', defaultValue: '-' }
+  { key: 'work_type', label: '作业类型', type: 'custom', defaultValue: '-' }
 ])
 
 const priorityFields = computed(() => [
@@ -828,6 +831,22 @@ function formatFullDateTime(dateStr) {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
   return date.toLocaleString('zh-CN')
+}
+
+function formatWorkType(workType) {
+  if (!workType) return '-'
+  const workTypeMap = {
+    general: '一般作业',
+    hot_work: '动火作业',
+    high_work: '高处作业',
+    excavation: '动土作业',
+    confined_space: '受限空间',
+    electrical: '临时用电',
+    lifting: '吊装作业',
+    blind_plate: '盲板抽堵'
+  }
+  // work_type 是逗号分隔的字符串，如 "general,hot_work"
+  return workType.split(',').map(type => workTypeMap[type] || type).join('、')
 }
 </script>
 

@@ -30,10 +30,12 @@
         {{ appointment.work_content }}
       </el-descriptions-item>
       <el-descriptions-item label="作业类型" v-if="appointment.work_type">
-        {{ appointment.work_type }}
+        {{ formatWorkType(appointment.work_type) }}
       </el-descriptions-item>
       <el-descriptions-item label="作业人员">
-        {{ appointment.assigned_worker_name || '未分配' }}
+        <span v-if="appointment.assigned_worker_names">{{ appointment.assigned_worker_names }}</span>
+        <span v-else-if="appointment.assigned_worker_name">{{ appointment.assigned_worker_name }}</span>
+        <span v-else>未分配</span>
       </el-descriptions-item>
       <el-descriptions-item label="是否加急">
         <el-tag v-if="appointment.is_urgent" type="danger" size="small">是</el-tag>
@@ -289,6 +291,22 @@ function formatDateTime(dateStr, timeSlot) {
   const dateStr2 = date.toLocaleDateString('zh-CN')
   const slots = { morning: '上午', afternoon: '下午', evening: '晚上', full_day: '全天' }
   return `${dateStr2} ${slots[timeSlot] || timeSlot}`
+}
+
+function formatWorkType(workType) {
+  if (!workType) return '-'
+  const workTypeMap = {
+    general: '一般作业',
+    hot_work: '动火作业',
+    high_work: '高处作业',
+    excavation: '动土作业',
+    confined_space: '受限空间',
+    electrical: '临时用电',
+    lifting: '吊装作业',
+    blind_plate: '盲板抽堵'
+  }
+  // work_type 是逗号分隔的字符串，如 "general,hot_work"
+  return workType.split(',').map(type => workTypeMap[type] || type).join('、')
 }
 
 function formatFullDateTime(dateStr) {

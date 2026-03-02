@@ -8,7 +8,7 @@
         :style="{ cursor: toolMode === 'pan' ? (isPanning ? 'grabbing' : 'grab') : 'default' }"
         :width="svgWidth"
         :height="svgHeight"
-        @wheel.prevent="handleWheel"
+        @wheel="handleWheel"
         @mousedown="handleMouseDown"
         @mousemove="handleMouseMove"
         @mouseup="handleMouseUp"
@@ -169,10 +169,38 @@
                 :y="task.labelY"
                 text-anchor="middle"
                 class="task-label"
+                :class="{ 'is-shared-node': task.isSharedNode }"
                 :fill="task.textColor"
               >
                 {{ task.label }}
               </text>
+
+              <!-- 共享节点任务徽章 -->
+              <g v-if="task.isSharedNode && showTaskNames">
+                <circle
+                  :cx="task.labelX + 20"
+                  :cy="task.labelY - 2"
+                  r="7"
+                  fill="#67C23A"
+                  class="shared-task-badge"
+                />
+                <text
+                  :x="task.labelX + 20"
+                  :y="task.labelY - 1"
+                  text-anchor="middle"
+                  class="shared-task-count"
+                  fill="white"
+                  font-size="9"
+                  font-weight="bold"
+                >
+                  {{ task.sharedTaskCount }}
+                </text>
+                <title>
+                  共享节点：{{ task.sharedTaskCount }} 个任务共享此节点
+                  当前任务位置: {{ task.sharedTaskIndex + 1 }} / {{ task.sharedTaskCount }}
+                  完整名称: {{ task.originalName }}
+                </title>
+              </g>
 
               <!-- 工期信息 -->
               <text
@@ -260,7 +288,8 @@
               :transform="`translate(${node.x}, ${node.y})`"
               :class="{
                 'is-selected': selectedNodeId === node.id,
-                'is-critical': node.isCritical
+                'is-critical': node.isCritical,
+                'is-merged': node.isMerged
               }"
               class="node-group"
               @mousedown="handleNodeMouseDown($event, node)"
@@ -271,8 +300,9 @@
               <circle
                 :r="nodeRadius"
                 fill="#FFFFFF"
-                :stroke="node.isCritical ? '#FF8A65' : '#1976D2'"
-                stroke-width="2"
+                :stroke="node.isCritical ? '#FF8A65' : (node.isMerged ? '#67C23A' : '#1976D2')"
+                :stroke-width="node.isMerged ? 3 : 2"
+                :stroke-dasharray="node.isMerged ? '4,2' : undefined"
                 filter="url(#nodeShadow)"
                 class="node-circle"
               />
@@ -308,6 +338,13 @@
               >
                 {{ node.number }}
               </text>
+
+              <!-- 共享节点任务提示 (tooltip) -->
+              <title v-if="node.isMerged">
+                {{ node.isMerged ? '共享节点 (R11)' : '节点' }} {{ node.number }}
+                {{ node.tasks?.start?.length || 0 }} 个任务从此开始
+                {{ node.tasks?.end?.length || 0 }} 个任务到此结束
+              </title>
 
               <!-- 左上：最早开始 ES -->
               <text
@@ -413,7 +450,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { isDummyTask } from '@/utils/ganttHelpers'
+import { isDummyTask, normalizePredecessors } from '@/utils/ganttHelpers'
 import { formatDate } from '@/utils/dateFormat'
 
 // Props
@@ -504,7 +541,10 @@ const emit = defineEmits([
   'node-contextmenu',
   'task-contextmenu',
   'node-time-change', // 节点拖动改变任务时间
-  'node-dependency-create' // 节点间创建依赖关系
+  'node-dependency-create', // 节点间创建依赖关系
+  'node-merge', // 合并节点以实现R11
+  'node-split', // 拆分节点
+  'task-dependency-edit' // 编辑任务依赖关系
 ])
 
 // 鼠标状态追踪
@@ -546,6 +586,7 @@ const tempLineEnd = ref(null)
 // 选中状态
 const selectedNodeId = ref(null)
 const selectedTaskId = ref(null)
+const selectedNodeIds = ref([]) // 多选节点ID数组（用于合并操作）
 
 // 路径编辑状态
 const isEditingPath = ref(false)  // 是否处于路径编辑模式
@@ -588,13 +629,16 @@ const eventNodes = computed(() => {
   const nodeStates = new Map()  // key: 节点签名, value: { date, x, tasks: {start:[], end:[]}, taskYPositions: Map }
 
   // 生成节点签名的函数
+  // 使用共享的标准化函数（与 GanttChart.vue 中的验证逻辑一致）
   const getStartNodeSignature = (date, predecessors) => {
-    const sortedPred = [...predecessors].sort((a, b) => a - b).join(',')
+    const normalizedPreds = normalizePredecessors(predecessors)
+    const sortedPred = normalizedPreds.sort((a, b) => a - b).join(',')
     return `START_${date}_${sortedPred}`
   }
 
   const getEndNodeSignature = (date, successors) => {
-    const sortedSucc = [...successors].sort((a, b) => a - b).join(',')
+    const normalizedSuccs = normalizePredecessors(successors)
+    const sortedSucc = normalizedSuccs.sort((a, b) => a - b).join(',')
     return `END_${date}_${sortedSucc}`
   }
 
@@ -741,6 +785,7 @@ const eventNodes = computed(() => {
       y: nodeY, // 使用中位数Y坐标
       baseY: nodeY,
       date: state.date,
+      days: Math.round(state.x / props.dayWidth), // 添加 days 属性用于右键菜单显示日期
       tasks: state.tasks,
       taskYPositions: state.taskYPositions, // 保存每个任务的Y坐标用于渲染
       isMerged: allTaskIds.length > 1,
@@ -900,15 +945,30 @@ const taskArrows = computed(() => {
 
     // 检查开始节点是否被多个任务共享
     const isSharedStartNode = startNode && startNode.isMerged && startNode.tasks.start.length > 1
+    // 检查结束节点是否被多个任务共享
+    const isSharedEndNode = endNode && endNode.isMerged && endNode.tasks.end.length > 1
+    const isSharedNode = isSharedStartNode || isSharedEndNode
 
     // 计算标签Y偏移（避免共享节点的任务标签重叠）
     let labelYOffset = 0
+    let sharedTaskIndex = -1
+    let sharedTaskCount = 0
+
     if (isSharedStartNode) {
       // 找到当前任务在共享节点的tasks.start中的索引
-      const taskIndex = startNode.tasks.start.indexOf(task.id)
-      if (taskIndex >= 0) {
+      sharedTaskIndex = startNode.tasks.start.indexOf(task.id)
+      sharedTaskCount = startNode.tasks.start.length
+      if (sharedTaskIndex >= 0) {
         // 每个任务向上偏移16px，避免重叠
-        labelYOffset = taskIndex * 16
+        labelYOffset = sharedTaskIndex * 16
+      }
+    } else if (isSharedEndNode) {
+      // 找到当前任务在共享节点的tasks.end中的索引
+      sharedTaskIndex = endNode.tasks.end.indexOf(task.id)
+      sharedTaskCount = endNode.tasks.end.length
+      if (sharedTaskIndex >= 0) {
+        // 每个任务向上偏移16px，避免重叠
+        labelYOffset = sharedTaskIndex * 16
       }
     }
 
@@ -946,12 +1006,23 @@ const taskArrows = computed(() => {
       slackLabelY = endY - 12
     }
 
+    // 生成优化的任务标签
+    let taskLabel = task.name
+    if (isSharedNode) {
+      // 对于共享节点的任务，显示更简洁的标签
+      const maxLength = sharedTaskCount > 2 ? 8 : 12
+      if (task.name.length > maxLength) {
+        taskLabel = task.name.substring(0, maxLength) + '..'
+      }
+    }
+
     return {
       id: task.id,
       realPath, // 实工作线
       slackPath, // 时差线（波形）
       path: realPath, // 保持向后兼容
-      label: task.name,
+      label: taskLabel,
+      originalName: task.name, // 保留原始名称用于tooltip
       stroke: task.is_critical ? '#FF8A65' : '#64B5F6',
       strokeWidth: task.is_critical ? 3 : 2,
       marker: task.is_critical ? 'arrowhead-critical' : 'arrowhead-task',
@@ -959,6 +1030,9 @@ const taskArrows = computed(() => {
       isCritical: task.is_critical,
       duration,
       slack,
+      isSharedNode, // 标记是否为共享节点的任务
+      sharedTaskIndex, // 在共享节点中的索引
+      sharedTaskCount, // 共享节点的任务总数
       labelX: labelBaseX,
       labelY: labelBaseY - 8 - labelYOffset,
       durationX: labelBaseX,
@@ -1707,11 +1781,16 @@ function formatTime(timestamp) {
   return timestamp.toString()
 }
 
-// 鼠标滚轮缩放
+// 鼠标滚轮缩放 - 只有按住 Ctrl 键时才缩放
 function handleWheel(event) {
-  const delta = event.deltaY > 0 ? -2 : 2
-  // 直接返回新的 dayWidth 值，与甘特图保持一致
-  emit('zoom-change', Math.max(10, Math.min(100, props.dayWidth + delta)))
+  // 只有按住 Ctrl 键时才进行时间轴缩放
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault()
+    const delta = event.deltaY > 0 ? -2 : 2
+    // 直接返回新的 dayWidth 值，与甘特图保持一致
+    emit('zoom-change', Math.max(10, Math.min(100, props.dayWidth + delta)))
+  }
+  // 否则允许正常的垂直滚动（不阻止默认行为）
 }
 
 // 鼠标按下
@@ -2128,22 +2207,55 @@ function handleMouseUp(event) {
 // 节点点击
 function handleNodeClick(event, node) {
   event.stopPropagation()
-  selectedNodeId.value = node.id
-  selectedTaskId.value = null
-  emit('node-click', node)
+
+  // Shift+点击实现多选
+  if (event.shiftKey) {
+    const index = selectedNodeIds.value.indexOf(node.id)
+    if (index > -1) {
+      // 已选中，取消选中
+      selectedNodeIds.value.splice(index, 1)
+    } else {
+      // 未选中，添加到选中列表
+      selectedNodeIds.value.push(node.id)
+    }
+    // 如果只选中了一个，更新selectedNodeId
+    if (selectedNodeIds.value.length === 1) {
+      selectedNodeId.value = selectedNodeIds.value[0]
+    } else if (selectedNodeIds.value.length === 0) {
+      selectedNodeId.value = null
+    }
+  } else {
+    // 普通点击，清空多选并选中当前节点
+    selectedNodeIds.value = [node.id]
+    selectedNodeId.value = node.id
+    selectedTaskId.value = null
+  }
+
+  emit('node-click', { node, selectedIds: selectedNodeIds.value })
 }
 
 // 节点右键菜单
 function handleNodeContextMenu(event, node) {
   event.preventDefault()
   event.stopPropagation()
-  selectedNodeId.value = node.id
+
+  // 如果节点不在选中列表中，选中它
+  if (!selectedNodeIds.value.includes(node.id)) {
+    selectedNodeIds.value = [node.id]
+    selectedNodeId.value = node.id
+  }
   selectedTaskId.value = null
+
+  // 获取选中的节点对象
+  const selectedNodes = eventNodes.value.filter(n => selectedNodeIds.value.includes(n.id))
 
   // 触发右键菜单事件，传递节点和鼠标位置
   emit('node-contextmenu', {
     event,
     node,
+    selectedNodes, // 所有选中的节点
+    selectedIds: selectedNodeIds.value,
+    canMerge: selectedNodeIds.value.length > 1, // 是否可以合并
     x: event.clientX,
     y: event.clientY
   })
@@ -2176,7 +2288,46 @@ function handleKeydown(event) {
   if (event.key === 'Escape') {
     selectedNodeId.value = null
     selectedTaskId.value = null
+    selectedNodeIds.value = []
+    isEditingPath.value = false
+    selectedPathId.value = null
   }
+  // Delete键可以触发合并操作（如果选中了多个节点）
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (selectedNodeIds.value.length > 1 && document.activeElement.tagName !== 'INPUT') {
+      // 防止在输入框中触发
+      event.preventDefault()
+      mergeSelectedNodes()
+    }
+  }
+}
+
+// 合并选中的节点（实现R11：相同条件的节点应该共享）
+function mergeSelectedNodes() {
+  if (selectedNodeIds.value.length < 2) return
+
+  const selectedNodes = eventNodes.value.filter(n => selectedNodeIds.value.includes(n.id))
+  if (selectedNodes.length < 2) return
+
+  emit('node-merge', {
+    nodes: selectedNodes,
+    nodeIds: selectedNodeIds.value
+  })
+
+  // 清空选择
+  selectedNodeIds.value = []
+  selectedNodeId.value = null
+}
+
+// 拆分节点
+function splitNode(nodeId) {
+  const node = eventNodes.value.find(n => n.id === nodeId)
+  if (!node) return
+
+  emit('node-split', {
+    node,
+    nodeId
+  })
 }
 
 // 生命周期
@@ -2204,15 +2355,16 @@ defineExpose({
 <style scoped>
 .network-view {
   width: 100%;
-  height: 100%;
-  overflow: hidden;
+  height: auto;
+  overflow: visible;
   position: relative;
 }
 
 .network-canvas-container {
   width: 100%;
-  height: 100%;
-  overflow: auto;
+  height: auto;  /* 改为auto，让内容撑开高度 */
+  min-height: 100%;  /* 最小高度填满容器 */
+  overflow: visible;  /* 移除overflow，让父容器统一处理滚动 */
   background: var(--bg-color-page, #f5f7fa);
 }
 
@@ -2234,6 +2386,22 @@ defineExpose({
 .node-group.is-selected .node-circle {
   stroke: #409EFF;
   stroke-width: 3;
+}
+
+/* 共享节点样式 (R11实现) */
+.node-group.is-merged .node-circle {
+  stroke: #67C23A; /* 绿色边框表示共享节点 */
+  stroke-width: 3;
+}
+
+.node-group.is-merged:hover .node-circle {
+  stroke: #85CE61;
+}
+
+/* 选中的共享节点 */
+.node-group.is-merged.is-selected .node-circle {
+  stroke: #409EFF; /* 选中时使用蓝色，但保持较粗边框 */
+  stroke-width: 4;
 }
 
 .node-circle {
@@ -2297,6 +2465,30 @@ defineExpose({
   fill: #606266;
   pointer-events: none;
   font-weight: 500;
+}
+
+/* 共享节点的任务标签样式 */
+.task-label.is-shared-node {
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.9;
+}
+
+.task-label.is-shared-node:hover {
+  opacity: 1;
+  font-weight: 500;
+}
+
+/* 共享任务徽章 */
+.shared-task-badge {
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+.shared-task-count {
+  pointer-events: none;
+  font-size: 9px;
+  font-weight: bold;
 }
 
 .task-duration {

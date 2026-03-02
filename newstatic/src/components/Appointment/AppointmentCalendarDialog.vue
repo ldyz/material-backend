@@ -55,18 +55,25 @@
                 v-for="slot in day.slots"
                 :key="slot.time_slot"
                 class="time-slot"
-                :class="{ 'has-appointment': slot.appointment }"
+                :class="{ 'has-appointment': slot.appointments && slot.appointments.length > 0 }"
               >
                 <div class="slot-label">{{ slot.label }}</div>
-                <div v-if="slot.appointment" class="appointment-item-simple" @click="showAppointment(slot.appointment)">
-                  <el-tag :type="getStatusType(slot.appointment.status)" size="small">
-                    {{ getTimeSlotShortLabel(slot.time_slot) }}
-                  </el-tag>
-                  <span class="appointment-summary">{{ slot.appointment.work_location }}</span>
-                  <span v-if="slot.appointment.assigned_worker_name" class="appointment-worker-small">
-                    {{ slot.appointment.assigned_worker_name }}
-                  </span>
-                  <el-tag v-if="slot.appointment.is_urgent" type="danger" size="small">急</el-tag>
+                <div v-if="slot.appointments && slot.appointments.length > 0">
+                  <div
+                    v-for="apt in slot.appointments"
+                    :key="apt.id"
+                    class="appointment-item-simple"
+                    @click="showAppointment(apt)"
+                  >
+                    <el-tag :type="getStatusType(apt.status)" size="small">
+                      {{ getTimeSlotShortLabel(slot.time_slot) }}
+                    </el-tag>
+                    <span class="appointment-summary">{{ apt.work_location }}</span>
+                    <span v-if="apt.assigned_worker_name" class="appointment-worker-small">
+                      {{ apt.assigned_worker_name }}
+                    </span>
+                    <el-tag v-if="apt.is_urgent" type="danger" size="small">急</el-tag>
+                  </div>
                 </div>
                 <div v-else class="slot-empty">
                   <span class="slot-empty-text">空闲</span>
@@ -259,7 +266,9 @@ async function loadData() {
 
     const params = {
       start_date: startDate,
-      end_date: endDate
+      end_date: endDate,
+      page: 1,
+      page_size: 1000 // 获取更多数据，避免分页问题
     }
 
     if (selectedWorkerId.value) {
@@ -267,7 +276,17 @@ async function loadData() {
     }
 
     const response = await appointmentApi.getList(params)
-    appointments.value = response.data || response.data?.data || []
+    // 处理不同的响应格式
+    let data = response.data
+    if (data && data.data && Array.isArray(data.data)) {
+      appointments.value = data.data
+    } else if (data && Array.isArray(data)) {
+      appointments.value = data
+    } else if (response.meta && response.meta.data && Array.isArray(response.meta.data)) {
+      appointments.value = response.meta.data
+    } else {
+      appointments.value = []
+    }
 
     // 计算工作量
     calculateDailyWorkload()
@@ -276,7 +295,9 @@ async function loadData() {
       buildWeekData()
     }
   } catch (error) {
+    console.error('加载数据失败:', error)
     ElMessage.error('加载数据失败')
+    appointments.value = []
   } finally {
     loading.value = false
   }
@@ -323,14 +344,14 @@ function buildWeekData() {
     const dateStr = d.toISOString().split('T')[0]
 
     const slots = timeSlots.map(slot => {
-      const apt = appointments.value.find(a => {
+      const slotAppointments = appointments.value.filter(a => {
         const aptDate = a.work_date.split(' ')[0]
         return aptDate === dateStr && a.time_slot === slot.time_slot
       })
 
       return {
         ...slot,
-        appointment: apt || null
+        appointments: slotAppointments // 改为数组，支持多个预约
       }
     })
 
@@ -578,13 +599,20 @@ onMounted(() => {
 }
 
 .day-content {
-  max-height: 500px;
+  /* 使用 flexbox 使所有时间段均匀拉伸 */
+  display: flex;
+  flex-direction: column;
+  /* 设置一个合理的高度，让内容自适应 */
+  height: 500px;
   overflow-y: auto;
 }
 
 .time-slot {
   border-bottom: 1px solid #eee;
-  min-height: 80px;
+  /* 使所有时间段均匀拉伸 */
+  flex: 1;
+  /* 保持最小高度以确保内容可读 */
+  min-height: 0;
 }
 
 .time-slot:last-child {

@@ -221,6 +221,9 @@
           @task-contextmenu="handleNetworkTaskContextMenu"
           @node-time-change="handleNetworkNodeTimeChange"
           @node-dependency-create="handleNetworkDependencyCreate"
+          @node-merge="handleNetworkNodeMerge"
+          @node-split="handleNetworkNodeSplit"
+          @task-dependency-edit="handleNetworkTaskDependencyEdit"
         />
       </div>
     </div>
@@ -251,6 +254,18 @@
         @move-down="handleMoveTaskDown"
         @convert-to-independent="handleConvertToIndependent"
         ref="contextMenuRef"
+      />
+
+      <!-- 网络图节点右键菜单 -->
+      <NetworkNodeContextMenu
+        v-model:visible="nodeContextMenuVisible"
+        :node="nodeContextMenuNode"
+        :selected-nodes="nodeContextMenuSelectedNodes"
+        :can-merge="nodeContextMenuCanMerge"
+        :position="nodeContextMenuPosition"
+        @merge-nodes="(...args) => handleNodeContextMenuCommand('merge-nodes', args[0])"
+        @split-node="(...args) => handleNodeContextMenuCommand('split-node', args[0])"
+        @edit-tasks="(...args) => handleNodeContextMenuCommand('edit-tasks', args[0])"
       />
 
       <!-- 依赖关系右键菜单 -->
@@ -350,7 +365,9 @@ import { ZoomIn, ZoomOut, Delete } from '@element-plus/icons-vue'
 import { progressApi } from '@/api'
 import { useGanttDrag } from '@/composables/useGanttDrag'
 import {
-  isMilestone
+  isMilestone,
+  normalizePredecessors,
+  getPredecessorSignature
 } from '@/utils/ganttHelpers'
 import { formatDate, diffDays } from '@/utils/dateFormat'
 import eventBus, { GanttEvents } from '@/utils/eventBus'
@@ -376,6 +393,7 @@ import TaskTimeline from './TaskTimeline.vue'
 import NetworkView from './NetworkView.vue'
 import GanttLegend from './GanttLegend.vue'
 import GanttContextMenu from './GanttContextMenu.vue'
+import NetworkNodeContextMenu from './NetworkNodeContextMenu.vue'
 import TaskDetailDrawer from './TaskDetailDrawer.vue'
 import TaskEditDialog from './TaskEditDialog.vue'
 import ResourceAllocationDialog from './ResourceAllocationDialog.vue'
@@ -485,6 +503,13 @@ const dependencyContextMenuVisible = ref(false)
 const dependencyContextMenuDependency = ref(null)
 const dependencyContextMenuPosition = ref({ x: 0, y: 0 })
 
+// 网络图节点右键菜单状态
+const nodeContextMenuVisible = ref(false)
+const nodeContextMenuNode = ref(null)
+const nodeContextMenuSelectedNodes = ref([])
+const nodeContextMenuCanMerge = ref(false)
+const nodeContextMenuPosition = ref({ x: 0, y: 0 })
+
 const resourceDialogVisible = ref(false)
 const currentTaskForResource = ref(null)
 const resourceManagementDialogVisible = ref(false)
@@ -564,14 +589,23 @@ const networkTaskIndexMap = computed(() => {
   return map
 })
 
-// 网络图高度（与任务列表高度一致，使用 formattedTasks 获取所有任务）
+// 网络图高度（根据节点层级计算，确保所有内容可见）
 const networkHeight = computed(() => {
   // 使用 formattedTasks 以包含所有展开的子任务
   const allTasks = formattedTasks.value || []
   // 计算任务总高度（考虑分组标题可能会增加额外高度，这里简化处理）
   const taskListHeight = allTasks.length * rowHeight.value
-  // 设置最小高度为 600，最大为任务列表高度
-  return Math.max(600, taskListHeight)
+  // 添加额外的空间用于网络图层级布局
+  // 网络图可能有多个层级（每150px一个层级），确保足够的高度
+  const networkLevelHeight = Math.ceil(allTasks.length / 5) * 150
+  // 设置最小高度，取任务列表高度和网络图层级高度的最大值
+  return Math.max(600, taskListHeight, networkLevelHeight + 200)
+})
+
+// 甘特图内容高度（任务列表高度）
+const ganttContentHeight = computed(() => {
+  const allTasks = formattedTasks.value || []
+  return Math.max(600, allTasks.length * rowHeight.value)
 })
 
 // ==================== Undo/Redo 状态 ====================
@@ -1157,29 +1191,48 @@ const handleNetworkTaskDblClick = (task) => {
 }
 
 // 网络图节点右键菜单
-const handleNetworkNodeContextMenu = ({ event, node, x, y }) => {
-  // 节点代表事件，找到与节点相关的任务
-  const nodeTasks = formattedTasks.value.filter(task => {
-    const taskStart = new Date(task.start)
-    const taskEnd = new Date(task.end)
-    const timelineStart = timelineDays.value[0]?.date
-    if (!timelineStart) return false
+const handleNetworkNodeContextMenu = ({ event, node, selectedNodes, selectedIds, canMerge, x, y }) => {
+  // 显示节点右键菜单
+  nodeContextMenuNode.value = node
+  nodeContextMenuSelectedNodes.value = selectedNodes || [node]
+  nodeContextMenuCanMerge.value = canMerge || false
+  nodeContextMenuPosition.value = { x, y }
+  nodeContextMenuVisible.value = true
+}
 
-    const startDays = Math.ceil((taskStart - new Date(timelineStart)) / (1000 * 60 * 60 * 24))
-    const endDays = Math.ceil((taskEnd - new Date(timelineStart)) / (1000 * 60 * 60 * 24))
-
-    return startDays === node.days || endDays === node.days
-  })
-
-  // 如果有相关任务，打开第一个任务的右键菜单
-  if (nodeTasks.length > 0) {
-    const firstTask = nodeTasks[0]
-    contextMenuTask.value = state.tasks.find(t => t.id === firstTask.id)
-    contextMenuPosition.value = { x, y }
-    contextMenuVisible.value = true
-  } else {
-    ElMessage.info(`节点 ${node.number}: 没有关联任务`)
+// 处理节点菜单命令
+const handleNodeContextMenuCommand = async (command, data) => {
+  switch (command) {
+    case 'merge-nodes':
+      await handleNetworkNodeMerge({
+        nodes: data.selectedNodes,
+        nodeIds: data.selectedNodes.map(n => n.id)
+      })
+      break
+    case 'split-node':
+      await handleNetworkNodeSplit({
+        node: data.node,
+        nodeId: data.nodeId
+      })
+      break
+    case 'edit-tasks':
+      // 找到节点关联的任务并打开编辑对话框
+      if (data.node?.tasks) {
+        const taskIds = [
+          ...(data.node.tasks.start || []),
+          ...(data.node.tasks.end || [])
+        ]
+        if (taskIds.length > 0) {
+          const firstTask = state.tasks.find(t => t.id === taskIds[0])
+          if (firstTask) {
+            actions.selectTask(firstTask.id)
+            actions.openEditDialog(firstTask)
+          }
+        }
+      }
+      break
   }
+  nodeContextMenuVisible.value = false
 }
 
 // 网络图任务连线右键菜单
@@ -1303,6 +1356,225 @@ const handleNetworkDependencyCreate = async ({ fromTaskIds, toTaskIds }) => {
   }
 }
 
+// 网络图节点合并（实现R11：相同紧前/紧后条件的任务共享节点）
+const handleNetworkNodeMerge = async ({ nodes, nodeIds }) => {
+  if (!nodes || nodes.length < 2) {
+    ElMessage.warning('请选择至少两个节点进行合并')
+    return
+  }
+
+  // R11规范：合并节点的条件
+  // 1. 合并所有开始节点（相同紧前条件） - 所有任务应该具有相同的predecessors
+  // 2. 合并所有结束节点（相同紧后条件） - 所有任务应该具有相同的successors
+
+  // 分析节点类型（开始节点 vs 结束节点）
+  const startNodes = nodes.filter(n => n.tasks && n.tasks.start.length > 0)
+  const endNodes = nodes.filter(n => n.tasks && n.tasks.end.length > 0)
+
+  // 获取所有涉及的任务ID
+  const allTaskIds = new Set()
+  nodes.forEach(node => {
+    if (node.tasks) {
+      node.tasks.start?.forEach(id => allTaskIds.add(id))
+      node.tasks.end?.forEach(id => allTaskIds.add(id))
+    }
+  })
+
+  // 检查是否可以合并（开始节点和结束节点不能混合合并）
+  if (startNodes.length > 0 && endNodes.length > 0) {
+    ElMessage.warning('开始节点和结束节点不能一起合并，请选择相同类型的节点')
+    return
+  }
+
+  const isStartNodeMerge = startNodes.length > 0
+
+  try {
+    // 获取目标参考日期（使用最早节点的日期）
+    const targetDays = Math.min(...nodes.map(n => n.days))
+
+    // 对于开始节点合并：统一所有任务的开始日期
+    // 对于结束节点合并：统一所有任务的结束日期
+    const targetDate = timelineDays.value[targetDays]?.date
+    if (!targetDate) {
+      ElMessage.error('无法确定目标日期')
+      return
+    }
+
+    // 批量更新任务日期
+    const updatePromises = []
+    for (const taskId of allTaskIds) {
+      const task = state.tasks.find(t => t.id === taskId)
+      if (!task) continue
+
+      let updateData = {
+        id: taskId,
+        name: task.name,
+        start_date: task.start,
+        end_date: task.end,
+        progress: task.progress || 0,
+        priority: task.priority || 1
+      }
+
+      if (isStartNodeMerge) {
+        // 合并开始节点：统一开始日期
+        updateData.start_date = targetDate
+      } else {
+        // 合并结束节点：统一结束日期
+        updateData.end_date = targetDate
+      }
+
+      // 验证日期有效性
+      const newStart = new Date(updateData.start_date)
+      const newEnd = new Date(updateData.end_date)
+      if (newStart > newEnd) {
+        if (isStartNodeMerge) {
+          updateData.end_date = updateData.start_date
+        } else {
+          updateData.start_date = updateData.end_date
+        }
+      }
+
+      // 更新本地状态
+      Object.assign(task, {
+        start: updateData.start_date,
+        end: updateData.end_date,
+        startDate: new Date(updateData.start_date),
+        endDate: new Date(updateData.end_date)
+      })
+
+      state.pendingTaskUpdates.set(taskId, updateData)
+      updatePromises.push(
+        progressApi.updateTask(taskId, updateData).catch(err => {
+          console.error(`更新任务 ${taskId} 失败:`, err)
+        })
+      )
+    }
+
+    await Promise.all(updatePromises)
+
+    ElMessage.success(`成功合并 ${allTaskIds.size} 个任务的${isStartNodeMerge ? '开始' : '结束'}节点`)
+    actions.markUnsaved()
+
+    // 重新加载数据以刷新网络图
+    await actions.loadData()
+
+  } catch (error) {
+    console.error('合并节点失败:', error)
+    ElMessage.error('合并节点失败: ' + (error.message || '未知错误'))
+  }
+}
+
+// 网络图节点拆分
+const handleNetworkNodeSplit = async ({ node, nodeId }) => {
+  if (!node) {
+    ElMessage.warning('无效的节点')
+    return
+  }
+
+  // 检查节点是否可以被拆分
+  // 只有共享节点（关联多个任务）才能被拆分
+  const relatedTaskCount = (node.tasks?.start?.length || 0) + (node.tasks?.end?.length || 0)
+
+  if (relatedTaskCount <= 1) {
+    ElMessage.info('该节点只关联一个任务，无需拆分')
+    return
+  }
+
+  // 显示拆分选项对话框
+  ElMessageBox.confirm(
+    `该节点关联 ${relatedTaskCount} 个任务。拆分后，每个任务将拥有独立的节点。是否继续？`,
+    '拆分节点',
+    {
+      confirmButtonText: '确定拆分',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  ).then(async () => {
+    try {
+      // 拆分逻辑：为每个任务创建稍微偏移的日期
+      // 这样它们就会自动获得独立的节点
+      const taskIds = [
+        ...(node.tasks?.start || []),
+        ...(node.tasks?.end || [])
+      ]
+
+      let offsetDays = 0
+      const updatePromises = []
+
+      for (const taskId of taskIds) {
+        const task = state.tasks.find(t => t.id === taskId)
+        if (!task) continue
+
+        // 为后续任务添加1天偏移，确保它们获得独立的节点
+        if (offsetDays > 0) {
+          let updateData = {
+            id: taskId,
+            name: task.name,
+            progress: task.progress || 0,
+            priority: task.priority || 1
+          }
+
+          // 根据节点类型调整相应日期
+          if (node.tasks?.start?.includes(taskId)) {
+            const newStart = addDays(new Date(task.start), offsetDays)
+            updateData.start_date = formatDate(newStart)
+            updateData.end_date = task.end
+
+            Object.assign(task, {
+              start: updateData.start_date,
+              startDate: newStart
+            })
+          } else if (node.tasks?.end?.includes(taskId)) {
+            const newEnd = addDays(new Date(task.end), offsetDays)
+            updateData.start_date = task.start
+            updateData.end_date = formatDate(newEnd)
+
+            Object.assign(task, {
+              end: updateData.end_date,
+              endDate: newEnd
+            })
+          }
+
+          state.pendingTaskUpdates.set(taskId, updateData)
+          updatePromises.push(
+            progressApi.updateTask(taskId, updateData).catch(err => {
+              console.error(`更新任务 ${taskId} 失败:`, err)
+            })
+          )
+        }
+
+        offsetDays++
+      }
+
+      if (updatePromises.length > 0) {
+        await Promise.all(updatePromises)
+        ElMessage.success(`成功拆分节点，${updatePromises.length} 个任务已调整为独立节点`)
+        actions.markUnsaved()
+
+        // 重新加载数据以刷新网络图
+        await actions.loadData()
+      } else {
+        ElMessage.info('无需拆分')
+      }
+
+    } catch (error) {
+      if (error !== 'cancel') {
+        console.error('拆分节点失败:', error)
+        ElMessage.error('拆分节点失败: ' + (error.message || '未知错误'))
+      }
+    }
+  }).catch(() => {
+    // 用户取消
+  })
+}
+
+// 网络图任务依赖编辑
+const handleNetworkTaskDependencyEdit = ({ task }) => {
+  // 打开任务编辑对话框，用户可以在其中修改依赖关系
+  actions.selectTask(task.id)
+  actions.openEditDialog(state.tasks.find(t => t.id === task.id))
+}
+
 const toggleGroup = (groupName) => actions.toggleGroup(groupName)
 
 // 刷新
@@ -1405,6 +1677,17 @@ const handleCheckPathOptimization = () => {
   })
 }
 
+// 格式化日期为 YYYY-MM-DD（与 NetworkView.vue 中的 formatDate 完全一致）
+const formatLocalDate = (date) => {
+  if (!date) return ''
+  const d = date instanceof Date ? date : new Date(date)
+  if (isNaN(d.getTime())) return ''
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 // 规则验证（R4/R11）
 const handleValidateRules = () => {
   const nodes = networkViewRef.value?.eventNodes || []
@@ -1428,19 +1711,21 @@ const handleValidateRules = () => {
   // R11: 共享节点检查
   // R11: 相同开始日期 + 相同前置条件的任务应该共享同一个开始节点
   const unmergedNodes = tasks.filter(task => {
-    const predecessors = task.predecessors || []
-    const taskStartDate = task.start ? task.start.split('T')[0] : ''
+    const predecessors = normalizePredecessors(task.predecessors)
+    const predecessorSignature = getPredecessorSignature(predecessors)
+    // 使用与 NetworkView.vue 完全相同的日期格式化方式
+    const startDateKey = formatLocalDate(task.start)
 
     // 查找有相同前置条件 AND 相同开始日期的其他任务
     const sameConditionTasks = tasks.filter(t => {
       if (t.id === task.id) return false
-      const tPreds = t.predecessors || []
-      const tStartDate = t.start ? t.start.split('T')[0] : ''
+      const tPreds = normalizePredecessors(t.predecessors)
+      const tSignature = getPredecessorSignature(tPreds)
+      // 使用与 NetworkView.vue 完全相同的日期格式化方式
+      const tStartDateKey = formatLocalDate(t.start)
 
-      // 必须前置条件相同 AND 开始日期相同
-      return tPreds.length === predecessors.length &&
-             tPreds.every(p => predecessors.includes(p)) &&
-             tStartDate === taskStartDate
+      // 使用签名比较，确保与 NetworkView.vue 中的逻辑一致
+      return tSignature === predecessorSignature && tStartDateKey === startDateKey
     })
 
     // 如果没有其他任务有相同条件，不需要共享节点
@@ -2155,7 +2440,11 @@ const handleDeleteTask = async () => {
       : '任务已删除')
     statusBarRef.value?.showStatus('任务已删除', 'success', 2000)
     actions.closeTaskDetail()
-    emit('task-updated', task)
+
+    // 重新加载数据以刷新图形显示
+    await actions.loadData()
+    // 发送更新事件（不需要传递具体任务数据）
+    emit('task-updated')
   } catch (error) {
     if (error !== 'cancel') {
       console.error('删除任务失败:', error)
@@ -2345,6 +2634,11 @@ onMounted(() => {
   // 加载资源库
   actions.loadResources()
 
+  // 加载列宽配置
+  actions.loadColumnWidths()
+  actions.loadTaskListWidth()
+  actions.loadTaskListHeight()
+
   // 初始化容器尺寸
   updateContainerSize()
 
@@ -2479,7 +2773,7 @@ watch(chartViewMode, (newMode) => {
   background: #fff;
   border: none;
   border-radius: 0;
-  overflow: hidden;
+  overflow: visible;
   outline: none;
   min-height: 0;
 }
@@ -2493,7 +2787,7 @@ watch(chartViewMode, (newMode) => {
 /* 甘特图容器 */
 .gantt-container {
   flex: 1;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -2606,18 +2900,52 @@ watch(chartViewMode, (newMode) => {
 /* 主体区域：任务表格 + 视图区域 */
 .gantt-body {
   display: flex;
+  flex-direction: row;
   flex: 1;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
+  max-height: calc(100vh - 460px);
+  /* 防止子元素被拉伸 */
+  align-items: flex-start;
 }
 
-/* 确保任务表格和视图区域正确布局 */
-.gantt-body > * {
+/* 任务表格区域 - 固定宽度 */
+.gantt-body > *:first-child {
   flex-shrink: 0;
 }
 
-.gantt-body > *:last-child {
-  flex: 1;
-  overflow: auto;
+/* 视图区域 - 填充剩余空间 */
+.gantt-body > .task-timeline,
+.gantt-body > .network-view {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* 自定义滚动条样式 */
+.gantt-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.gantt-body::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 5px;
+}
+
+.gantt-body::-webkit-scrollbar-thumb {
+  background: #c0c0c0;
+  border-radius: 5px;
+  transition: background 0.2s;
+}
+
+.gantt-body::-webkit-scrollbar-thumb:hover {
+  background: #a0a0a0;
+}
+
+/* Firefox 滚动条样式 */
+.gantt-body {
+  scrollbar-width: thin;
+  scrollbar-color: #c0c0c0 #f0f0f0;
 }
 </style>

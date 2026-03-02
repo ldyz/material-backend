@@ -148,6 +148,26 @@ const state = reactive({
   containerSize: { width: null, height: null },
   isResizing: false,
 
+  // 任务列表列宽配置（单位：px）
+  columnWidths: {
+    id: 60,
+    name: 200,
+    duration: 70,
+    dates: 150,
+    resources: 150
+  },
+  // 任务列表整体宽度
+  taskListWidth: 670,
+
+  // 任务列表最小/最大宽度
+  minTaskListWidth: 400,
+  maxTaskListWidth: 1200,
+
+  // 任务列表高度配置（单位：px）
+  taskListHeight: null, // null 表示自动高度
+  minTaskListHeight: 200,
+  maxTaskListHeight: 1200,
+
   // 资源库
   resourceLibrary: [],
 
@@ -2108,6 +2128,128 @@ const actions = {
    */
   setTooltipVisible(visible) {
     state.tooltipVisible = visible
+  },
+
+  /**
+   * 从localStorage加载列宽配置
+   */
+  loadColumnWidths() {
+    try {
+      const saved = localStorage.getItem('gantt-column-widths')
+      if (saved) {
+        const widths = JSON.parse(saved)
+        // 合并保存的配置和默认配置，确保所有列都有值
+        state.columnWidths = { ...state.columnWidths, ...widths }
+      }
+    } catch (e) {
+      console.error('加载列宽配置失败:', e)
+    }
+  },
+
+  /**
+   * 保存列宽配置到localStorage
+   */
+  saveColumnWidths() {
+    try {
+      localStorage.setItem('gantt-column-widths', JSON.stringify(state.columnWidths))
+    } catch (e) {
+      console.error('保存列宽配置失败:', e)
+    }
+  },
+
+  /**
+   * 更新列宽
+   */
+  setColumnWidth(column, width) {
+    if (state.columnWidths[column] !== undefined) {
+      state.columnWidths[column] = Math.max(
+        column === 'name' ? 100 : 50, // 最小宽度
+        Math.min(width, 400) // 最大宽度
+      )
+      this.saveColumnWidths()
+    }
+  },
+
+  /**
+   * 从localStorage加载任务列表宽度
+   */
+  loadTaskListWidth() {
+    try {
+      const saved = localStorage.getItem('gantt-tasklist-width')
+      if (saved) {
+        const width = parseInt(saved, 10)
+        if (!isNaN(width) && width >= state.minTaskListWidth && width <= state.maxTaskListWidth) {
+          state.taskListWidth = width
+        }
+      }
+    } catch (e) {
+      console.error('加载任务列表宽度失败:', e)
+    }
+  },
+
+  /**
+   * 保存任务列表宽度到localStorage
+   */
+  saveTaskListWidth() {
+    try {
+      localStorage.setItem('gantt-tasklist-width', state.taskListWidth.toString())
+    } catch (e) {
+      console.error('保存任务列表宽度失败:', e)
+    }
+  },
+
+  /**
+   * 更新任务列表宽度
+   */
+  setTaskListWidth(width) {
+    state.taskListWidth = Math.max(
+      state.minTaskListWidth,
+      Math.min(width, state.maxTaskListWidth)
+    )
+    this.saveTaskListWidth()
+  },
+
+  /**
+   * 从localStorage加载任务列表高度
+   */
+  loadTaskListHeight() {
+    try {
+      const saved = localStorage.getItem('gantt-tasklist-height')
+      if (saved) {
+        const height = saved === 'auto' ? null : parseInt(saved, 10)
+        if (height === null || height === 'auto' || (!isNaN(height) && height >= state.minTaskListHeight && height <= state.maxTaskListHeight)) {
+          state.taskListHeight = height
+        }
+      }
+    } catch (e) {
+      console.error('加载任务列表高度失败:', e)
+    }
+  },
+
+  /**
+   * 保存任务列表高度到localStorage
+   */
+  saveTaskListHeight() {
+    try {
+      localStorage.setItem('gantt-tasklist-height', state.taskListHeight === null ? 'auto' : state.taskListHeight.toString())
+    } catch (e) {
+      console.error('保存任务列表高度失败:', e)
+    }
+  },
+
+  /**
+   * 更新任务列表高度
+   */
+  setTaskListHeight(height) {
+    if (height === 'auto' || height === null) {
+      state.taskListHeight = null
+    } else {
+      state.taskListHeight = Math.max(
+        state.minTaskListHeight,
+        Math.min(height, state.maxTaskListHeight)
+      )
+    }
+    this.saveTaskListHeight()
   }
 }
 

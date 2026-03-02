@@ -112,6 +112,16 @@
           <div class="quick-label">入库管理</div>
         </van-grid-item>
 
+        <van-grid-item
+          v-if="canAccessMaterialPlan"
+          @click="goToPlans"
+        >
+          <div class="quick-icon" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+            <van-icon name="todo-list-o" size="24" color="#fff" />
+          </div>
+          <div class="quick-label">物资计划</div>
+        </van-grid-item>
+
         <van-grid-item @click="goToProfile">
           <div class="quick-icon" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
             <van-icon name="user-o" size="24" color="#fff" />
@@ -174,19 +184,17 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
+import { useAuthStore } from '@/stores/auth'
 import { getPendingApprovalCount } from '@/api/appointment'
 import StatusTag from '@/components/common/StatusTag.vue'
 import { formatAppointmentDate } from '@/composables/useDateTime'
-import { canManageAppointments, isWorker } from '@/utils/roleUtils'
 
 const router = useRouter()
-
-// 用户信息
-const userInfo = ref(JSON.parse(localStorage.getItem('userInfo') || '{}'))
+const authStore = useAuthStore()
 
 // 显示名称
 const displayName = computed(() => {
-  return userInfo.value.full_name || userInfo.value.username || '用户'
+  return authStore.user?.full_name || authStore.user?.username || '用户'
 })
 
 // 问候语
@@ -225,17 +233,21 @@ const recentAppointments = ref([])
 // 系统公告
 const systemNotice = ref('欢迎使用化建仪表移动端！如有问题请联系管理员。')
 
-// 权限控制
+// 权限控制 - 基于权限系统
 const canAccessApprovals = computed(() => {
-  return canManageAppointments(userInfo.value)
+  return authStore.hasPermission('appointment_approve')
 })
 
 const canCreateAppointments = computed(() => {
-  return canManageAppointments(userInfo.value) || isWorker(userInfo.value)
+  return authStore.hasPermission('appointment_create')
 })
 
 const canAccessInbound = computed(() => {
-  return canManageAppointments(userInfo.value)
+  return authStore.hasPermission('inbound_view')
+})
+
+const canAccessMaterialPlan = computed(() => {
+  return authStore.hasPermission('material_plan_view')
 })
 
 // 页面加载
@@ -311,6 +323,10 @@ function goToCreateAppointment() {
 
 function goToInbound() {
   router.push('/inbound')
+}
+
+function goToPlans() {
+  router.push('/plans')
 }
 
 function goToCompleted() {

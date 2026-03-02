@@ -130,7 +130,7 @@ func (w *WorkerCalendar) ToDTO() map[string]any {
 
 // CreateAppointmentRequest 创建预约单请求
 type CreateAppointmentRequest struct {
-	ProjectID          uint   `json:"project_id" binding:"required"`
+	ProjectID          *uint  `json:"project_id"`
 	ContactPhone       string `json:"contact_phone"`
 	ContactPerson      string `json:"contact_person"`
 	WorkDate           string `json:"work_date" binding:"required"`

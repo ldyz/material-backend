@@ -1,0 +1,15 @@
+{
+  "version": "1.0.28",
+  "buildNumber": 28,
+  "platform": "android",
+  "downloadUrl": "https://home.mbed.org.cn:9090/mobile-updates/android/material-management-1.0.28.apk",
+  "forceUpdate": false,
+  "updateMessage": "实现基于权限的菜单和功能显示",
+  "releaseNotes": [
+    "菜单和快捷功能现在根据用户权限动态显示",
+    "不同权限的用户看到的功能不同",
+    "支持预约、物资计划、入库、出库、日志、进度等模块",
+    "优化用户体验和权限管理"
+  ],
+  "publishedAt": "2026-03-02T06:49:00Z"
+}

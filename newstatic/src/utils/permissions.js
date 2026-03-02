@@ -72,10 +72,24 @@ export function filterMenusByPermission(menus, user) {
 
   const result = []
   for (const menu of menus) {
-    if (!menu.permissions || menu.permissions.length === 0) {
-      result.push(menu)
-    } else if (hasAnyPermission(user, menu.permissions)) {
-      result.push(menu)
+    // 检查父菜单权限
+    const hasMenuPermission = !menu.permissions || menu.permissions.length === 0 || hasAnyPermission(user, menu.permissions)
+
+    if (hasMenuPermission) {
+      // 如果有子菜单，递归过滤子菜单
+      if (menu.children && menu.children.length > 0) {
+        const filteredChildren = filterMenusByPermission(menu.children, user)
+        // 只有当有可见的子菜单时，才添加父菜单
+        if (filteredChildren.length > 0) {
+          result.push({
+            ...menu,
+            children: filteredChildren
+          })
+        }
+      } else {
+        // 没有子菜单，直接添加
+        result.push(menu)
+      }
     }
   }
   return result

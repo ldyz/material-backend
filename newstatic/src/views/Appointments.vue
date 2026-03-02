@@ -140,9 +140,9 @@
         </el-table-column>
         <el-table-column prop="work_location" label="作业地点" min-width="150" show-overflow-tooltip />
         <el-table-column prop="work_content" label="作业内容" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="assigned_worker_name" label="作业人员" width="100">
+        <el-table-column prop="assigned_worker_name" label="作业人员" width="120">
           <template #default="scope">
-            {{ scope.row.assigned_worker_name || '-' }}
+            {{ scope.row.assigned_worker_names || scope.row.assigned_worker_name || '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="is_urgent" label="优先级" width="80" align="center">

@@ -5,13 +5,13 @@
 -- 1. 创建预约相关角色
 INSERT INTO roles (id, name, description, permissions, created_at) VALUES
 (10, '预约管理员', '负责创建和管理施工预约单，包括客户等预约申请人员',
-  'user_view,appointment_view,appointment_create,appointment_edit,appointment_delete,appointment_submit',
+  'appointment_view,appointment_create,appointment_edit,appointment_delete,appointment_submit,project_view',
   CURRENT_TIMESTAMP),
-(11, '施工员', '负责第一级审批，确认可以承接预约作业',
-  'user_view,appointment_view,appointment_approve',
+(11, '预约施工员', '负责第一级审批，确认可以承接预约作业',
+  'appointment_view,appointment_approve',
   CURRENT_TIMESTAMP),
 (12, '作业人员', '负责执行具体施工作业的人员',
-  'user_view,appointment_view,appointment_execute',
+  'appointment_view,appointment_execute',
   CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,

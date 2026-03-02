@@ -779,3 +779,59 @@ export function getWeekNumber(date) {
 export function getQuarter(date) {
   return Math.floor((date.getMonth() + 3) / 3)
 }
+
+/**
+ * 标准化前置/后置条件为数组（用于 R11 规范验证）
+ * 支持：undefined, null, 数组, 字符串, 数字
+ * @param {*} value - 前置/后置条件值
+ * @returns {Array} 标准化后的数组
+ */
+export function normalizePredecessors(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    // 处理逗号分隔的字符串："1,2,3" -> [1, 2, 3]
+    return value.split(',').map(v => {
+      const num = parseInt(v.trim(), 10)
+      return isNaN(num) ? v.trim() : num
+    }).filter(v => v !== '' && v !== null && v !== undefined)
+  }
+  if (typeof value === 'number') return [value]
+  return []
+}
+
+/**
+ * 生成前置条件签名（用于 R11 规范验证和节点合并）
+ * @param {Array} predecessors - 前置条件数组
+ * @returns {string} 排序后的签名字符串
+ */
+export function getPredecessorSignature(predecessors) {
+  const normalized = normalizePredecessors(predecessors)
+  return normalized.sort((a, b) => a - b).join(',')
+}
+
+/**
+ * 生成开始节点签名（用于 R11 规范）
+ * 相同紧前条件 + 相同日期 → 共享开始节点
+ * @param {string} date - 日期字符串 (YYYY-MM-DD)
+ * @param {*} predecessors - 前置条件
+ * @returns {string} 节点签名
+ */
+export function getStartNodeSignature(date, predecessors) {
+  const normalizedPreds = normalizePredecessors(predecessors)
+  const sortedPred = normalizedPreds.sort((a, b) => a - b).join(',')
+  return `START_${date}_${sortedPred}`
+}
+
+/**
+ * 生成结束节点签名（用于 R11 规范）
+ * 相同紧后条件 + 相同日期 → 共享结束节点
+ * @param {string} date - 日期字符串 (YYYY-MM-DD)
+ * @param {*} successors - 后置条件
+ * @returns {string} 节点签名
+ */
+export function getEndNodeSignature(date, successors) {
+  const normalizedSuccs = normalizePredecessors(successors)
+  const sortedSucc = normalizedSuccs.sort((a, b) => a - b).join(',')
+  return `END_${date}_${sortedSucc}`
+}

@@ -52,7 +52,7 @@ func (s *AppointmentService) Create(req CreateAppointmentRequest, applicantID ui
 
 	// 创建预约单
 	appointment := &ConstructionAppointment{
-		ProjectID:           &req.ProjectID, // 转换为指针
+		ProjectID:           req.ProjectID, // 直接使用指针，可能为 nil
 		ApplicantID:         applicantID,
 		ApplicantName:       applicantName,
 		ContactPhone:        req.ContactPhone,
@@ -335,11 +335,6 @@ func (s *AppointmentService) AssignWorker(id uint, workerID uint, workerName str
 	appointment.AssignedWorkerID = &workerID
 	appointment.AssignedWorkerName = workerName
 
-	// 如果状态是待审批或已排期，更新为已排期
-	if appointment.Status == StatusPending {
-		appointment.Status = StatusScheduled
-	}
-
 	if err := s.db.Save(&appointment).Error; err != nil {
 		return nil, err
 	}
@@ -408,11 +403,6 @@ func (s *AppointmentService) AssignWorkers(id uint, workerIDs []uint, workerName
 	} else {
 		appointment.SupervisorID = nil
 		appointment.SupervisorName = ""
-	}
-
-	// 如果状态是待审批或已排期，更新为已排期
-	if appointment.Status == StatusPending {
-		appointment.Status = StatusScheduled
 	}
 
 	if err := s.db.Save(&appointment).Error; err != nil {

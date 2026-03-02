@@ -156,6 +156,7 @@
               type="warning"
               size="small"
               @click="handleAddChildDirect(scope.row)"
+              v-if="authStore.hasPermission('project_create')"
             >
               <el-icon><Plus /></el-icon>
               子项目

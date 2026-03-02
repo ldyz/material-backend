@@ -1,7 +1,7 @@
 <template>
   <div class="progress-container">
     <!-- 主标题栏 -->
-    <div class="page-header" v-if="currentView === 'list' || !currentProject">
+    <div class="page-header" v-if="currentView === 'list'">
       <div class="page-title">
         <h1>项目管理</h1>
         <p class="page-subtitle">查看和管理项目进度计划，使用甘特图可视化项目时间线</p>
@@ -610,7 +610,7 @@ onMounted(async () => {
   padding: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100vh;
   min-height: 0;
   overflow: hidden;
   background: #f5f7fa;
@@ -705,9 +705,9 @@ onMounted(async () => {
 .network-view-container {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   background: #fff;
-  margin: 16px 24px 24px;
+  margin: 0;
   border-radius: 4px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 }

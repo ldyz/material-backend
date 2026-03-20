@@ -112,8 +112,8 @@
           <div class="quick-label">出库管理</div>
         </van-grid-item>
 
-        <van-grid-item @click="router.push('/appointments')">
-          <div class="quick-icon" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);">
+        <van-grid-item @click="router.push('/appointments/calendar')">
+          <div class="quick-icon" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);">
             <van-icon name="calendar-o" size="24" color="#fff" />
           </div>
           <div class="quick-label">预约管理</div>
@@ -126,17 +126,6 @@
           <div class="quick-label">刷新数据</div>
         </van-grid-item>
       </van-grid>
-    </div>
-
-    <!-- 系统公告 -->
-    <div class="notice-section" v-if="systemNotice">
-      <div class="section-title">
-        <van-icon name="volume-o" />
-        <span>系统公告</span>
-      </div>
-      <div class="notice-card">
-        <div class="notice-content">{{ systemNotice }}</div>
-      </div>
     </div>
   </div>
 </template>
@@ -190,9 +179,6 @@ const stats = ref({
   pendingRequisition: 0,
   pendingIssue: 0
 })
-
-// 系统公告
-const systemNotice = ref('欢迎使用化建仪表移动端！如有问题请联系管理员。')
 
 // 页面加载
 onMounted(async () => {

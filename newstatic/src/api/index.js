@@ -80,7 +80,10 @@ export const authApi = {
     return request({
       url: '/auth/change-password',
       method: 'POST',
-      data
+      data: {
+        old_password: data.oldPassword,
+        new_password: data.newPassword
+      }
     })
   },
 
@@ -97,6 +100,22 @@ export const authApi = {
       data: formData,
       headers: {
         'Content-Type': 'multipart/form-data'
+      }
+    })
+  },
+
+  /**
+   * 上传头像 Base64 数据（新方式：存储到数据库）
+   *
+   * @param {string} avatarData - Base64 编码的图片数据
+   * @returns {Promise} 返回上传结果
+   */
+  uploadAvatarBase64(avatarData) {
+    return request({
+      url: '/auth/avatar',
+      method: 'POST',
+      data: {
+        avatar_data: avatarData
       }
     })
   }
@@ -1449,14 +1468,18 @@ export const systemApi = {
    * 从备份文件恢复数据库
    * 注意：此操作会覆盖当前数据
    *
-   * @param {string} filename - 备份文件名
+   * @param {string|Object} filename - 备份文件名或对象 { backup_name, confirm }
    * @returns {Promise} 返回恢复结果
    */
   restoreBackup(filename) {
+    // 支持传递对象 { backup_name, confirm } 或字符串
+    const data = typeof filename === 'string'
+      ? { backup_name: filename, confirm: true }
+      : { backup_name: filename.backup_name, confirm: filename.confirm !== false }
     return request({
       url: `/system/backup/restore`,
       method: 'POST',
-      data: { backup_name: filename }
+      data
     })
   },
 
@@ -3734,6 +3757,80 @@ export const agentApi = {
       { report_type: reportType },
       `Generate ${reportType} report`
     )
+  },
+
+  // ========== AI Chat 方法 ==========
+
+  /**
+   * AI 智能对话
+   *
+   * 使用 OpenAI 进行智能对话，支持 Function Calling 自动调用系统功能
+   *
+   * @param {string} message - 用户消息
+   * @param {Array} conversationHistory - 对话历史
+   * @param {Object} context - 上下文信息
+   * @returns {Promise} 返回AI响应
+   *
+   * @example
+   * // 简单对话
+   * const response = await agentApi.chat('查询库存低于安全库存的物资')
+   *
+   * // 多轮对话
+   * const response = await agentApi.chat('继续', response.conversation)
+   */
+  chat(message, conversationHistory = [], context = {}) {
+    return request({
+      url: '/agent/chat',
+      method: 'POST',
+      data: {
+        message,
+        conversation_history: conversationHistory,
+        context
+      }
+    })
+  },
+
+  /**
+   * AI 智能查询
+   *
+   * 使用自然语言查询数据（简化版，不需要对话历史）
+   *
+   * @param {string} question - 自然语言问题
+   * @returns {Promise} 返回查询结果
+   *
+   * @example
+   * // 查询物资
+   * await agentApi.smartQuery('有哪些钢材？')
+   *
+   * // 查询库存
+   * await agentApi.smartQuery('库存预警的物资有哪些？')
+   *
+   * // 分析数据
+   * await agentApi.smartQuery('帮我分析一下当前的库存状况')
+   */
+  async smartQuery(question) {
+    const response = await this.chat(question)
+    return response.data
+  },
+
+  /**
+   * AI 智能操作
+   *
+   * 使用自然语言执行操作
+   *
+   * @param {string} instruction - 自然语言指令
+   * @returns {Promise} 返回操作结果
+   *
+   * @example
+   * // 创建计划
+   * await agentApi.smartOperate('为项目1创建一个物资计划，包含10吨钢材')
+   *
+   * // 审批工作流
+   * await agentApi.smartOperate('审批任务123，备注：同意')
+   */
+  async smartOperate(instruction) {
+    const response = await this.chat(instruction)
+    return response.data
   }
 }
 
@@ -4094,6 +4191,19 @@ export const appointmentApi = {
   },
 
   /**
+   * 根据项目ID获取作业人员列表
+   *
+   * @param {number} projectId - 项目ID
+   * @returns {Promise} 返回项目关联的作业人员列表
+   */
+  getWorkersByProject(projectId) {
+    return request({
+      url: `/appointments/workers-by-project/${projectId}`,
+      method: 'GET'
+    })
+  },
+
+  /**
    * 获取每日预约统计数据
    *
    * @param {Object} params - 查询参数
@@ -4314,6 +4424,36 @@ export const appointmentApi = {
       rejected: 'danger'
     }
     return types[status] || ''
+  },
+
+  /**
+   * 更新预约单
+   *
+   * @param {number} id - 预约单ID
+   * @param {Object} data - 更新数据
+   * @param {string} data.work_date - 作业日期
+   * @param {string} data.time_slot - 时间段
+   * @returns {Promise} 返回更新结果
+   */
+  update(id, data) {
+    return request({
+      url: `/appointments/${id}`,
+      method: 'PUT',
+      data
+    })
+  },
+
+  /**
+   * 检查是否可以调整时间
+   *
+   * @param {number} id - 预约单ID
+   * @returns {Promise} 返回是否可编辑
+   */
+  canReschedule(id) {
+    return request({
+      url: `/appointments/${id}/can-reschedule`,
+      method: 'GET'
+    })
   },
 
   /**

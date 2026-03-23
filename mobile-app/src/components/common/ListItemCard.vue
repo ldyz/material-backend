@@ -21,9 +21,9 @@
           <van-icon name="notes-o" size="14" />
           <span>{{ item.work_content }}</span>
         </div>
-        <div v-if="type === 'appointment' && item.assigned_worker_name" class="info-row">
+        <div v-if="type === 'appointment' && formattedWorkerNames" class="info-row">
           <van-icon name="user-o" size="14" />
-          <span>{{ item.assigned_worker_name }}</span>
+          <span>{{ formattedWorkerNames }}</span>
         </div>
         <div v-if="item.project_name && type !== 'appointment'" class="info-row">
           <van-icon name="shop-o" size="14" />
@@ -83,9 +83,9 @@ const emit = defineEmits(['click'])
 const itemNumber = computed(() => {
   // 支持多个可能的字段名
   const numberFieldAliases = {
-    inbound: ['order_number', 'number'],
+    inbound: ['order_no', 'order_number', 'number'],
     plan: ['plan_number', 'plan_no', 'number'],
-    requisition: ['requisition_number', 'number'],
+    requisition: ['requisition_number', 'requisition_no', 'number'],
     appointment: ['appointment_number', 'appointment_no', 'number']
   }
   const aliases = numberFieldAliases[props.type] || ['number']
@@ -120,6 +120,23 @@ const itemDate = computed(() => {
   }
 
   return null
+})
+
+// 格式化作业人员名字（最多显示4个）
+const formattedWorkerNames = computed(() => {
+  // 优先使用 assigned_worker_names（多个名字，逗号分隔）
+  let workerName = props.item.assigned_worker_names || props.item.assigned_worker_name
+  if (!workerName) return ''
+
+  // 按逗号分隔名字
+  const names = workerName.split(',').map(n => n.trim()).filter(n => n)
+
+  if (names.length <= 4) {
+    return workerName
+  }
+
+  // 显示前4个名字 + "..."
+  return names.slice(0, 4).join(',') + '...'
 })
 
 // 处理点击事件

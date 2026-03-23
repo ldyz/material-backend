@@ -110,7 +110,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onActivated, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getDailyStatistics, getAppointments } from '@/api/appointment'
 import { formatDate } from '@/composables/useDateTime'
@@ -289,7 +289,7 @@ function goToCreate() {
   const dateStr = formatDateToISO(selectedDate.value)
   router.push({
     path: '/appointment/create',
-    query: { work_date: dateStr }
+    query: { work_date: dateStr, from: '/appointments/calendar' }
   })
 }
 
@@ -336,6 +336,12 @@ function handleBack() {
 }
 
 onMounted(() => {
+  loadStatistics()
+  loadTasks()
+})
+
+// 页面激活时刷新数据（从创建页返回时）
+onActivated(() => {
   loadStatistics()
   loadTasks()
 })

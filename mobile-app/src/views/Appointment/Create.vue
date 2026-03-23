@@ -322,13 +322,14 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { showSuccessToast, showFailToast, showConfirmDialog } from 'vant'
 import { createAppointment, submitAppointment, getTimeSlotOptions, getDailyStatistics, getWorkersList, getTimeSlotStatistics, getAvailableWorkers } from '@/api/appointment'
 import { getAssetUrl } from '@/utils/request'
 import ProjectSelector from '@/components/common/ProjectSelector.vue'
 
 const router = useRouter()
+const route = useRoute()
 
 const form = ref({
   project_id: null,
@@ -500,6 +501,13 @@ function removeWorker(workerId) {
 // 组件挂载时获取作业人员列表
 onMounted(() => {
   fetchWorkers()
+
+  // 处理从日历页面传递的日期
+  const workDate = route.query.work_date
+  if (workDate) {
+    form.value.work_date = workDate
+    checkAvailabilityForDate(workDate)
+  }
 })
 
 const timeSlotOptions = getTimeSlotOptions().map(opt => ({
@@ -585,7 +593,14 @@ async function handleSubmit() {
     }
 
     showSuccessToast('提交成功')
-    router.replace('/appointments')
+
+    // 根据来源页面返回，默认返回列表页
+    const fromPath = route.query.from || route.redirectedFrom?.path
+    if (fromPath === '/appointments/calendar') {
+      router.replace('/appointments/calendar')
+    } else {
+      router.replace('/appointments')
+    }
   } catch (error) {
     console.error('Create appointment error:', error)
     showFailToast(error.message || error.error?.message || '提交失败')

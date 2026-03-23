@@ -215,15 +215,16 @@ func (s *Service) listPlanMaterials(params ListQueryParams) ([]PlanMaterialItem,
 		}
 
 		// Calculate arrived quantity from inbound_items
+		// 关联入库单的 plan_id 来准确计算每个计划的已到货数量
 		var arrivedQty float64
 		s.db.Raw(`
 			SELECT COALESCE(SUM(ii.quantity), 0)
 			FROM inbound_items ii
 			INNER JOIN inbound_orders io ON ii.inbound_order_id = io.id
 			WHERE ii.material_id = ?
-			AND io.project_id = ?
+			AND io.plan_id = ?
 			AND io.status IN ('approved', 'completed')
-		`, item.MaterialID, item.ProjectID).Scan(&arrivedQty)
+		`, item.MaterialID, item.PlanID).Scan(&arrivedQty)
 
 		item.ArrivedQuantity = arrivedQty
 		item.RemainingQty = item.PlannedQuantity - arrivedQty

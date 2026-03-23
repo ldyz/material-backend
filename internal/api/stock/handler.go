@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/yourorg/material-backend/backend/internal/api/auth"
+	"github.com/yourorg/material-backend/backend/internal/api/audit"
 	"github.com/yourorg/material-backend/backend/internal/api/response"
 	jwtpkg "github.com/yourorg/material-backend/backend/pkg/jwt"
 	"github.com/xuri/excelize/v2"
@@ -144,7 +145,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		// Select both stocks and material_master columns
 		var results []map[string]any
 		db.Model(&Stock{}).
-			Select("stocks.*, material_master.code as material_code, material_master.name as material_name, material_master.specification, material_master.unit, material_master.category as category_name, projects.name as project_name, stocks.safety_stock as min_stock, stocks.safety_stock * 2 as max_stock").
+			Select("stocks.*, material_master.code as material_code, material_master.name as material_name, material_master.specification, material_master.unit, material_master.material, material_master.category as category_name, projects.name as project_name, stocks.safety_stock as min_stock, stocks.safety_stock * 2 as max_stock").
 			Joins("LEFT JOIN material_master ON material_master.id = stocks.material_id").
 			Joins("LEFT JOIN projects ON stocks.project_id = projects.id").
 			Where(query).
@@ -157,7 +158,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	// get stock alerts (stocks with quantity <= safety_stock)
 	r.GET("/stocks/alerts", auth.PermissionMiddleware(db, "stock_view"), func(c *gin.Context) {
 		query := db.Model(&Stock{}).
-			Select("stocks.id, stocks.material_id, stocks.project_id, stocks.quantity, stocks.safety_stock as min_stock, stocks.safety_stock * 2 as max_stock, stocks.location, stocks.unit_cost, stocks.created_at, stocks.updated_at, material_master.code as material_code, material_master.name as material_name, material_master.specification, material_master.unit, material_master.category as category_name, projects.name as project_name").
+			Select("stocks.id, stocks.material_id, stocks.project_id, stocks.quantity, stocks.safety_stock as min_stock, stocks.safety_stock * 2 as max_stock, stocks.location, stocks.unit_cost, stocks.created_at, stocks.updated_at, material_master.code as material_code, material_master.name as material_name, material_master.specification, material_master.unit, material_master.material, material_master.category as category_name, projects.name as project_name").
 			Joins("LEFT JOIN material_master ON stocks.material_id = material_master.id").
 			Joins("LEFT JOIN projects ON stocks.project_id = projects.id").
 			Where("stocks.quantity <= stocks.safety_stock")
@@ -505,6 +506,21 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 		logOp(db, stock.ID, "in", fmt.Sprintf("入库 %.2f，备注：%s", req.Quantity, req.Remark), c, 0, req.Quantity, quantityBefore, quantityAfter, "adjust", 0, "")
 
+		// 记录操作日志
+		userIDInt, _ := c.Get("current_user_id")
+		var userID *uint
+		if userIDInt != nil {
+			if id, ok := userIDInt.(int64); ok {
+				uid := uint(id)
+				userID = &uid
+			}
+		}
+		userName, _ := c.Get("current_username")
+		username, _ := userName.(string)
+
+		audit.LogCreate(userID, username, audit.ModuleStock, audit.ResourceStock,
+			stock.ID, "", map[string]any{"quantity": req.Quantity, "remark": req.Remark})
+
 		response.SuccessWithMessage(c, getStockWithMaterial(db, stock.ID), "入库成功")
 	})
 
@@ -630,13 +646,14 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			Name         string // from material_master
 			Specification string // from material_master
 			Unit         string // from material_master
+			Material     string // from material_master (材质)
 			Category     string // from material_master
 			ProjectName  string // from projects
 		}
 
 		var stocks []StockWithMaterial
 		query := db.Table("stocks").
-			Select("stocks.id, stocks.project_id, stocks.material_id, stocks.quantity, stocks.safety_stock, stocks.location, stocks.unit_cost, stocks.created_at, stocks.updated_at, material_master.code, material_master.name, material_master.specification, material_master.unit, material_master.category, projects.name as project_name").
+			Select("stocks.id, stocks.project_id, stocks.material_id, stocks.quantity, stocks.safety_stock, stocks.location, stocks.unit_cost, stocks.created_at, stocks.updated_at, material_master.code, material_master.name, material_master.specification, material_master.unit, material_master.material, material_master.category, projects.name as project_name").
 			Joins("LEFT JOIN material_master ON stocks.material_id = material_master.id").
 			Joins("LEFT JOIN projects ON stocks.project_id = projects.id")
 
@@ -755,7 +772,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 func getStockWithMaterial(db *gorm.DB, stockID uint) map[string]any {
 	var result map[string]any
 	db.Table("stocks").
-		Select("stocks.id, stocks.project_id, stocks.material_id, stocks.quantity, stocks.safety_stock as min_stock, stocks.safety_stock * 2 as max_stock, stocks.location, stocks.unit_cost, stocks.created_at, stocks.updated_at, material_master.code as material_code, material_master.name as material_name, material_master.specification, material_master.unit, material_master.category as category_name, projects.name as project_name").
+		Select("stocks.id, stocks.project_id, stocks.material_id, stocks.quantity, stocks.safety_stock as min_stock, stocks.safety_stock * 2 as max_stock, stocks.location, stocks.unit_cost, stocks.created_at, stocks.updated_at, material_master.code as material_code, material_master.name as material_name, material_master.specification, material_master.unit, material_master.material, material_master.category as category_name, projects.name as project_name").
 		Joins("LEFT JOIN material_master ON stocks.material_id = material_master.id").
 		Joins("LEFT JOIN projects ON stocks.project_id = projects.id").
 		Where("stocks.id = ?", stockID).

@@ -39,6 +39,7 @@ func (wi *WorkflowIntegration) StartRequisitionWorkflow(requisition *Requisition
 		requisition.RequisitionNo,
 		creatorID,
 		creatorName,
+		nil, // requisition 不关联项目
 	)
 
 	if err != nil {

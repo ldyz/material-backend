@@ -1,30 +1,34 @@
 import request from '@/utils/request'
 
-/**
- * 登录
- * @param {string} username - 用户名
- * @param {string} password - 密码
- * @returns {Promise}
- */
-export function login(username, password) {
-  return request.post('/auth/login', {
-    username,
-    password,
+export function login(data) {
+  return request({
+    url: '/auth/login',
+    method: 'POST',
+    data
   })
 }
 
-/**
- * 登出
- * @returns {Promise}
- */
 export function logout() {
-  return request.post('/auth/logout')
+  return request({
+    url: '/auth/logout',
+    method: 'POST'
+  })
 }
 
-/**
- * 获取当前用户信息
- * @returns {Promise}
- */
 export function getCurrentUser() {
-  return request.get('/auth/me')
+  return request({
+    url: '/auth/me',
+    method: 'GET'
+  })
+}
+
+export function uploadAvatar(formData) {
+  return request({
+    url: '/auth/avatar',
+    method: 'POST',
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
 }

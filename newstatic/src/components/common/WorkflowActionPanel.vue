@@ -46,6 +46,37 @@
         />
       </div>
 
+      <!-- 审批人信息（多人审批时显示） -->
+      <div v-if="approverInfo && approverInfo.length > 0" class="approver-info">
+        <div class="approver-title">
+          <el-icon><User /></el-icon>
+          <span>审批人信息</span>
+        </div>
+        <div class="approver-list">
+          <div
+            v-for="(approver, index) in approverInfo"
+            :key="index"
+            class="approver-item"
+            :class="{
+              'approved': approver.status === 'approved',
+              'pending': approver.status === 'pending'
+            }"
+          >
+            <el-avatar :size="32" :icon="UserFilled" />
+            <div class="approver-detail">
+              <span class="approver-name">{{ approver.name }}</span>
+              <span class="approver-status">{{ getApproverStatusText(approver.status) }}</span>
+            </div>
+            <el-icon v-if="approver.status === 'approved'" class="approver-check" color="#67c23a">
+              <CircleCheck />
+            </el-icon>
+            <el-icon v-else class="approver-waiting" color="#909399">
+              <Clock />
+            </el-icon>
+          </div>
+        </div>
+      </div>
+
       <!-- 可执行操作 -->
       <div v-if="availableActions.length > 0" class="action-buttons">
         <div class="action-title">
@@ -250,7 +281,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Operation, Clock, Upload, Check, Close, Back, ChatLineSquare } from '@element-plus/icons-vue'
+import { Operation, Clock, Upload, Check, Close, Back, ChatLineSquare, User, UserFilled, CircleCheck } from '@element-plus/icons-vue'
 
 /**
  * 组件 Props
@@ -310,6 +341,13 @@ const props = defineProps({
    * 审批历史
    */
   histories: {
+    type: Array,
+    default: () => []
+  },
+  /**
+   * 审批人信息（多人审批时使用）
+   */
+  approverInfo: {
     type: Array,
     default: () => []
   }
@@ -481,6 +519,19 @@ const getHistoryType = (action) => {
 }
 
 /**
+ * 获取审批人状态文本
+ */
+const getApproverStatusText = (status) => {
+  const texts = {
+    approved: '已审批',
+    pending: '待审批',
+    rejected: '已拒绝',
+    cancelled: '已取消'
+  }
+  return texts[status] || status
+}
+
+/**
  * 处理操作按钮点击
  */
 const handleAction = async (actionKey) => {
@@ -616,6 +667,82 @@ watch(actionDialogVisible, (val) => {
 
 .status-description {
   margin-top: 20px;
+}
+
+.approver-info {
+  margin-top: 20px;
+  padding: 16px;
+  background-color: #f5f7fa;
+  border-radius: 8px;
+}
+
+.approver-title {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: #606266;
+  margin-bottom: 12px;
+}
+
+.approver-title .el-icon {
+  margin-right: 8px;
+  color: #409eff;
+}
+
+.approver-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.approver-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  background-color: #fff;
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.approver-item.pending {
+  border-left: 3px solid #e6a23c;
+}
+
+.approver-item.approved {
+  border-left: 3px solid #67c23a;
+  background-color: #f0f9ff;
+}
+
+.approver-detail {
+  flex: 1;
+  margin-left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.approver-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
+}
+
+.approver-status {
+  font-size: 12px;
+  color: #909399;
+}
+
+.approver-item.approved .approver-status {
+  color: #67c23a;
+}
+
+.approver-check {
+  font-size: 20px;
+}
+
+.approver-waiting {
+  font-size: 18px;
 }
 
 .action-buttons {

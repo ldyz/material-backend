@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">材料管理系统</string>
-    <string name="title_activity_main">材料管理系统</string>
-    <string name="package_name">com.material.app</string>
-    <string name="custom_url_scheme">com.material.app</string>
+    <string name="app_name">化建仪表</string>
+    <string name="title_activity_main">化建仪表</string>
+    <string name="package_name">com.material.management</string>
+    <string name="custom_url_scheme">com.material.management</string>
 </resources>

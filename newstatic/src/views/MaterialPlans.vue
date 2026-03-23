@@ -365,6 +365,11 @@
         >
           <el-table-column prop="material_name" label="物资名称" min-width="150" />
           <el-table-column prop="specification" label="规格型号" width="120" />
+          <el-table-column label="材质" width="100">
+            <template #default="scope">
+              {{ scope.row.material || '-' }}
+            </template>
+          </el-table-column>
           <el-table-column prop="category" label="分类" width="100" />
           <el-table-column prop="unit" label="单位" width="70" />
           <el-table-column prop="planned_quantity" label="计划数量" width="90" align="right" />
@@ -434,6 +439,13 @@
             v-model="itemForm.specification"
             placeholder="请输入规格型号"
             maxlength="200"
+          />
+        </el-form-item>
+        <el-form-item label="材质">
+          <el-input
+            v-model="itemForm.material"
+            placeholder="请输入材质"
+            maxlength="100"
           />
         </el-form-item>
         <el-row :gutter="20">
@@ -558,11 +570,14 @@ import {
   DataAnalysis,
   Upload
 } from '@element-plus/icons-vue'
+import { defineAsyncComponent } from 'vue'
 import Dialog from '@/components/common/Dialog.vue'
 import TableToolbar from '@/components/common/TableToolbar.vue'
-import PlanDetailDialog from './PlanDetailDialog.vue'
-import ExcelImportMapper from '@/components/common/ExcelImportMapper.vue'
 import ProjectSelector from '@/components/common/ProjectSelector.vue'
+
+// Dynamic imports for dialog components
+const PlanDetailDialog = defineAsyncComponent(() => import('./PlanDetailDialog.vue'))
+const ExcelImportMapper = defineAsyncComponent(() => import('@/components/common/ExcelImportMapper.vue'))
 
 const authStore = useAuthStore()
 const planStore = usePlanStore()
@@ -618,6 +633,7 @@ const itemForm = reactive({
   material_name: '',
   material_code: '',
   specification: '',
+  material: '',
   category: '',
   unit: '',
   planned_quantity: 1,
@@ -667,6 +683,12 @@ const planItemFields = [
     label: '规格型号',
     required: false,
     hint: '规格型号说明'
+  },
+  {
+    field: 'material',
+    label: '材质',
+    required: false,
+    hint: '材质说明'
   },
   {
     field: 'category',
@@ -797,6 +819,12 @@ const handleSubmit = async () => {
       ElMessage.warning('请至少添加一个计划项目')
       return
     }
+
+    // Debug log to trace material field in all items before submission
+    console.log('[handleSubmit] formData.items with material values:')
+    formData.items.forEach((item, index) => {
+      console.log(`  Item ${index}: material_name="${item.material_name}", material="${item.material}"`)
+    })
 
     dialogLoading.value = true
 
@@ -944,6 +972,7 @@ const handleAddItem = () => {
     material_name: '',
     material_code: '',
     specification: '',
+    material: '',
     category: '',
     unit: '',
     planned_quantity: 1,
@@ -953,14 +982,30 @@ const handleAddItem = () => {
     remark: ''
   })
   editingItemIndex = -1
+  // Clear validation state to prevent stale validation errors
+  itemFormRef.value?.clearValidate()
   itemDialogVisible.value = true
 }
 
 const handleSaveItem = async () => {
   try {
+    // Ensure form ref exists before validating
+    if (!itemFormRef.value) {
+      ElMessage.error('表单未初始化，请重试')
+      return
+    }
+
     await itemFormRef.value.validate()
 
+    // Debug log to trace material field
+    console.log('[handleSaveItem] itemForm.material:', itemForm.material)
+    console.log('[handleSaveItem] itemForm:', JSON.parse(JSON.stringify(itemForm)))
+
     const item = { ...itemForm }
+
+    // Debug log to verify material was copied
+    console.log('[handleSaveItem] item.material after spread:', item.material)
+
     if (editingItemIndex >= 0) {
       formData.items[editingItemIndex] = item
     } else {
@@ -969,7 +1014,10 @@ const handleSaveItem = async () => {
 
     itemDialogVisible.value = false
   } catch (error) {
-    console.error('保存项目失败:', error)
+    // Validation failed - show error message but keep dialog open
+    if (error?.message) {
+      console.error('表单验证失败:', error.message)
+    }
   }
 }
 
@@ -1014,6 +1062,7 @@ const handleImportItemsSuccess = (result) => {
       material_name: item.material_name || '',
       material_code: item.material_code || '',
       specification: item.specification || '',
+      material: item.material || '',
       category: item.category || '',
       unit: item.unit || '',
       planned_quantity: parseInt(item.planned_quantity) || 1,

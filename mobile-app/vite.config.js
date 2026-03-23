@@ -4,10 +4,16 @@ import Components from 'unplugin-vue-components/vite'
 import { VantResolver } from '@vant/auto-import-resolver'
 import { fileURLToPath, URL } from 'node:url'
 
-// https://vitejs.dev/config/
+// 检测是否在 Capacitor 原生环境
+const isCapacitor = process.env.CAPACITOR_BUILD === 'true'
+
 export default defineConfig({
-  // 基础路径：使用相对路径，适配 Capacitor 应用
-  base: './',
+  // Capacitor 环境使用相对路径，Web 生产环境使用 /mobile/ 路径，开发环境使用相对路径
+  base: isCapacitor ? './' : (process.env.NODE_ENV === 'production' ? '/mobile/' : './'),
+  // Capacitor 使用独立的构建目录
+  build: isCapacitor ? {
+    outDir: 'dist-capacitor'
+  } : {},
   plugins: [
     vue(),
     Components({
@@ -20,26 +26,34 @@ export default defineConfig({
     }
   },
   server: {
+    // 监听所有接口，但优化配置避免崩溃
+    host: '0.0.0.0',
     port: 5173,
+    strictPort: false,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8088',
+        target: 'http://localhost:8088',
         changeOrigin: true,
-      }
-    }
-  },
-  build: {
-    outDir: 'dist',
-    assetsDir: 'assets',
-    sourcemap: false,
-    minify: 'terser',
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'vant': ['vant'],
-          'vue-vendor': ['vue', 'vue-router', 'pinia']
+        secure: false,
+        // 添加超时配置
+        timeout: 30000,
+        // 添加代理错误处理
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, res) => {
+            console.log('Proxy error:', err.message);
+          });
+          proxy.on('proxyReq', (proxyReq, _req, _res) => {
+            console.log('Proxy request:', proxyReq.method, proxyReq.path);
+          });
         }
       }
-    }
+    },
+    // 优化文件监听，减少文件系统压力
+    watch: {
+      usePolling: false,
+      interval: 1000
+    },
+    // 限制并发连接数
+    middlewareMode: false
   }
 })

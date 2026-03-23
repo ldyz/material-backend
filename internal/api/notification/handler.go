@@ -2,6 +2,7 @@ package notification
 
 import (
 	"encoding/json"
+	"log"
 	"strconv"
 	"time"
 
@@ -15,6 +16,25 @@ import (
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	r := rg.Group("notification")
 	r.Use(jwtpkg.TokenMiddleware())
+
+	// WebSocket endpoint for real-time notifications
+	r.GET("/ws", func(c *gin.Context) {
+		// Set user_id in context for WebSocket handler
+		currentUser, err := auth.GetCurrentUser(c, db)
+		if err != nil {
+			c.JSON(401, gin.H{"error": "Unauthorized"})
+			return
+		}
+		c.Set("user_id", currentUser.ID)
+
+		// Get the hub and serve WebSocket
+		hub := GetHub()
+		if hub == nil {
+			c.JSON(500, gin.H{"error": "WebSocket hub not initialized"})
+			return
+		}
+		ServeWS(hub)(c)
+	})
 
 	// Get user notifications
 	r.GET("/notifications", func(c *gin.Context) {
@@ -159,6 +179,122 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 		response.SuccessWithMessage(c, nil, "通知已清空")
 	})
+
+	// Register push notification token
+	r.POST("/register-token", func(c *gin.Context) {
+		currentUser, err := auth.GetCurrentUser(c, db)
+		if err != nil {
+			response.Unauthorized(c, "未授权")
+			return
+		}
+
+		var req struct {
+			Token    string `json:"token" binding:"required"`
+			Platform string `json:"platform" binding:"required"` // ios, android, web
+			DeviceID string `json:"device_id,omitempty"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "无效的请求参数")
+			return
+		}
+
+		// Validate platform
+		if req.Platform != "ios" && req.Platform != "android" && req.Platform != "web" {
+			response.BadRequest(c, "无效的平台类型")
+			return
+		}
+
+		// Check if token already exists for this user
+		var existingToken DeviceToken
+		err = db.Where("user_id = ? AND token = ?", currentUser.ID, req.Token).First(&existingToken).Error
+
+		now := time.Now()
+		if err == nil {
+			// Token exists, update it
+			existingToken.Platform = req.Platform
+			existingToken.DeviceID = req.DeviceID
+			existingToken.IsActive = true
+			existingToken.UpdatedAt = now
+			if err := db.Save(&existingToken).Error; err != nil {
+				log.Printf("Failed to update device token: %v", err)
+			}
+		} else {
+			// New token, create it
+			deviceToken := DeviceToken{
+				UserID:    currentUser.ID,
+				Token:     req.Token,
+				Platform:  req.Platform,
+				DeviceID:  req.DeviceID,
+				IsActive:  true,
+				CreatedAt: now,
+				UpdatedAt: now,
+			}
+			if err := db.Create(&deviceToken).Error; err != nil {
+				log.Printf("Failed to create device token: %v", err)
+			}
+		}
+
+		response.SuccessWithMessage(c, nil, "推送令牌已注册")
+	})
+
+	// Unregister push notification token
+	r.DELETE("/unregister-token", func(c *gin.Context) {
+		currentUser, err := auth.GetCurrentUser(c, db)
+		if err != nil {
+			response.Unauthorized(c, "未授权")
+			return
+		}
+
+		var req struct {
+			Token string `json:"token" binding:"required"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "无效的请求参数")
+			return
+		}
+
+		// Deactivate the token
+		result := db.Model(&DeviceToken{}).
+			Where("user_id = ? AND token = ?", currentUser.ID, req.Token).
+			Update("is_active", false)
+
+		if result.Error != nil {
+			response.InternalError(c, "注销令牌失败")
+			return
+		}
+
+		response.SuccessWithMessage(c, nil, "推送令牌已注销")
+	})
+
+	// Get WebSocket hub statistics (admin only)
+	r.GET("/hub-stats", func(c *gin.Context) {
+		currentUser, err := auth.GetCurrentUser(c, db)
+		if err != nil {
+			response.Unauthorized(c, "未授权")
+			return
+		}
+
+		// Check if user is admin
+		if currentUser.Username != "admin" {
+			response.Forbidden(c, "无权限访问")
+			return
+		}
+
+		hub := GetHub()
+		if hub == nil {
+			response.Success(c, map[string]interface{}{
+				"total_users":  0,
+				"total_clients": 0,
+				"online_users": []uint{},
+			})
+			return
+		}
+
+		stats := hub.GetStats()
+		response.Success(c, stats)
+	})
 }
 
 // CreateNotification creates a new notification for specified users
@@ -177,7 +313,16 @@ func CreateNotification(db *gorm.DB, userID uint, notificationType, title, conte
 		IsRead:  false,
 	}
 
-	return db.Create(&notification).Error
+	if err := db.Create(&notification).Error; err != nil {
+		return err
+	}
+
+	// Broadcast via WebSocket if hub is available
+	if hub := GetHub(); hub != nil {
+		hub.BroadcastNotification(userID, notification)
+	}
+
+	return nil
 }
 
 // NotifyUsersWithPermission sends notification to all users with specific permission

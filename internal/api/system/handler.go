@@ -525,129 +525,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	// 注册报表相关路由
 	RegisterReportRoutes(r, db)
 
-	// ================== 系统日志接口 ==================
-	// 仪表板使用的日志接口，所有登录用户都可以访问
-	r.GET("/logs", func(c *gin.Context) {
-		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-		pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-		level := c.Query("level")
-		date := c.Query("date")
-		startTime := c.Query("start_time")
-		endTime := c.Query("end_time")
-
-		query := db.Model(&SystemLog{})
-
-		// 筛选条件
-		if level != "" {
-			query = query.Where("level = ?", level)
-		}
-		if date != "" {
-			// 仅日期，筛选当天
-			if t, err := time.Parse("2006-01-02", date); err == nil {
-				dtEnd := t.Add(24*time.Hour - time.Second)
-				query = query.Where("created_at >= ? AND created_at <= ?", t, dtEnd)
-			}
-		}
-		if startTime != "" {
-			if t, err := time.Parse("2006-01-02 15:04:05", startTime); err == nil {
-				query = query.Where("created_at >= ?", t)
-			}
-		}
-		if endTime != "" {
-			if t, err := time.Parse("2006-01-02 15:04:05", endTime); err == nil {
-				query = query.Where("created_at <= ?", t)
-			}
-		}
-
-		var total int64
-		query.Count(&total)
-
-		var logs []SystemLog
-		query.Order("created_at DESC").
-			Offset((page - 1) * pageSize).
-			Limit(pageSize).
-			Find(&logs)
-
-		logList := make([]map[string]any, 0, len(logs))
-		for _, log := range logs {
-			logEntry := map[string]any{
-				"id":         log.ID,
-				"level":      log.Level,
-				"message":    log.Message,
-				"module":     log.Module,
-				"user_id":    log.UserID,
-				"ip_address": log.IPAddress,
-				"created_at": log.CreatedAt.Format("2006-01-02 15:04:05"),
-			}
-
-			// 查询用户名
-			if log.UserID > 0 {
-				var user struct {
-					ID       uint
-					Username string
-				}
-				if err := db.Model(&struct{}{}).Table("users").Where("id = ?", log.UserID).
-					Select("id, username").Scan(&user).Error; err == nil && user.ID > 0 {
-					logEntry["user"] = user.Username
-				} else {
-					logEntry["user"] = "未知用户"
-				}
-			} else {
-				logEntry["user"] = "系统"
-			}
-
-			logList = append(logList, logEntry)
-		}
-
-		response.SuccessWithPagination(c, logList, int64(page), int64(pageSize), total)
-	})
-
-	r.POST("/logs/clear", auth.PermissionMiddleware(db, "system_log"), func(c *gin.Context) {
-		if err := db.Where("1 = 1").Delete(&SystemLog{}).Error; err != nil {
-			response.InternalError(c, fmt.Sprintf("清空日志失败: %v", err))
-			return
-		}
-
-		// 记录日志
-		currentUser, _ := auth.GetCurrentUser(c, db)
-		var userID uint
-		if currentUser != nil {
-			userID = currentUser.ID
-		}
-		db.Create(&SystemLog{
-			Level:     "WARNING",
-			Message:   "清空系统日志",
-			Module:    "system",
-			UserID:    userID,
-			IPAddress: c.ClientIP(),
-		})
-
-		response.SuccessWithMessage(c, nil, "系统日志已清空")
-	})
-
-	r.DELETE("/logs", auth.PermissionMiddleware(db, "system_log"), func(c *gin.Context) {
-		if err := db.Where("1 = 1").Delete(&SystemLog{}).Error; err != nil {
-			response.InternalError(c, fmt.Sprintf("清空日志失败: %v", err))
-			return
-		}
-
-		// 记录日志
-		currentUser, _ := auth.GetCurrentUser(c, db)
-		var userID uint
-		if currentUser != nil {
-			userID = currentUser.ID
-		}
-		db.Create(&SystemLog{
-			Level:     "WARNING",
-			Message:   "清空系统日志",
-			Module:    "system",
-			UserID:    userID,
-			IPAddress: c.ClientIP(),
-		})
-
-		response.SuccessWithMessage(c, nil, "系统日志已清空")
-	})
-
 	// ================== 系统统计接口 ==================
 	// 仪表板使用的统计接口，所有登录用户都可以访问
 	r.GET("/stats", func(c *gin.Context) {
@@ -670,7 +547,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 		// 获取物资总数
 		var totalMaterials int64
-		db.Table("materials").Count(&totalMaterials)
+		db.Table("material_master").Count(&totalMaterials)
 		stats["total_materials"] = totalMaterials
 
 		// 获取库存相关统计
@@ -937,65 +814,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		response.SuccessWithMessage(c, nil, message)
 	})
 
-	// 传统方式：下载备份文件 (使用查询参数)
-	r.GET("/backup/download", auth.PermissionMiddleware(db, "system_backup"), func(c *gin.Context) {
-		backupName := c.Query("name")
-		if backupName == "" {
-			response.BadRequest(c, "备份文件名不能为空")
-			return
-		}
-
-		backupPath := filepath.Join(".", backupName)
-		if _, err := os.Stat(backupPath); os.IsNotExist(err) {
-			response.NotFound(c, "备份文件不存在")
-			return
-		}
-
-		c.FileAttachment(backupPath, backupName)
-	})
-
-	// 传统方式：删除备份文件 (使用POST body)
-	r.POST("/backup/delete", auth.PermissionMiddleware(db, "system_backup"), func(c *gin.Context) {
-		var req struct {
-			Name string `json:"name"`
-		}
-		if err := c.ShouldBindJSON(&req); err != nil {
-			response.BadRequest(c, "请求参数错误")
-			return
-		}
-
-		if req.Name == "" {
-			response.BadRequest(c, "备份文件名不能为空")
-			return
-		}
-
-		backupPath := filepath.Join(".", req.Name)
-
-		// 检查文件是否存在
-		fileExists := true
-		if _, err := os.Stat(backupPath); os.IsNotExist(err) {
-			fileExists = false
-		}
-
-		// 如果文件存在，删除文件
-		if fileExists {
-			if err := os.Remove(backupPath); err != nil {
-				response.InternalError(c, fmt.Sprintf("删除文件失败: %v", err))
-				return
-			}
-		}
-
-		// 从数据库中删除记录
-		db.Where("filename = ?", req.Name).Delete(&SystemBackup{})
-
-		message := "备份文件删除成功"
-		if !fileExists {
-			message = "备份记录已删除（文件不存在）"
-		}
-
-		response.SuccessWithMessage(c, nil, message)
-	})
-
 	// 恢复备份 - 危险操作，会清空当前数据库
 	r.POST("/backup/restore", auth.PermissionMiddleware(db, "system_backup"), func(c *gin.Context) {
 		var req struct {
@@ -1150,7 +968,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		}
 
 		var stats []CategoryStat
-		if err := db.Table("materials").
+		if err := db.Table("material_master").
 			Select("COALESCE(category, '未分类') as category, COUNT(*) as count").
 			Group("category").
 			Order("count DESC").

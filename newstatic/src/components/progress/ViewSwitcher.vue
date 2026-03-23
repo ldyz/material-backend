@@ -3,16 +3,13 @@
     <el-radio-group v-model="currentView" size="large" @change="handleViewChange">
       <el-radio-button value="list">
         <el-icon><List /></el-icon>
-        列表视图
+        进入列表视图
       </el-radio-button>
       <el-radio-button value="gantt">
         <el-icon><Histogram /></el-icon>
-        甘特图
+        进入甘特图
       </el-radio-button>
-      <el-radio-button value="network">
-        <el-icon><Share /></el-icon>
-        网络图
-      </el-radio-button>
+      
     </el-radio-group>
 
     <div class="view-actions">

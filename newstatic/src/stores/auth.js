@@ -137,9 +137,15 @@ export const useAuthStore = defineStore('auth', {
             // 格式2: 通过角色关联权限，需要合并所有角色的权限
             this.permissions = [
               ...new Set(
-                userData.roles.flatMap(role =>
-                  Array.isArray(role.permissions) ? role.permissions : []
-                )
+                userData.roles.flatMap(role => {
+                  // 处理权限字符串（逗号分隔）
+                  if (typeof role.permissions === 'string') {
+                    return role.permissions.split(',').filter(p => p.trim())
+                  } else if (Array.isArray(role.permissions)) {
+                    return role.permissions
+                  }
+                  return []
+                })
               )
             ]
           } else {
@@ -207,7 +213,30 @@ export const useAuthStore = defineStore('auth', {
 
         // 更新用户状态
         this.user = userData
-        this.permissions = userData.permissions || []
+
+        // 提取权限（与 login 方法相同的逻辑）
+        if (userData.permissions && Array.isArray(userData.permissions)) {
+          // 格式1: 直接返回 permissions 数组
+          this.permissions = userData.permissions
+        } else if (userData.roles && Array.isArray(userData.roles)) {
+          // 格式2: 通过角色关联权限，需要合并所有角色的权限
+          this.permissions = [
+            ...new Set(
+              userData.roles.flatMap(role => {
+                // 解析角色的 permissions 字符串
+                if (typeof role.permissions === 'string') {
+                  return role.permissions.split(',').filter(p => p.trim())
+                } else if (Array.isArray(role.permissions)) {
+                  return role.permissions
+                }
+                return []
+              })
+            )
+          ]
+        } else {
+          this.permissions = []
+        }
+
         this.isAdmin = userData.is_admin || userData.role === 'admin'
 
         // 持久化到 localStorage

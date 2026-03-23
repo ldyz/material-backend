@@ -50,7 +50,8 @@ func TestProjectCRUD(t *testing.T) {
 	if r.Code != http.StatusOK { t.Fatalf("login failed: %d %s", r.Code, r.Body.String()) }
 	var resp map[string]any
 	json.Unmarshal(r.Body.Bytes(), &resp)
-	tok := resp["token"].(string)
+	meta := resp["meta"].(map[string]any)
+	tok := meta["token"].(string)
 
 	// create project
 	p := map[string]any{"name": "Test Project", "description": "desc"}
@@ -63,7 +64,7 @@ func TestProjectCRUD(t *testing.T) {
 	if r2.Code != http.StatusCreated { t.Fatalf("create failed: %d %s", r2.Code, r2.Body.String()) }
 	var cres map[string]any
 	json.Unmarshal(r2.Body.Bytes(), &cres)
-	proj := cres["project"].(map[string]any)
+	proj := cres["data"].(map[string]any)
 	id := proj["id"]
 
 	// list
@@ -140,7 +141,7 @@ func TestProjectMembers(t *testing.T) {
 	if r2.Code != http.StatusOK { t.Fatalf("list members failed: %d %s", r2.Code, r2.Body.String()) }
 	var resp map[string]any
 	json.Unmarshal(r2.Body.Bytes(), &resp)
-	members := resp["members"].([]any)
+	members := resp["data"].([]any)
 	if len(members) != 1 { t.Fatalf("expected 1 member, got %d", len(members)) }
 
 	// remove member

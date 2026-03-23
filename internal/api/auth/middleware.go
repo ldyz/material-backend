@@ -3,11 +3,23 @@ package auth
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yourorg/material-backend/backend/internal/api/response"
 	"gorm.io/gorm"
 )
+
+// roleMapping maps English role values to Chinese role names in the database
+var roleMapping = map[string]string{
+	"foreman":                 "施工员",
+	"keeper":                  "保管员",
+	"project_manager":         "项目经理",
+	"worker":                  "作业人员",
+	"material_staff":          "材料员",
+	"subcontractor_material_staff": "分包材料员",
+	"appointment_admin":       "预约管理员",
+}
 
 // GetCurrentUser fetches current user from DB using context's current_user_id
 func GetCurrentUser(c *gin.Context, db *gorm.DB) (*User, error) {
@@ -30,6 +42,32 @@ func GetCurrentUser(c *gin.Context, db *gorm.DB) (*User, error) {
 	if err := db.Preload("Roles").First(&user, id).Error; err != nil {
 		return nil, err
 	}
+
+	// Fix: If Roles is empty, load role based on role field for backward compatibility
+	if len(user.Roles) == 0 && user.Role != "" {
+		// Try to find the role by mapping or directly
+		var role Role
+		roleName := user.Role
+
+		// Check if there's a mapping for this role
+		if mappedName, ok := roleMapping[user.Role]; ok {
+			roleName = mappedName
+		}
+
+		// Try with exact match first, then case-insensitive
+		if err := db.Where("name = ?", roleName).First(&role).Error; err != nil {
+			if err := db.Where("LOWER(name) = ?", strings.ToLower(roleName)).First(&role).Error; err != nil {
+				// If still not found, try the original role value
+				db.Where("LOWER(name) = ?", strings.ToLower(user.Role)).First(&role)
+			}
+		}
+
+		// Only set Roles if we found a match
+		if role.ID != 0 {
+			user.Roles = []Role{role}
+		}
+	}
+
 	return &user, nil
 }
 

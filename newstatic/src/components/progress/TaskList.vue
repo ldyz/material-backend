@@ -2,6 +2,7 @@
   <div class="gantt-body" ref="ganttBodyRef">
     <!-- 任务表格 -->
     <TaskTable
+      :is-collapsed="isCollapsed"
       :tasks="tasks"
       :grouped-tasks="groupedTasks"
       :selected-task-id="selectedTaskId"
@@ -11,6 +12,7 @@
       :collapsed-groups="collapsedGroups"
       :empty-description="emptyDescription"
       @row-click="handleRowClick"
+      @row-dblclick="handleRowDblClick"
       @toggle-group="toggleGroup"
       @context-menu="handleTableContextMenu"
       @cell-edit="handleCellEdit"
@@ -19,6 +21,7 @@
 
     <!-- 任务时间轴 -->
     <TaskTimeline
+      :show-task-names="showTaskNames"
       :tasks="tasks"
       :raw-tasks="rawTasks"
       :selected-task-id="selectedTaskId"
@@ -36,6 +39,8 @@
       :tooltip-visible="tooltipVisible"
       :tooltip-position="tooltipPosition"
       :tooltip-text="tooltipText"
+      :preview-task="previewTask"
+      :drag-mode="dragMode"
       :today-position="todayPosition"
       :arrow-marker-id="arrowMarkerId"
       :arrow-color="arrowColor"
@@ -56,7 +61,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import TaskTable from './TaskTable.vue'
 import TaskTimeline from './TaskTimeline.vue'
 
@@ -166,6 +171,14 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  previewTask: {
+    type: Object,
+    default: null
+  },
+  dragMode: {
+    type: String,
+    default: 'none'
+  },
   searchKeyword: {
     type: String,
     default: ''
@@ -189,11 +202,20 @@ const props = defineProps({
   todayPosition: {
     type: Number,
     default: null
+  },
+  showTaskNames: {
+    type: Boolean,
+    default: false
+  },
+  isCollapsed: {
+    type: Boolean,
+    default: false
   }
 })
 
 const emit = defineEmits([
   'row-click',
+  'row-dblclick',
   'task-click',
   'task-dblclick',
   'task-mousedown',
@@ -212,6 +234,11 @@ const taskTimelineRef = ref(null)
 // 行点击
 const handleRowClick = (task) => {
   emit('row-click', task)
+}
+
+// 行双击
+const handleRowDblClick = (task) => {
+  emit('row-dblclick', task)
 }
 
 // 任务点击
@@ -250,8 +277,9 @@ const handleMouseMove = (position) => {
 }
 
 // 表格右键菜单
-const handleTableContextMenu = ({ event, task }) => {
-  emit('context-menu', { event, task })
+const handleTableContextMenu = (data) => {
+  // 直接传递整个数据对象，包括可能的新任务事件
+  emit('context-menu', data)
 }
 
 // 单元格编辑
@@ -274,19 +302,56 @@ defineExpose({
 <style scoped>
 .gantt-body {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: auto;
   min-height: 0;
+  height: 0; /* 强制 flex 子元素收缩 */
   position: relative;
   display: flex;
+  overflow-y: auto;
+  overflow-x: auto;
+  /* 性能优化 */
+  contain: content; /* 隔离渲染，避免影响其他元素 */
+  will-change: scroll-position; /* 提示浏览器优化滚动性能 */
+}
+
+/* 任务表格固定在左侧 */
+.gantt-body > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 50;
+  background: #fff;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
 }
 
 /* 确保表格和时间轴同步滚动 */
 .gantt-body > * {
   flex-shrink: 0;
+  min-height: 0;
+  /* 性能优化 - 减少重排 */
+  contain: layout style;
 }
 
 .gantt-body > *:last-child {
   flex: 1;
+  min-width: 0;
+}
+
+/* 性能优化：为大量任务启用 GPU 加速 */
+.gantt-body::webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.gantt-body::webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.gantt-body::webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.gantt-body::webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 </style>

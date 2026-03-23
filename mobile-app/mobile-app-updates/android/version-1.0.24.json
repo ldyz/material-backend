@@ -1,0 +1,12 @@
+{
+  "version": "1.0.24",
+  "android": "https://your-domain.com/mobile-app-updates/android/app-release-1.0.24.apk",
+  "ios": "https://your-domain.com/mobile-app-updates/ios/app-1.0.24.ipa",
+  "changes": [
+    "修复审批历史显示问题 - 只显示已激活的审批节点",
+    "优化审批记录加载逻辑",
+    "改进节点名称显示"
+  ],
+  "force_update": false,
+  "released_at": "2026-02-18T02:55:00Z"
+}

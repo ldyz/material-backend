@@ -223,9 +223,10 @@ const fetchCategories = async () => {
   loading.value = true
   try {
     const { data } = await materialApi.getCategories()
-    categoryList.value = buildCategoryTree(data || [])
+    // 后端已经返回树形结构，直接使用
+    categoryList.value = data || []
 
-    // 搜索过滤
+    // 如果有搜索关键词，进行过滤
     if (searchForm.keyword) {
       const keyword = searchForm.keyword.toLowerCase()
       categoryList.value = filterCategoriesByKeyword(categoryList.value, keyword)
@@ -237,29 +238,6 @@ const fetchCategories = async () => {
   } finally {
     loading.value = false
   }
-}
-
-// 构建分类树
-const buildCategoryTree = (categories) => {
-  const map = {}
-  const tree = []
-
-  // 创建映射
-  categories.forEach(cat => {
-    map[cat.id] = { ...cat, children: [] }
-  })
-
-  // 构建树形结构
-  categories.forEach(cat => {
-    if (cat.parent_id && map[cat.parent_id]) {
-      map[cat.parent_id].children.push(map[cat.id])
-      map[cat.parent_id].hasChildren = true
-    } else {
-      tree.push(map[cat.id])
-    }
-  })
-
-  return tree
 }
 
 // 根据关键词过滤分类

@@ -8,10 +8,10 @@
       </div>
     </div>
 
-    <!-- 统计卡片 -->
-    <div class="stats-section">
+    <!-- 统计卡片 - 根据权限过滤 -->
+    <div class="stats-section" v-if="visibleStatistics.length > 0">
       <el-row :gutter="20">
-        <el-col :xs="12" :sm="8" :md="6" v-for="stat in statistics" :key="stat.title">
+        <el-col :xs="12" :sm="8" :md="6" v-for="stat in visibleStatistics" :key="stat.title">
           <div class="stat-card" :class="stat.status">
             <div class="stat-icon" :style="{ background: stat.color }">
               <el-icon :size="28" color="white">
@@ -21,10 +21,28 @@
             <div class="stat-content">
               <div class="stat-value" v-loading="stat.loading">{{ stat.value }}</div>
               <div class="stat-label">{{ stat.title }}</div>
-              <div class="stat-trend" v-if="stat.trend">
-                <el-icon><TrendCharts /></el-icon>
-                <span>{{ stat.trendText }}</span>
-              </div>
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+    </div>
+
+    <!-- 预约统计卡片 -->
+    <div class="stats-section" v-if="authStore.hasPermission('appointment_view')">
+      <div class="section-header">
+        <h3 class="section-title">施工预约统计</h3>
+      </div>
+      <el-row :gutter="20" class="mt-16">
+        <el-col :xs="12" :sm="6" :md="6" v-for="stat in appointmentStats" :key="stat.title">
+          <div class="stat-card" :class="stat.status" @click="handleStatClick(stat)">
+            <div class="stat-icon" :style="{ background: stat.color }">
+              <el-icon :size="28" color="white">
+                <component :is="stat.icon" />
+              </el-icon>
+            </div>
+            <div class="stat-content">
+              <div class="stat-value">{{ stat.value }}</div>
+              <div class="stat-label">{{ stat.title }}</div>
             </div>
           </div>
         </el-col>
@@ -34,7 +52,7 @@
     <!-- 主要内容区域 -->
     <el-row :gutter="20" class="content-section">
       <!-- 快捷操作 -->
-      <el-col :xs="24" :lg="16">
+      <el-col :xs="24" :lg="24">
         <div class="card quick-actions-card">
           <div class="card-header">
             <h3 class="card-title">快捷操作</h3>
@@ -42,9 +60,9 @@
               查看全部
             </el-button>
           </div>
-          <div class="actions-grid">
+          <div class="actions-grid" v-if="visibleQuickActions.length > 0">
             <div
-              v-for="action in quickActions"
+              v-for="action in visibleQuickActions"
               :key="action.key"
               class="action-item"
               @click="handleAction(action)"
@@ -60,37 +78,8 @@
               </div>
             </div>
           </div>
-        </div>
-      </el-col>
-
-      <!-- 最近活动 -->
-      <el-col :xs="24" :lg="8">
-        <div class="card activity-card">
-          <div class="card-header">
-            <h3 class="card-title">最近活动</h3>
-            <el-button type="primary" text @click="viewAllLogs">查看全部</el-button>
-          </div>
-          <div class="activity-list" v-loading="logsLoading">
-            <div
-              v-for="activity in recentActivities"
-              :key="activity.id"
-              class="activity-item"
-            >
-              <div class="activity-icon" :class="activity.type">
-                <el-icon>
-                  <component :is="getActivityIcon(activity.type)" />
-                </el-icon>
-              </div>
-              <div class="activity-content">
-                <div class="activity-title">{{ activity.title }}</div>
-                <div class="activity-time">{{ activity.time }}</div>
-              </div>
-            </div>
-            <el-empty
-              v-if="recentActivities.length === 0 && !logsLoading"
-              description="暂无活动"
-              :image-size="80"
-            />
+          <div v-else class="empty-actions">
+            <p>暂无可用的快捷操作</p>
           </div>
         </div>
       </el-col>
@@ -113,15 +102,17 @@ import {
   Calendar,
   Flag,
   Bell,
-  TrendCharts,
   Plus,
   Upload,
   Download,
   Edit,
   Delete,
-  Management
+  Management,
+  Clock,
+  User,
+  Check
 } from '@element-plus/icons-vue'
-import { systemApi } from '@/api'
+import { systemApi, appointmentApi } from '@/api'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -149,8 +140,15 @@ const statistics = ref([
     icon: Box,
     color: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     status: 'success',
-    trend: 'up',
-    trendText: '+12%'
+    permissions: ['material_view']
+  },
+  {
+    title: '项目总数',
+    value: '-',
+    icon: Flag,
+    color: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+    status: 'primary',
+    permissions: ['project_view']
   },
   {
     title: '库存预警',
@@ -158,8 +156,7 @@ const statistics = ref([
     icon: ShoppingCart,
     color: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
     status: 'warning',
-    trend: 'down',
-    trendText: '较上月'
+    permissions: ['stock_view', 'stock_alerts']
   },
   {
     title: '待处理出库',
@@ -167,17 +164,63 @@ const statistics = ref([
     icon: Document,
     color: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
     status: 'info',
-    trend: 'neutral',
-    trendText: '待处理'
+    permissions: ['requisition_view']
   },
   {
-    title: '进行中计划',
+    title: '本月入库',
     value: '-',
-    icon: Flag,
-    color: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+    icon: Upload,
+    color: 'linear-gradient(135deg, #30cfd0 0%, #330867 100%)',
+    status: 'success',
+    permissions: ['inbound_view']
+  },
+  {
+    title: '本月出库',
+    value: '-',
+    icon: Download,
+    color: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
     status: 'primary',
-    trend: 'up',
-    trendText: '+5%'
+    permissions: ['requisition_view']
+  }
+])
+
+// 可见统计数据（根据权限过滤）
+const visibleStatistics = computed(() => {
+  return statistics.value.filter(stat => {
+    if (!stat.permissions || stat.permissions.length === 0) return true
+    return stat.permissions.some(perm => authStore.hasPermission(perm))
+  })
+})
+
+// 预约统计数据
+const appointmentStats = ref([
+  {
+    title: '全部预约',
+    value: '-',
+    icon: Calendar,
+    color: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    status: 'primary'
+  },
+  {
+    title: '待审批',
+    value: '-',
+    icon: Clock,
+    color: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+    status: 'warning'
+  },
+  {
+    title: '已排期',
+    value: '-',
+    icon: Check,
+    color: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+    status: 'success'
+  },
+  {
+    title: '进行中',
+    value: '-',
+    icon: User,
+    color: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+    status: 'info'
   }
 ])
 
@@ -190,7 +233,8 @@ const quickActions = ref([
     icon: Plus,
     color: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     path: '/materials',
-    action: 'create'
+    action: 'create',
+    permissions: ['material_create']
   },
   {
     key: 'create_inbound',
@@ -199,7 +243,8 @@ const quickActions = ref([
     icon: Upload,
     color: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
     path: '/inbound',
-    action: 'create'
+    action: 'create',
+    permissions: ['inbound_create']
   },
   {
     key: 'create_requisition',
@@ -208,7 +253,8 @@ const quickActions = ref([
     icon: DocumentCopy,
     color: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
     path: '/requisitions',
-    action: 'create'
+    action: 'create',
+    permissions: ['requisition_create']
   },
   {
     key: 'create_plan',
@@ -217,7 +263,8 @@ const quickActions = ref([
     icon: List,
     color: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
     path: '/material-plans',
-    action: 'create'
+    action: 'create',
+    permissions: ['material_plan_create']
   },
   {
     key: 'manage_stock',
@@ -226,7 +273,8 @@ const quickActions = ref([
     icon: Management,
     color: 'linear-gradient(135deg, #30cfd0 0%, #330867 100%)',
     path: '/stock',
-    action: 'view'
+    action: 'view',
+    permissions: ['stock_view']
   },
   {
     key: 'view_logs',
@@ -234,14 +282,19 @@ const quickActions = ref([
     desc: '查看系统操作日志',
     icon: Bell,
     color: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
-    path: '/system',
-    action: 'logs'
+    path: '/operation-logs',
+    action: 'view',
+    permissions: ['audit_view']
   }
 ])
 
-// 最近活动数据
-const recentActivities = ref([])
-const logsLoading = ref(false)
+// 可见快捷操作（根据权限过滤）
+const visibleQuickActions = computed(() => {
+  return quickActions.value.filter(action => {
+    if (!action.permissions || action.permissions.length === 0) return true
+    return action.permissions.some(perm => authStore.hasPermission(perm))
+  })
+})
 
 // 获取统计数据
 const fetchStatistics = async () => {
@@ -249,84 +302,29 @@ const fetchStatistics = async () => {
     const response = await systemApi.getStats()
     const data = response.data || response
 
-    // 更新统计数据
+    // 更新统计数据 - 按照新的6个统计卡片顺序
     if (data.total_materials !== undefined) {
       statistics.value[0].value = data.total_materials.toLocaleString()
     }
+    if (data.total_projects !== undefined) {
+      statistics.value[1].value = data.total_projects.toLocaleString()
+    }
     if (data.low_stock_count !== undefined) {
-      statistics.value[1].value = data.low_stock_count.toLocaleString()
+      statistics.value[2].value = data.low_stock_count.toLocaleString()
     }
     if (data.pending_requisitions !== undefined) {
-      statistics.value[2].value = data.pending_requisitions.toLocaleString()
+      statistics.value[3].value = data.pending_requisitions.toLocaleString()
     }
-    if (data.total_users !== undefined) {
-      statistics.value[3].value = data.total_users.toLocaleString()
+    if (data.monthly_inbound !== undefined) {
+      statistics.value[4].value = data.monthly_inbound.toLocaleString()
+    }
+    if (data.monthly_requisitions !== undefined) {
+      statistics.value[5].value = data.monthly_requisitions.toLocaleString()
     }
   } catch (error) {
     console.error('获取统计数据失败:', error)
     // 保持默认值
   }
-}
-
-// 获取最近活动
-const fetchRecentActivities = async () => {
-  logsLoading.value = true
-  try {
-    const { data } = await systemApi.getLogs({
-      page: 1,
-      page_size: 5
-    })
-
-    const logs = data || []
-
-    recentActivities.value = logs.slice(0, 5).map((log, index) => ({
-      id: index,
-      type: log.status === 'success' || log.result === '成功' ? 'success' : 'error',
-      title: log.action || log.description || log.operation || '系统操作',
-      time: formatTime(log.created_at || log.timestamp || ''),
-      raw: log
-    }))
-  } catch (error) {
-    console.error('获取最近活动失败:', error)
-  } finally {
-    logsLoading.value = false
-  }
-}
-
-// 格式化时间
-const formatTime = (timeStr) => {
-  if (!timeStr) return ''
-
-  try {
-    const date = new Date(timeStr)
-    const now = new Date()
-    const diff = now - date
-
-    if (diff < 60000) { // 1分钟内
-      return '刚刚'
-    } else if (diff < 3600000) { // 1小时内
-      const minutes = Math.floor(diff / 60000)
-      return `${minutes}分钟前`
-    } else if (diff < 86400000) { // 24小时内
-      const hours = Math.floor(diff / 3600000)
-      return `${hours}小时前`
-    } else {
-      return date.toLocaleDateString('zh-CN')
-    }
-  } catch (error) {
-    return timeStr
-  }
-}
-
-// 获取活动图标
-const getActivityIcon = (type) => {
-  const iconMap = {
-    success: 'CircleCheck',
-    error: 'CircleClose',
-    info: 'InfoFilled',
-    warning: 'Warning'
-  }
-  return iconMap[type] || 'InfoFilled'
 }
 
 // 处理快捷操作
@@ -345,14 +343,43 @@ const viewAllActions = () => {
   console.log('查看全部快捷操作')
 }
 
-// 查看全部日志
-const viewAllLogs = () => {
-  router.push('/system')
+// 获取预约统计数据
+const fetchAppointmentStats = async () => {
+  try {
+    const response = await appointmentApi.getStats()
+    const data = response.data || {}
+
+    // 更新预约统计数据
+    if (data.total !== undefined) {
+      appointmentStats.value[0].value = data.total.toLocaleString()
+    }
+    if (data.pending !== undefined) {
+      appointmentStats.value[1].value = data.pending.toLocaleString()
+    }
+    if (data.scheduled !== undefined) {
+      appointmentStats.value[2].value = data.scheduled.toLocaleString()
+    }
+    if (data.in_progress !== undefined) {
+      appointmentStats.value[3].value = data.in_progress.toLocaleString()
+    }
+  } catch (error) {
+    console.error('获取预约统计失败:', error)
+  }
+}
+
+// 处理统计卡片点击
+const handleStatClick = (stat) => {
+  router.push({
+    path: '/appointments',
+    query: { status: stat.title === '待审批' ? 'pending' : stat.title === '已排期' ? 'scheduled' : stat.title === '进行中' ? 'in_progress' : '' }
+  })
 }
 
 onMounted(() => {
   fetchStatistics()
-  fetchRecentActivities()
+  if (authStore.hasPermission('appointment_view')) {
+    fetchAppointmentStats()
+  }
 })
 </script>
 
@@ -385,6 +412,24 @@ onMounted(() => {
 /* 统计区域 */
 .stats-section {
   margin-bottom: 24px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0;
+}
+
+.mt-16 {
+  margin-top: 16px;
 }
 
 .stat-card {
@@ -445,18 +490,6 @@ onMounted(() => {
   font-size: 14px;
   color: #606266;
   margin-right: auto;
-}
-
-.stat-trend {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  color: #909399;
-}
-
-.stat-trend .el-icon {
-  font-size: 16px;
 }
 
 /* 主内容区域 */
@@ -539,68 +572,16 @@ onMounted(() => {
   color: #909399;
 }
 
-/* 最近活动卡片 */
-.activity-card {
-  height: 100%;
-}
-
-.activity-list {
-  padding: 20px 0;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.activity-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 0;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.activity-item:last-child {
-  border-bottom: none;
-}
-
-.activity-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.activity-icon.success {
-  background-color: #f0f9ff;
-  color: #67c23a;
-}
-
-.activity-icon.error {
-  background-color: #fef0f0;
-  color: #f56c6c;
-}
-
-.activity-icon.info {
-  background-color: #e1f3ff;
-  color: #409eff;
-}
-
-.activity-content {
-  flex: 1;
-}
-
-.activity-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: #303133;
-  margin-bottom: 4px;
-}
-
-.activity-time {
-  font-size: 12px;
+/* 空状态 */
+.empty-actions {
+  padding: 40px 20px;
+  text-align: center;
   color: #909399;
+}
+
+.empty-actions p {
+  margin: 0;
+  font-size: 14px;
 }
 
 /* 响应式 */

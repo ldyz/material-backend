@@ -37,10 +37,7 @@
 import { ref, computed, watch } from 'vue'
 import { QuillEditor } from '@vueup/vue-quill'
 import '@vueup/vue-quill/dist/vue-quill.snow.css'
-import { useAuthStore } from '@/stores/auth'
-import axios from 'axios'
-
-const authStore = useAuthStore()
+import { uploadApi } from '@/api'
 
 /**
  * 组件 Props
@@ -65,7 +62,7 @@ const props = defineProps({
    */
   placeholder: {
     type: String,
-    default: '请输入内容...'
+    default: ''
   },
   /**
    * 是否禁用
@@ -222,25 +219,15 @@ const handleReady = (quill) => {
           const formData = new FormData()
           formData.append('file', file)
 
-          // 上传图片
-          const response = await axios.post('/api/upload/image', formData, {
-            headers: {
-              'Authorization': `Bearer ${authStore.token}`,
-              'Content-Type': 'multipart/form-data'
-            }
-          })
+          // 使用API层上传图片
+          const result = await uploadApi.uploadImage(formData)
+          const imageUrl = result.data.url
 
-          if (response.data && response.data.code === 200) {
-            const imageUrl = response.data.data.url
-
-            // 在编辑器中插入图片
-            quill.enable()
-            quill.setSelection(range.index, range.index + range.length)
-            quill.focus()
-            quill.insertEmbed(range.index, 'image', imageUrl)
-          } else {
-            throw new Error(response.data?.message || '上传失败')
-          }
+          // 在编辑器中插入图片
+          quill.enable()
+          quill.setSelection(range.index, range.index + range.length)
+          quill.focus()
+          quill.insertEmbed(range.index, 'image', imageUrl)
         } catch (error) {
           console.error('图片上传失败:', error)
           // 显示错误提示

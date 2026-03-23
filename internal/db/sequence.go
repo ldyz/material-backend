@@ -11,17 +11,20 @@ func SyncPostgreSQLSequences(db *gorm.DB) error {
 	// List of tables to sync
 	tables := []string{
 		"inbound_orders",
-		"inbound_order_items",
+		"inbound_items",
 		"requisitions",
 		"requisition_items",
-		"outbound_orders",
-		"outbound_order_items",
 		"materials",
+		"material_master",
+		"material_plans",
+		"material_plan_items",
 		"projects",
-		"stock",
+		"stocks",
 		"stock_logs",
 		"notifications",
 		"users",
+		"workflow_instances",
+		"workflow_tasks",
 	}
 
 	for _, table := range tables {

@@ -47,6 +47,7 @@
                 :class="['edge', { 'edge-selected': selectedEdge === edge.id }]"
                 :marker-end="selectedEdge === edge.id ? 'url(#arrowhead-selected)' : 'url(#arrowhead)'"
                 @click="selectEdge(edge.id)"
+                @contextmenu.prevent="showEdgeContextMenu($event, edge.id)"
               />
 
               <!-- 连线操作按钮（选中时显示） -->
@@ -390,7 +391,7 @@
           </li>
           <li><strong>选择节点/连线</strong>：点击节点或连线可选中并显示属性</li>
           <li><strong>修改连线目标</strong>：选中连线后，拖拽橙色圆点到新目标节点</li>
-          <li><strong>删除连线</strong>：选中连线后点击删除按钮或连线中点的×按钮</li>
+          <li><strong>删除连线</strong>：右键点击连线选择删除，或选中连线后点击删除按钮/连线中点的×按钮</li>
           <li><strong>删除节点</strong>：选中节点后在属性面板中点击删除</li>
         </ul>
         <div class="tips-footer">
@@ -404,6 +405,29 @@
         显示操作提示
       </el-button>
     </div>
+
+    <!-- 右键菜单 -->
+    <teleport to="body">
+      <div
+        v-if="contextMenuVisible"
+        class="edge-context-menu"
+        :style="{ left: contextMenuPosition.x + 'px', top: contextMenuPosition.y + 'px' }"
+        @click.stop
+      >
+        <div class="context-menu-item" @click="deleteEdgeFromContext">
+          <el-icon :size="14"><Delete /></el-icon>
+          <span>删除连线</span>
+        </div>
+      </div>
+    </teleport>
+
+    <!-- 点击遮罩层关闭右键菜单 -->
+    <div
+      v-if="contextMenuVisible"
+      class="context-menu-overlay"
+      @click="hideContextMenu"
+      @contextmenu.prevent="hideContextMenu"
+    ></div>
   </div>
 </template>
 
@@ -488,6 +512,11 @@ const showTips = ref(true)
 
 // 全屏状态
 const isFullscreen = ref(false)
+
+// 右键菜单状态
+const contextMenuVisible = ref(false)
+const contextMenuPosition = ref({ x: 0, y: 0 })
+const contextMenuEdgeId = ref(null)
 
 // 节点ID计数器
 let nodeIdCounter = 1
@@ -1000,6 +1029,28 @@ const selectEdge = (edgeId) => {
 const clearSelection = () => {
   selectedNode.value = null
   selectedEdge.value = null
+}
+
+// 右键菜单功能
+const showEdgeContextMenu = (event, edgeId) => {
+  contextMenuEdgeId.value = edgeId
+  contextMenuPosition.value = {
+    x: event.clientX,
+    y: event.clientY
+  }
+  contextMenuVisible.value = true
+}
+
+const hideContextMenu = () => {
+  contextMenuVisible.value = false
+  contextMenuEdgeId.value = null
+}
+
+const deleteEdgeFromContext = () => {
+  if (contextMenuEdgeId.value) {
+    deleteEdge(contextMenuEdgeId.value)
+  }
+  hideContextMenu()
 }
 
 // 更新节点数据
@@ -1529,11 +1580,13 @@ defineExpose({
 }
 
 .edge-actions {
+  /* Allow pointer events on children but not on the group itself */
   pointer-events: none;
 }
 
 .edge-delete-btn {
   cursor: pointer;
+  pointer-events: auto;
   transition: r 0.2s;
 }
 
@@ -1673,5 +1726,43 @@ defineExpose({
   background: #fff;
   border-top: 1px solid #e0e0e0;
   text-align: center;
+}
+
+/* 连线右键菜单 */
+.edge-context-menu {
+  position: fixed;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  z-index: 10001;
+  min-width: 120px;
+  padding: 4px 0;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #303133;
+  transition: background 0.2s;
+}
+
+.context-menu-item:hover {
+  background: #f5f7fa;
+  color: #f56c6c;
+}
+
+.context-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10000;
+  background: transparent;
 }
 </style>

@@ -11,6 +11,7 @@ type MaterialMaster struct {
 	Name         string    `gorm:"size:200;not null;index" json:"name"`
 	Specification string   `gorm:"size:200" json:"specification"`
 	Unit         string    `gorm:"size:20" json:"unit"`
+	Material     string    `gorm:"size:100" json:"material"`
 	Category     string    `gorm:"size:100;index" json:"category"`
 	SafetyStock  float64   `gorm:"type:decimal(15,3);default:0" json:"safety_stock"`
 	Description  string    `gorm:"type:text" json:"description"`
@@ -31,6 +32,7 @@ func (m *MaterialMaster) ToDTO() map[string]any {
 		"name":          m.Name,
 		"specification": m.Specification,
 		"unit":          m.Unit,
+		"material":      m.Material,
 		"category":      m.Category,
 		"safety_stock":  m.SafetyStock,
 		"description":   m.Description,
@@ -45,6 +47,7 @@ type CreateMaterialMasterRequest struct {
 	Name         string  `json:"name" binding:"required"`
 	Specification string `json:"specification"`
 	Unit         string  `json:"unit"`
+	Material     string  `json:"material"`
 	Category     string  `json:"category"`
 	SafetyStock  float64 `json:"safety_stock"`
 	Description  string  `json:"description"`
@@ -56,6 +59,7 @@ type UpdateMaterialMasterRequest struct {
 	Name         string  `json:"name" binding:"required"`
 	Specification string `json:"specification"`
 	Unit         string  `json:"unit"`
+	Material     string  `json:"material"`
 	Category     string  `json:"category"`
 	SafetyStock  float64 `json:"safety_stock"`
 	Description  string  `json:"description"`
@@ -68,6 +72,7 @@ type MaterialMasterQueryDTO struct {
 	Name         string  `json:"name"`
 	Specification string `json:"specification"`
 	Unit         string  `json:"unit"`
+	Material     string  `json:"material"`
 	Category     string  `json:"category"`
 	SafetyStock  float64 `json:"safety_stock"`
 	Description  string  `json:"description"`
@@ -91,6 +96,7 @@ func (m *MaterialMaster) ToQueryDTO() MaterialMasterQueryDTO {
 		Name:         m.Name,
 		Specification: m.Specification,
 		Unit:         m.Unit,
+		Material:     m.Material,
 		Category:     m.Category,
 		SafetyStock:  m.SafetyStock,
 		Description:  m.Description,

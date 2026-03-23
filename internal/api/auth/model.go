@@ -23,6 +23,7 @@ type User struct {
 	Password  string     `json:"-"`
 	Email     string     `json:"email"`
 	FullName  string     `json:"full_name"`
+	Avatar    string     `json:"avatar"`
 	Role      string     `json:"role"`
 	Group     string     `json:"group"`
 	IsActive  bool       `json:"is_active"`
@@ -104,6 +105,20 @@ func (u *User) HasPermission(permission string) bool {
 	return false
 }
 
+// HasPermissionString checks if a permissions string contains a specific permission
+func HasPermissionString(permissionsStr string, permission string) bool {
+	if permissionsStr == "" {
+		return false
+	}
+	perms := strings.Split(permissionsStr, ",")
+	for _, p := range perms {
+		if strings.TrimSpace(p) == permission {
+			return true
+		}
+	}
+	return false
+}
+
 // ToDTO converts user to a map response (permissions are parsed)
 func (u *User) ToDTO() map[string]any {
 	// 使用 map 来去重角色（避免数据库中 user_roles 重复记录导致返回重复角色）
@@ -134,15 +149,16 @@ func (u *User) ToDTO() map[string]any {
 	}
 
 	return map[string]any{
-		"id": u.ID,
-		"username": u.Username,
-		"email": u.Email,
-		"full_name": u.FullName,
-		"role": u.Role,
-		"group": u.Group,
-		"is_active": u.IsActive,
+		"id":         u.ID,
+		"username":   u.Username,
+		"email":      u.Email,
+		"full_name":  u.FullName,
+		"avatar":     u.Avatar,
+		"role":       u.Role,
+		"group":      u.Group,
+		"is_active":  u.IsActive,
 		"last_login": u.LastLogin,
 		"created_at": u.CreatedAt,
-		"roles": roles,
+		"roles":      roles,
 	}
 }

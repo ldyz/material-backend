@@ -52,6 +52,67 @@ func (s *Service) GeneratePlanNo() (string, error) {
 	return fmt.Sprintf("%s%04d", prefix, seq), nil
 }
 
+// mergeDuplicateItems merges items that reference the same material
+// Returns a deduplicated list with quantities summed
+func (s *Service) mergeDuplicateItems(items *[]CreateMaterialPlanItemRequest) []CreateMaterialPlanItemRequest {
+	// Use a map to track unique materials by key
+	// Key is either material_id (if provided) or material_name+specification
+	type materialKey struct {
+		MaterialID    uint
+		MaterialName  string
+		Specification string
+	}
+
+	mergedMap := make(map[materialKey]*CreateMaterialPlanItemRequest)
+
+	for _, item := range *items {
+		var key materialKey
+
+		if item.MaterialID > 0 {
+			// Use material_id as the key
+			key = materialKey{
+				MaterialID:    item.MaterialID,
+				MaterialName:  "",
+				Specification: "",
+			}
+		} else {
+			// Use material_name+specification as the key
+			key = materialKey{
+				MaterialID:    0,
+				MaterialName:  item.MaterialName,
+				Specification: item.Specification,
+			}
+		}
+
+		if existing, found := mergedMap[key]; found {
+			// Merge: sum quantities and keep the first item's other fields
+			existing.PlannedQuantity += item.PlannedQuantity
+			// Use the higher unit price if different
+			if item.UnitPrice > existing.UnitPrice {
+				existing.UnitPrice = item.UnitPrice
+			}
+			// Combine remarks
+			if item.Remark != "" && existing.Remark != "" {
+				existing.Remark = existing.Remark + "; " + item.Remark
+			} else if item.Remark != "" {
+				existing.Remark = item.Remark
+			}
+		} else {
+			// Add new item to the map
+			itemCopy := item
+			mergedMap[key] = &itemCopy
+		}
+	}
+
+	// Convert map back to slice
+	result := make([]CreateMaterialPlanItemRequest, 0, len(mergedMap))
+	for _, item := range mergedMap {
+		result = append(result, *item)
+	}
+
+	return result
+}
+
 // CreatePlan creates a new material plan
 func (s *Service) CreatePlan(req *CreateMaterialPlanRequest, creatorID uint, creatorName string) (*MaterialPlan, error) {
 	// Generate plan number
@@ -131,7 +192,10 @@ func (s *Service) CreatePlan(req *CreateMaterialPlanRequest, creatorID uint, cre
 
 	// Create items
 	if len(req.Items) > 0 {
-		for i, itemReq := range req.Items {
+		// Merge duplicate items by material_id or material_name+specification
+		mergedItems := s.mergeDuplicateItems(&req.Items)
+
+		for i, itemReq := range mergedItems {
 			item, err := s.CreatePlanItem(tx, plan.ID, &itemReq)
 			if err != nil {
 				tx.Rollback()
@@ -157,12 +221,100 @@ func (s *Service) CreatePlan(req *CreateMaterialPlanRequest, creatorID uint, cre
 
 // CreatePlanItem creates a plan item
 func (s *Service) CreatePlanItem(tx *gorm.DB, planID uint, req *CreateMaterialPlanItemRequest) (*MaterialPlanItem, error) {
-	// Validate material exists in material_master
-	var material struct {
-		ID uint
-	}
-	if err := tx.Table("material_master").Where("id = ?", req.MaterialID).First(&material).Error; err != nil {
-		return nil, errors.New("material not found in material_master")
+	var materialID uint
+
+	// Debug log
+	fmt.Printf("[DEBUG] CreatePlanItem: material_name=%q, material=%q, specification=%q, material_id=%d\n",
+		req.MaterialName, req.Material, req.Specification, req.MaterialID)
+
+	// Strategy 1: If material_id is provided, use it directly
+	if req.MaterialID > 0 {
+		// Validate material exists in material_master
+		var material struct {
+			ID uint
+		}
+		if err := tx.Table("material_master").Where("id = ?", req.MaterialID).First(&material).Error; err != nil {
+			return nil, errors.New("material not found in material_master")
+		}
+		materialID = req.MaterialID
+	} else if req.MaterialName != "" {
+		// Strategy 2: Try to find material by name, specification AND material
+		var material struct {
+			ID       uint
+			Material string
+		}
+		query := tx.Table("material_master").Where("name = ?", req.MaterialName)
+
+		// If specification is provided, also match by specification
+		if req.Specification != "" {
+			query = query.Where("specification = ?", req.Specification)
+		}
+
+		// Also match by material - only exact match on all three fields
+		if req.Material != "" {
+			query = query.Where("material = ?", req.Material)
+		} else {
+			// If material is empty, only match records where material is also empty
+			query = query.Where("(material = '' OR material IS NULL)")
+		}
+
+		if err := query.First(&material).Error; err == nil {
+			// Found exact match (name + specification + material all match)
+			materialID = material.ID
+			fmt.Printf("[DEBUG] Found exact match material_master ID=%d (name=%q, spec=%q, material=%q)\n",
+				materialID, req.MaterialName, req.Specification, req.Material)
+		} else {
+			// No exact match found - create new record
+			fmt.Printf("[DEBUG] No exact match found (name=%q, spec=%q, material=%q). Creating new record.\n",
+				req.MaterialName, req.Specification, req.Material)
+			materialID = 0
+		}
+
+		// If no exact match, create new record
+		if materialID == 0 {
+			// Strategy 3: Auto-create material_master record
+			// Generate a unique code if not provided
+			code := req.MaterialCode
+			if code == "" {
+				// Get next ID from sequence to generate unique code
+				var nextID int64
+				if err := tx.Raw("SELECT nextval('material_master_id_seq')").Scan(&nextID).Error; err != nil {
+					return nil, fmt.Errorf("failed to get next sequence value: %w", err)
+				}
+				code = fmt.Sprintf("AUTO%d", nextID)
+			}
+
+			newMaterial := struct {
+				ID            uint
+				Code          string
+				Name          string
+				Specification string
+				Material      string
+				Category      string
+				Unit          string
+			}{
+				Code:          code,
+				Name:          req.MaterialName,
+				Specification: req.Specification,
+				Material:      req.Material,
+				Category:      req.Category,
+				Unit:          req.Unit,
+			}
+
+			fmt.Printf("[DEBUG] Auto-creating material_master: code=%q, name=%q, material=%q, specification=%q\n",
+				newMaterial.Code, newMaterial.Name, newMaterial.Material, newMaterial.Specification)
+
+			if err := tx.Table("material_master").Create(&newMaterial).Error; err != nil {
+				return nil, fmt.Errorf("failed to auto-create material_master: %w", err)
+			}
+
+			fmt.Printf("[DEBUG] Created material_master with ID=%d, material=%q\n", newMaterial.ID, newMaterial.Material)
+
+			// Use the ID from the newly created material directly
+			materialID = newMaterial.ID
+		}
+	} else {
+		return nil, errors.New("either material_id or material_name is required")
 	}
 
 	// Parse required date
@@ -177,7 +329,7 @@ func (s *Service) CreatePlanItem(tx *gorm.DB, planID uint, req *CreateMaterialPl
 
 	item := &MaterialPlanItem{
 		PlanID:          planID,
-		MaterialID:      req.MaterialID,
+		MaterialID:      materialID,
 		PlannedQuantity: req.PlannedQuantity,
 		UnitPrice:       req.UnitPrice,
 		RequiredDate:    requiredDate,
@@ -438,7 +590,7 @@ func (s *Service) GetPlanItemsProgress(planID uint) ([]map[string]any, error) {
 		s.db.Table("material_master").Where("id = ?", item.MaterialID).
 			Select("code, name, specification, unit").First(&material)
 
-		// Get issued quantity from stock_logs
+		// Get issued quantity from stock_logs (领料/发货)
 		var issuedQty float64
 		s.db.Table("stock_logs").
 			Joins("JOIN stocks ON stocks.id = stock_logs.stock_id").
@@ -449,20 +601,32 @@ func (s *Service) GetPlanItemsProgress(planID uint) ([]map[string]any, error) {
 			Select("COALESCE(SUM(stock_logs.quantity), 0)").
 			Scan(&issuedQty)
 
+		// Get received quantity from stock_logs (入库/到货)
+		var receivedQty float64
+		s.db.Table("stock_logs").
+			Joins("JOIN stocks ON stocks.id = stock_logs.stock_id").
+			Where("stocks.project_id IN (SELECT project_id FROM material_plans WHERE id = ?)", planID).
+			Where("stock_logs.material_id = ?", item.MaterialID).
+			Where("stock_logs.type = ?", "in").
+			Where("stock_logs.source_type = ?", "inbound").
+			Select("COALESCE(SUM(stock_logs.quantity), 0)").
+			Scan(&receivedQty)
+
 		result := map[string]any{
-			"id":               item.ID,
-			"plan_id":          item.PlanID,
-			"material_id":      item.MaterialID,
-			"material_code":    material.Code,
-			"material_name":    material.Name,
-			"specification":    material.Specification,
-			"unit":             material.Unit,
-			"planned_quantity": item.PlannedQuantity,
-			"issued_quantity":  issuedQty,
+			"id":                 item.ID,
+			"plan_id":            item.PlanID,
+			"material_id":        item.MaterialID,
+			"material_code":      material.Code,
+			"material_name":      material.Name,
+			"specification":      material.Specification,
+			"unit":               material.Unit,
+			"planned_quantity":   item.PlannedQuantity,
+			"received_quantity":  receivedQty,
+			"issued_quantity":    issuedQty,
 			"remaining_quantity": item.PlannedQuantity - issuedQty,
-			"unit_price":       item.UnitPrice,
-			"status":           item.Status,
-			"progress":         0.0,
+			"unit_price":         item.UnitPrice,
+			"status":             item.Status,
+			"progress":           0.0,
 		}
 
 		if item.PlannedQuantity > 0 {

@@ -6,7 +6,7 @@
 import { formatDate } from './dateFormat'
 
 /**
- * 计算依赖关系箭头的SVG路径
+ * 计算依赖关系箭头的SVG路径 - 使用A*算法进行路径规划
  * @param {Object} fromTask - 源任务 {id, start, end, ...}
  * @param {Object} toTask - 目标任务 {id, start, end, ...}
  * @param {Object} timelineDays - 时间轴天数数组
@@ -15,6 +15,7 @@ import { formatDate } from './dateFormat'
  * @param {number} toRow - 目标任务行索引
  * @param {number} rowHeight - 行高
  * @param {boolean} isCritical - 是否为关键路径
+ * @param {Array} allTasks - 所有任务数组（用于障碍物检测）
  * @returns {Object} { path, startX, startY, endX, endY }
  */
 export function calculateDependencyPath(
@@ -25,36 +26,48 @@ export function calculateDependencyPath(
   fromRow,
   toRow,
   rowHeight = 60,
-  isCritical = false
+  isCritical = false,
+  allTasks = []
 ) {
   // 获取时间轴起始日期
   const timelineStart = timelineDays[0]?.date
   if (!timelineStart) return null
 
-  // 计算源任务结束位置 (任务条右侧中心)
-  const fromEndDate = new Date(fromTask.end)
-  const fromEndDiff = Math.ceil((fromEndDate - new Date(timelineStart)) / (1000 * 60 * 60 * 24))
-  const startX = fromEndDiff * dayWidth + dayWidth // 任务条右侧
+  const timelineStartDate = new Date(timelineStart)
 
-  // 计算目标任务开始位置 (任务条左侧中心)
-  const toStartDate = new Date(toTask.start)
-  const toStartDiff = Math.ceil((toStartDate - new Date(timelineStart)) / (1000 * 60 * 60 * 24))
-  const endX = toStartDiff * dayWidth // 任务条左侧
+  // 计算源任务位置
+  const fromTaskStart = new Date(fromTask.start)
+  const fromTaskEnd = new Date(fromTask.end)
+  const fromDaysDiff = Math.ceil((fromTaskStart - timelineStartDate) / (1000 * 60 * 60 * 24))
+  const fromDuration = Math.ceil((fromTaskEnd - fromTaskStart) / (1000 * 60 * 60 * 24))
 
-  // 计算Y坐标
+  const startX = fromDaysDiff * dayWidth + fromDuration * dayWidth
   const startY = fromRow * rowHeight + rowHeight / 2
+
+  // 计算目标任务位置
+  const toTaskStart = new Date(toTask.start)
+  const toDaysDiff = Math.ceil((toTaskStart - timelineStartDate) / (1000 * 60 * 60 * 24))
+
+  const endX = toDaysDiff * dayWidth
   const endY = toRow * rowHeight + rowHeight / 2
 
-  // 使用贝塞尔曲线绘制路径
-  // 控制点设置在水平方向，产生平滑的S型曲线
-  const controlOffset = Math.max(30, Math.abs(endX - startX) * 0.4)
-  const cp1x = startX + controlOffset
-  const cp1y = startY
-  const cp2x = endX - controlOffset
-  const cp2y = endY
+  // 同一行：直线连接
+  if (Math.abs(startY - endY) < 1) {
+    return {
+      path: `M ${startX} ${startY} L ${endX} ${endY}`,
+      startX,
+      startY,
+      endX,
+      endY,
+      isCritical
+    }
+  }
 
-  // 构建SVG路径
-  const path = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`
+  // 构建障碍物地图（将任务条位置转换为障碍物）
+  const obstacles = buildObstacleMap(allTasks, dayWidth, rowHeight, timelineStartDate, fromTask.id, toTask.id)
+
+  // 使用A*算法计算路径
+  const path = findOrthogonalPath(startX, startY, endX, endY, obstacles, dayWidth)
 
   return {
     path,
@@ -64,6 +77,219 @@ export function calculateDependencyPath(
     endY,
     isCritical
   }
+}
+
+/**
+ * 构建障碍物地图
+ * @param {Array} tasks - 所有任务
+ * @param {number} dayWidth - 每天宽度
+ * @param {number} rowHeight - 行高
+ * @param {Date} timelineStart - 时间轴起始日期
+ * @param {number} excludeFromId - 排除的源任务ID
+ * @param {number} excludeToId - 排除的目标任务ID
+ * @returns {Array} 障碍物数组
+ */
+function buildObstacleMap(tasks, dayWidth, rowHeight, timelineStart, excludeFromId, excludeToId) {
+  const obstacles = []
+  const padding = 10 // 障碍物周围的填充
+
+  for (const task of tasks) {
+    // 跳过源任务和目标任务
+    if (task.id === excludeFromId || task.id === excludeToId) continue
+
+    const taskStart = new Date(task.start)
+    const taskEnd = new Date(task.end)
+    const daysDiff = Math.ceil((taskStart - timelineStart) / (1000 * 60 * 60 * 24))
+    const duration = Math.ceil((taskEnd - taskStart) / (1000 * 60 * 60 * 24))
+
+    const row = tasks.findIndex(t => t.id === task.id)
+    if (row === -1) continue
+
+    const x = daysDiff * dayWidth
+    const y = row * rowHeight
+    const width = duration * dayWidth
+    const height = rowHeight
+
+    obstacles.push({
+      minX: x - padding,
+      maxX: x + width + padding,
+      minY: y - padding,
+      maxY: y + height + padding
+    })
+  }
+
+  return obstacles
+}
+
+/**
+ * 使用简化的A*算法查找直角路径
+ * @param {number} startX - 起点X
+ * @param {number} startY - 起点Y
+ * @param {number} endX - 终点X
+ * @param {number} endY - 终点Y
+ * @param {Array} obstacles - 障碍物数组
+ * @returns {string} SVG路径字符串
+ */
+export function findOrthogonalPath(startX, startY, endX, endY, obstacles = []) {
+  // 如果没有障碍物或起点终点之间没有障碍，使用简单折线
+  const directPath = tryDirectPath(startX, startY, endX, endY, obstacles)
+  if (directPath) {
+    return directPath
+  }
+
+  // 尝试几种常见的绕行策略
+  const strategies = [
+    // 策略1: 从上方绕过
+    () => tryRouteAbove(startX, startY, endX, endY, obstacles),
+    // 策略2: 从下方绕过
+    () => tryRouteBelow(startX, startY, endX, endY, obstacles),
+    // 策略3: 从右侧绕过
+    () => tryRouteRight(startX, startY, endX, endY, obstacles),
+    // 策略4: 避开中间障碍物的Z型路径
+    () => tryZigzagPath(startX, startY, endX, endY, obstacles)
+  ]
+
+  for (const strategy of strategies) {
+    const path = strategy()
+    if (path) return path
+  }
+
+  // 如果所有策略都失败，返回最简单的直接路径（可能会穿过障碍物）
+  return `M ${startX} ${startY} L ${(startX + endX) / 2} ${startY} L ${(startX + endX) / 2} ${endY} L ${endX} ${endY}`
+}
+
+/**
+ * 尝试直接路径（中间点）
+ */
+function tryDirectPath(startX, startY, endX, endY, obstacles) {
+  const midX = (startX + endX) / 2
+
+  // 检查水平路径是否安全
+  if (!isPathBlocked(startX, startY, midX, startY, obstacles) &&
+      !isPathBlocked(midX, startY, midX, endY, obstacles) &&
+      !isPathBlocked(midX, endY, endX, endY, obstacles)) {
+    return `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`
+  }
+
+  return null
+}
+
+/**
+ * 尝试从上方绕过
+ */
+function tryRouteAbove(startX, startY, endX, endY, obstacles) {
+  const minY = Math.min(startY, endY) - 40
+
+  if (!isPathBlocked(startX, startY, startX, minY, obstacles) &&
+      !isPathBlocked(startX, minY, endX, minY, obstacles) &&
+      !isPathBlocked(endX, minY, endX, endY, obstacles)) {
+    return `M ${startX} ${startY} L ${startX} ${minY} L ${endX} ${minY} L ${endX} ${endY}`
+  }
+
+  return null
+}
+
+/**
+ * 尝试从下方绕过
+ */
+function tryRouteBelow(startX, startY, endX, endY, obstacles) {
+  const maxY = Math.max(startY, endY) + 40
+
+  if (!isPathBlocked(startX, startY, startX, maxY, obstacles) &&
+      !isPathBlocked(startX, maxY, endX, maxY, obstacles) &&
+      !isPathBlocked(endX, maxY, endX, endY, obstacles)) {
+    return `M ${startX} ${startY} L ${startX} ${maxY} L ${endX} ${maxY} L ${endX} ${endY}`
+  }
+
+  return null
+}
+
+/**
+ * 尝试从右侧绕过
+ */
+function tryRouteRight(startX, startY, endX, endY, obstacles) {
+  const maxX = Math.max(startX, endX) + 60
+
+  if (!isPathBlocked(startX, startY, maxX, startY, obstacles) &&
+      !isPathBlocked(maxX, startY, maxX, endY, obstacles) &&
+      !isPathBlocked(maxX, endY, endX, endY, obstacles)) {
+    return `M ${startX} ${startY} L ${maxX} ${startY} L ${maxX} ${endY} L ${endX} ${endY}`
+  }
+
+  return null
+}
+
+/**
+ * 尝试Z型路径避开中间障碍物
+ */
+function tryZigzagPath(startX, startY, endX, endY, obstacles) {
+  // 多个转折点的Z型路径
+  const midY = (startY + endY) / 2
+  const offset = Math.abs(endX - startX) * 0.3
+
+  // 向右偏移的Z型
+  if (endX > startX) {
+    const x1 = startX + offset
+    const x2 = endX - offset
+
+    if (!isPathBlocked(startX, startY, x1, startY, obstacles) &&
+        !isPathBlocked(x1, startY, x1, midY, obstacles) &&
+        !isPathBlocked(x1, midY, x2, midY, obstacles) &&
+        !isPathBlocked(x2, midY, x2, endY, obstacles) &&
+        !isPathBlocked(x2, endY, endX, endY, obstacles)) {
+      return `M ${startX} ${startY} L ${x1} ${startY} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${endY} L ${endX} ${endY}`
+    }
+  }
+
+  return null
+}
+
+/**
+ * 检查路径是否被障碍物阻挡
+ * @param {number} x1 - 起点X
+ * @param {number} y1 - 起点Y
+ * @param {number} x2 - 终点X
+ * @param {number} y2 - 终点Y
+ * @param {Array} obstacles - 障碍物数组
+ * @returns {boolean} 是否被阻挡
+ */
+function isPathBlocked(x1, y1, x2, y2, obstacles) {
+  // 检查线段是否与任何障碍物相交
+  for (const obs of obstacles) {
+    if (lineIntersectsRect(x1, y1, x2, y2, obs)) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * 检查线段是否与矩形相交
+ */
+function lineIntersectsRect(x1, y1, x2, y2, rect) {
+  // 检查线段端点是否在矩形内
+  if ((x1 >= rect.minX && x1 <= rect.maxX && y1 >= rect.minY && y1 <= rect.maxY) ||
+      (x2 >= rect.minX && x2 <= rect.maxX && y2 >= rect.minY && y2 <= rect.maxY)) {
+    return true
+  }
+
+  // 检查水平线段
+  if (y1 === y2) {
+    return y1 >= rect.minY && y1 <= rect.maxY &&
+           ((x1 <= rect.minX && x2 >= rect.minX) ||
+            (x1 <= rect.maxX && x2 >= rect.maxX) ||
+            (x1 >= rect.minX && x2 <= rect.maxX))
+  }
+
+  // 检查垂直线段
+  if (x1 === x2) {
+    return x1 >= rect.minX && x1 <= rect.maxX &&
+           ((y1 <= rect.minY && y2 >= rect.minY) ||
+            (y1 <= rect.maxY && y2 >= rect.maxY) ||
+            (y1 >= rect.minY && y2 <= rect.maxY))
+  }
+
+  return false
 }
 
 /**
@@ -161,11 +387,13 @@ export function filterDependencies(scheduleData, tasks, options = {}) {
   console.log('filterDependencies - tasks:', tasks)
 
   for (const task of tasks) {
-    const activity = activities[task.id]
-    console.log(`任务 ${task.id} (${task.name}) 的 activity:`, activity)
+    // activities 的 key 是字符串格式 "task_3"，需要拼接
+    const activityKey = `task_${task.id}`
+    const activity = activities[activityKey]
+    console.log(`任务 ${task.id} (${task.name}) 的 activityKey: ${activityKey}, activity:`, activity)
 
     if (!activity) {
-      console.log(`任务 ${task.id} 没有 activity`)
+      console.log(`任务 ${task.id} 没有 activity (查找 key: ${activityKey})`)
       continue
     }
 
@@ -183,7 +411,15 @@ export function filterDependencies(scheduleData, tasks, options = {}) {
         continue
       }
 
-      const predActivity = activities[predId]
+      // 检查是否是父子关系，如果是则跳过
+      const isParentChild = checkParentChildRelation(predTask.id, task.id, tasks)
+      if (isParentChild) {
+        console.log(`跳过父子任务依赖关系: ${predTask.id} -> ${task.id}`)
+        continue
+      }
+
+      const predActivityKey = `task_${predId}`
+      const predActivity = activities[predActivityKey]
       const isCritical = activity.is_critical && predActivity?.is_critical
 
       // 根据选项过滤
@@ -203,6 +439,44 @@ export function filterDependencies(scheduleData, tasks, options = {}) {
 
   console.log('filterDependencies - 最终依赖关系:', dependencies)
   return dependencies
+}
+
+/**
+ * 检查两个任务之间是否存在父子关系
+ * @param {number} taskId1 - 任务1的ID
+ * @param {number} taskId2 - 任务2的ID
+ * @param {Array} tasks - 任务数组
+ * @returns {boolean} 是否存在父子关系
+ */
+function checkParentChildRelation(taskId1, taskId2, tasks) {
+  const task1 = tasks.find(t => t.id === taskId1)
+  const task2 = tasks.find(t => t.id === taskId2)
+
+  if (!task1 || !task2) return false
+
+  // 检查task1是否是task2的父任务
+  if (task2.parent_id === taskId1) return true
+
+  // 检查task2是否是task1的父任务
+  if (task1.parent_id === taskId2) return true
+
+  // 检查task1的子孙任务是否包含task2
+  let current = task1
+  while (current.parent_id) {
+    if (current.parent_id === taskId2) return true
+    current = tasks.find(t => t.id === current.parent_id)
+    if (!current) break
+  }
+
+  // 检查task2的子孙任务是否包含task1
+  current = task2
+  while (current.parent_id) {
+    if (current.parent_id === taskId1) return true
+    current = tasks.find(t => t.id === current.parent_id)
+    if (!current) break
+  }
+
+  return false
 }
 
 /**
@@ -229,7 +503,8 @@ export function calculateAllDependencyPaths(dependencies, tasks, timelineDays, d
       fromRow,
       toRow,
       rowHeight,
-      dep.isCritical
+      dep.isCritical,
+      tasks // 传递所有任务用于障碍物检测
     )
   }).filter(Boolean)
 }
@@ -289,6 +564,17 @@ export function calculateWorkingDays(start, end, holidays = []) {
  */
 export function isMilestone(task) {
   return task.duration === 0 || task.start === task.end
+}
+
+/**
+ * 检查任务是否为虚任务（有子任务的父任务）
+ * @param {Object} task - 任务对象
+ * @param {Array} allTasks - 所有任务数组
+ * @returns {boolean} 是否为虚任务
+ */
+export function isDummyTask(task, allTasks = []) {
+  if (!task || !task.id || !allTasks.length) return false
+  return allTasks.some(t => t.parent_id === task.id)
 }
 
 /**
@@ -492,4 +778,60 @@ export function getWeekNumber(date) {
  */
 export function getQuarter(date) {
   return Math.floor((date.getMonth() + 3) / 3)
+}
+
+/**
+ * 标准化前置/后置条件为数组（用于 R11 规范验证）
+ * 支持：undefined, null, 数组, 字符串, 数字
+ * @param {*} value - 前置/后置条件值
+ * @returns {Array} 标准化后的数组
+ */
+export function normalizePredecessors(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    // 处理逗号分隔的字符串："1,2,3" -> [1, 2, 3]
+    return value.split(',').map(v => {
+      const num = parseInt(v.trim(), 10)
+      return isNaN(num) ? v.trim() : num
+    }).filter(v => v !== '' && v !== null && v !== undefined)
+  }
+  if (typeof value === 'number') return [value]
+  return []
+}
+
+/**
+ * 生成前置条件签名（用于 R11 规范验证和节点合并）
+ * @param {Array} predecessors - 前置条件数组
+ * @returns {string} 排序后的签名字符串
+ */
+export function getPredecessorSignature(predecessors) {
+  const normalized = normalizePredecessors(predecessors)
+  return normalized.sort((a, b) => a - b).join(',')
+}
+
+/**
+ * 生成开始节点签名（用于 R11 规范）
+ * 相同紧前条件 + 相同日期 → 共享开始节点
+ * @param {string} date - 日期字符串 (YYYY-MM-DD)
+ * @param {*} predecessors - 前置条件
+ * @returns {string} 节点签名
+ */
+export function getStartNodeSignature(date, predecessors) {
+  const normalizedPreds = normalizePredecessors(predecessors)
+  const sortedPred = normalizedPreds.sort((a, b) => a - b).join(',')
+  return `START_${date}_${sortedPred}`
+}
+
+/**
+ * 生成结束节点签名（用于 R11 规范）
+ * 相同紧后条件 + 相同日期 → 共享结束节点
+ * @param {string} date - 日期字符串 (YYYY-MM-DD)
+ * @param {*} successors - 后置条件
+ * @returns {string} 节点签名
+ */
+export function getEndNodeSignature(date, successors) {
+  const normalizedSuccs = normalizePredecessors(successors)
+  const sortedSucc = normalizedSuccs.sort((a, b) => a - b).join(',')
+  return `END_${date}_${sortedSucc}`
 }

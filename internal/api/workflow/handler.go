@@ -506,15 +506,11 @@ func (h *Handler) resubmitInstance(c *gin.Context) {
 func (h *Handler) getPendingTasks(c *gin.Context) {
 	userID := c.GetUint("user_id")
 
-	tasks, err := h.engine.GetPendingTasks(userID)
+	// 使用增强方法获取包含更多信息的待办任务
+	data, err := h.engine.GetPendingTasksEnriched(userID)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "获取待办任务失败")
 		return
-	}
-
-	data := make([]map[string]any, 0)
-	for _, t := range tasks {
-		data = append(data, t.ToDTO())
 	}
 
 	response.Success(c, data)
@@ -531,12 +527,54 @@ func (h *Handler) getPendingTasksByType(c *gin.Context) {
 		return
 	}
 
-	data := make([]map[string]any, 0)
-	for _, t := range tasks {
-		data = append(data, t.ToDTO())
+	// 同样使用增强方法返回更多信息
+	result := make([]map[string]any, 0, len(tasks))
+	for _, task := range tasks {
+		dto := task.ToDTO()
+
+		// 获取节点信息
+		var node WorkflowNode
+		if err := h.db.Preload("Approvers").First(&node, task.NodeID).Error; err == nil {
+			dto["approval_type"] = node.ApprovalType
+			dto["approval_type_name"] = getApprovalTypeName(node.ApprovalType)
+
+			// 获取当前节点的所有待办任务
+			var allTasks []WorkflowPendingTask
+			if err := h.db.Where("instance_id = ? AND node_id = ?", task.InstanceID, task.NodeID).Find(&allTasks).Error; err == nil {
+				var otherApprovers []map[string]any
+				var approvedApprovers []map[string]any
+
+				for _, t := range allTasks {
+					approverInfo := map[string]any{
+						"approver_id":   t.ApproverID,
+						"approver_name": t.ApproverName,
+						"status":        t.Status,
+					}
+					if t.Status == TaskStatusApproved {
+						approvedApprovers = append(approvedApprovers, approverInfo)
+					} else if t.Status == TaskStatusPending {
+						otherApprovers = append(otherApprovers, approverInfo)
+					}
+				}
+
+				dto["other_approvers"] = otherApprovers
+				dto["approved_approvers"] = approvedApprovers
+				dto["total_approvers"] = len(allTasks)
+				dto["pending_count"] = len(otherApprovers)
+				dto["approved_count"] = len(approvedApprovers)
+
+				if node.ApprovalType == ApprovalTypeSequential || node.ApprovalType == ApprovalTypeParallel {
+					dto["requires_all"] = true
+				} else if node.ApprovalType == ApprovalTypeAny {
+					dto["requires_all"] = false
+				}
+			}
+		}
+
+		result = append(result, dto)
 	}
 
-	response.Success(c, data)
+	response.Success(c, result)
 }
 
 // approveTask 审批通过

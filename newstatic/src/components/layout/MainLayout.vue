@@ -59,13 +59,26 @@
           </el-breadcrumb>
         </div>
         <div class="header-right">
+          <!-- Notification Bell -->
+          <NotificationBell class="header-notification" />
+
           <el-dropdown @command="handleCommand">
             <div class="user-info">
-              <el-avatar :size="32" :icon="UserFilled" />
+              <el-avatar
+                :size="40"
+                :src="authStore.user?.avatar || undefined"
+                :style="{ backgroundColor: getAvatarColor() }"
+              >
+                {{ authStore.displayName?.charAt(0) || '?' }}
+              </el-avatar>
               <span class="username">{{ authStore.displayName }}</span>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item command="uploadAvatar">
+                  <el-icon><Picture /></el-icon>
+                  上传头像
+                </el-dropdown-item>
                 <el-dropdown-item command="resetPassword">
                   <el-icon><Key /></el-icon>
                   修改密码
@@ -77,6 +90,22 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+
+          <!-- 隐藏的文件上传input -->
+          <input
+            ref="avatarInputRef"
+            type="file"
+            accept="image/*"
+            style="display: none"
+            @change="handleAvatarChange"
+          />
+
+          <!-- 头像裁剪对话框 -->
+          <AvatarCropperDialog
+            v-model="showCropperDialog"
+            :image-file="selectedAvatarFile"
+            @success="handleAvatarSuccess"
+          />
         </div>
       </el-header>
 
@@ -93,10 +122,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, shallowRef, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
+import { useNotificationStore } from '@/stores/notificationStore'
 import { createVisibleMenus } from '@/utils/permissions'
 import {
   Box,
@@ -116,14 +146,21 @@ import {
   Setting,
   DataAnalysis,
   Grid,
-  Connection
+  Connection,
+  Clock,
+  Calendar,
+  Picture
 } from '@element-plus/icons-vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessageBox, ElMessage } from 'element-plus'
+import NotificationBell from '@/components/Notification/NotificationBell.vue'
+import AvatarCropperDialog from '@/components/common/AvatarCropperDialog.vue'
+import { authApi } from '@/api'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+const notificationStore = useNotificationStore()
 
 // 当前激活的菜单
 const activeMenu = computed(() => route.path)
@@ -215,27 +252,61 @@ const menuConfig = [
     ]
   },
   {
+    path: '/appointments',
+    title: '施工预约',
+    icon: Calendar,
+    permissions: ['appointment_view'] // 预约查看权限
+  },
+  {
     path: '/workflows',
     title: '工作流管理',
     icon: Connection,
     permissions: ['system_config'] // 使用系统配置权限
   },
   {
+    path: '/operation-logs',
+    title: '操作日志',
+    icon: Clock,
+    permissions: ['audit_view'] // 操作日志查看权限
+  },
+  {
     path: '/system',
     title: '系统管理',
     icon: Setting,
     permissions: [
-      'system_log',        // 系统日志
-      'system_backup',     // 系统备份
-      'system_config',     // 系统配置
-      'system_report'      // 系统报告
+      'user_view',
+      'role_view',
+      'system_log',
+      'system_backup',
+      'system_config',
+      'system_report'
+    ],
+    children: [
+      {
+        path: '/system/users',
+        title: '用户管理',
+        icon: UserFilled,
+        permissions: ['user_view']
+      },
+      {
+        path: '/system/roles',
+        title: '角色管理',
+        icon: Management,
+        permissions: ['role_view']
+      },
+      {
+        path: '/system',
+        title: '系统设置',
+        icon: Setting,
+        permissions: ['system_log', 'system_backup', 'system_config', 'system_report']
+      }
     ]
   }
 ]
 
-// 可见菜单 - 使用 ref 而非 computed，避免响应式循环
+// 可见菜单 - 使用 shallowRef 避免图标组件被包装成响应式对象
 // 在组件挂载时一次性计算，不响应权限变化
-const visibleMenus = ref([])
+const visibleMenus = shallowRef([])
 
 // 初始化菜单
 const initMenus = () => {
@@ -243,15 +314,34 @@ const initMenus = () => {
 }
 
 // 组件挂载时初始化菜单
-onMounted(() => {
+onMounted(async () => {
+  // 如果已登录，刷新用户权限（确保菜单是最新的）
+  if (authStore.isAuthenticated) {
+    try {
+      await authStore.refreshUserInfo()
+    } catch (error) {
+      console.warn('刷新用户权限失败:', error)
+      // 即使刷新失败，也继续使用缓存的权限
+    }
+  }
+
+  // 初始化菜单（使用最新的权限）
   initMenus()
   handleResize()
   window.addEventListener('resize', handleResize)
+
+  // 初始化通知 WebSocket
+  if (authStore.isAuthenticated) {
+    notificationStore.fetchUnreadCount()
+    notificationStore.initWebSocket()
+  }
 })
 
 // 组件卸载时清理
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  // 关闭通知 WebSocket
+  notificationStore.closeWebSocket()
 })
 
 // 处理用户下拉菜单命令
@@ -270,8 +360,54 @@ const handleCommand = async (command) => {
     }
   } else if (command === 'resetPassword') {
     router.push('/reset-password')
+  } else if (command === 'uploadAvatar') {
+    avatarInputRef.value?.click()
   }
 }
+
+// 头像上传
+const avatarInputRef = ref(null)
+const showCropperDialog = ref(false)
+const selectedAvatarFile = ref(null)
+
+const handleAvatarChange = async (event) => {
+  const file = event.target.files?.[0]
+  if (!file) return
+
+  // 验证文件大小（5MB - 裁剪前可以大一些）
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.error('图片文件大小不能超过5MB')
+    return
+  }
+
+  // 验证文件类型
+  if (!file.type.startsWith('image/')) {
+    ElMessage.error('只支持图片格式的文件')
+    return
+  }
+
+  // 打开裁剪对话框
+  selectedAvatarFile.value = file
+  showCropperDialog.value = true
+
+  // 清空 input
+  if (avatarInputRef.value) {
+    avatarInputRef.value.value = ''
+  }
+}
+
+const handleAvatarSuccess = async () => {
+  // 刷新用户信息
+  await authStore.refreshUserInfo()
+  selectedAvatarFile.value = null
+}
+
+const getAvatarColor = () => {
+  const colors = ['#409EFF', '#67C23A', '#E6A23C', '#F56C6C', '#909399']
+  const userId = authStore.user?.id || 0
+  return colors[userId % colors.length]
+}
+
 
 // 响应式处理
 const handleResize = () => {
@@ -354,6 +490,11 @@ const handleResize = () => {
   gap: 20px;
 }
 
+.header-notification {
+  display: flex;
+  align-items: center;
+}
+
 .user-info {
   display: flex;
   align-items: center;
@@ -376,8 +517,11 @@ const handleResize = () => {
 .layout-content {
   background: #f5f7fa;
   padding: 20px;
-  overflow-y: auto;
+  overflow: hidden;  /* 改为 hidden，让内部内容处理滚动 */
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* 过渡动画 */

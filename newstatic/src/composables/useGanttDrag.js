@@ -138,13 +138,30 @@ export function useGanttDrag(options = {}) {
     const rect = taskBar.getBoundingClientRect()
     const mouseX = event.clientX
 
-    // 检查是否在左边缘
-    if (mouseX <= rect.left + EDGE_RESIZE_THRESHOLD) {
+    // 计算鼠标到左右边缘的距离
+    const distToLeft = Math.abs(mouseX - rect.left)
+    const distToRight = Math.abs(mouseX - rect.right)
+
+    // 检查是否在任一边缘的阈值内
+    const onLeftEdge = distToLeft <= EDGE_RESIZE_THRESHOLD
+    const onRightEdge = distToRight <= EDGE_RESIZE_THRESHOLD
+
+    // 如果同时在两个边缘的阈值内（窄任务条），选择更近的边缘
+    if (onLeftEdge && onRightEdge) {
+      if (distToLeft < distToRight) {
+        return DragMode.RESIZE_LEFT
+      } else {
+        return DragMode.RESIZE_RIGHT
+      }
+    }
+
+    // 只在左边缘阈值内
+    if (onLeftEdge) {
       return DragMode.RESIZE_LEFT
     }
 
-    // 检查是否在右边缘
-    if (mouseX >= rect.right - EDGE_RESIZE_THRESHOLD) {
+    // 只在右边缘阈值内
+    if (onRightEdge) {
       return DragMode.RESIZE_RIGHT
     }
 
@@ -312,10 +329,12 @@ export function useGanttDrag(options = {}) {
     switch (dragMode.value) {
       case DragMode.MOVE:
         // 移动整个任务条
+        const newStartMove = addDays(original.start, dayOffset)
+        const newEndMove = addDays(original.end, dayOffset)
         previewTask.value = {
           ...original,
-          start: formatDate(addDays(original.start, dayOffset)),
-          end: formatDate(addDays(original.end, dayOffset))
+          start: formatDate(newStartMove),
+          end: formatDate(newEndMove)
         }
         break
 

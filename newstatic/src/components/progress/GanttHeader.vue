@@ -1,61 +1,173 @@
 <template>
   <div class="gantt-header">
-    <div class="header-tasks">
-      <div class="header-column column-name">任务名称</div>
-      <div class="header-column column-duration">工期</div>
-      <div class="header-column column-dates">起止时间</div>
-      <div class="header-column column-resources">资源</div>
+    <div class="header-tasks" :style="{ width: taskListWidth + 'px' }">
+      <div class="header-column column-id" :style="{ width: columnWidths.id + 'px' }">
+        编号
+        <div class="resize-handle" data-column="id" @mousedown.stop="startColumnResize"></div>
+      </div>
+      <div class="header-column column-name" :style="{ width: columnWidths.name + 'px' }">
+        任务名称
+        <div class="resize-handle" data-column="name" @mousedown.stop="startColumnResize"></div>
+      </div>
+      <div class="header-column column-duration" :style="{ width: columnWidths.duration + 'px' }">
+        工期
+        <div class="resize-handle" data-column="duration" @mousedown.stop="startColumnResize"></div>
+      </div>
+      <div class="header-column column-dates" :style="{ width: columnWidths.dates + 'px' }">
+        起止时间
+        <div class="resize-handle" data-column="dates" @mousedown.stop="startColumnResize"></div>
+      </div>
+      <div class="header-column column-resources" :style="{ flex: '1 1 auto' }">
+        资源
+      </div>
+      <!-- 任务列表宽度调节手柄 -->
+      <div class="tasklist-resize-handle" @mousedown.stop="startTaskListResize"></div>
     </div>
-    <div class="header-timeline" ref="timelineHeaderRef">
-      <!-- 多级时间轴 -->
-      <template v-if="viewMode === 'day'">
-        <div
-          v-for="day in timelineDays"
-          :key="day.date"
-          class="timeline-cell"
-          :class="{ 'is-today': day.isToday, 'is-weekend': day.isWeekend }"
-          :style="{ left: day.position + 'px', width: dayWidth + 'px' }"
-        >
-          <div class="cell-date">{{ day.day }}</div>
-          <div class="cell-weekday">{{ day.weekday }}</div>
+    <div class="header-timeline" :class="timelineHeightClass" ref="timelineHeaderRef" :style="{ transform: `translateX(${panOffset}px)` }">
+      <!-- 根据时间轴格式动态渲染 -->
+      <template v-if="timelineFormat === 'day'">
+        <!-- 单层：只显示日期 -->
+        <div class="timeline-days-row timeline-single-row">
+          <div
+            v-for="day in filteredDays"
+            :key="day.date"
+            class="timeline-day-cell"
+            :class="{ 'is-today': day.isToday, 'is-weekend': day.isWeekend }"
+            :style="{ left: day.position + 'px', width: dayWidth + 'px' }"
+          >
+            <div class="day-number">{{ day.day }}</div>
+          </div>
         </div>
       </template>
 
-      <template v-else-if="viewMode === 'week'">
-        <div
-          v-for="week in timelineWeeks"
-          :key="week.key"
-          class="timeline-cell timeline-cell-week"
-          :class="{ 'is-current': week.isCurrent }"
-          :style="{ left: week.position + 'px', width: week.width + 'px' }"
-        >
-          <div class="cell-week">W{{ week.weekNumber }}</div>
-          <div class="cell-date-range">{{ week.start }} ~ {{ week.end }}</div>
+      <template v-else-if="timelineFormat === 'month-day'">
+        <!-- 双层：上层月份，下层日期 -->
+        <div class="timeline-months-row" v-if="timelineHeaderMonths && timelineHeaderMonths.length > 0">
+          <div
+            v-for="month in timelineHeaderMonths"
+            :key="month.key"
+            class="timeline-month-cell"
+            :style="{ left: month.position + 'px', width: month.width + 'px' }"
+          >
+            <div class="month-label">{{ month.label }}</div>
+          </div>
+        </div>
+        <div class="timeline-days-row">
+          <div
+            v-for="day in filteredDays"
+            :key="day.date"
+            class="timeline-day-cell"
+            :class="{ 'is-today': day.isToday, 'is-weekend': day.isWeekend }"
+            :style="{ left: day.position + 'px', width: dayWidth + 'px' }"
+          >
+            <div class="day-number">{{ day.day }}</div>
+          </div>
         </div>
       </template>
 
-      <template v-else-if="viewMode === 'month'">
-        <div
-          v-for="month in timelineMonths"
-          :key="month.key"
-          class="timeline-cell timeline-cell-month"
-          :style="{ left: month.position + 'px', width: month.width + 'px' }"
-        >
-          <div class="cell-month">{{ month.year }}-{{ month.month }}</div>
-          <div class="cell-day-count">{{ month.dayCount }}天</div>
+      <template v-else-if="timelineFormat === 'year-month'">
+        <!-- 双层：上年、下月 -->
+        <div class="timeline-years-row" v-if="timelineYears && timelineYears.length > 0">
+          <div
+            v-for="year in timelineYears"
+            :key="year.key"
+            class="timeline-year-cell"
+            :style="{ left: year.position + 'px', width: year.width + 'px' }"
+          >
+            <div class="year-label">{{ year.label }}</div>
+          </div>
+        </div>
+        <div class="timeline-months-row-2">
+          <div
+            v-for="month in timelineMonths"
+            :key="month.key"
+            class="timeline-month-cell-2"
+            :style="{ left: month.position + 'px', width: month.width + 'px' }"
+          >
+            <div class="month-label-2">{{ month.month }}月</div>
+          </div>
         </div>
       </template>
 
-      <template v-else-if="viewMode === 'quarter'">
-        <div
-          v-for="quarter in timelineQuarters"
-          :key="quarter.key"
-          class="timeline-cell timeline-cell-quarter"
-          :class="{ 'is-current': quarter.isCurrent }"
-          :style="{ left: quarter.position + 'px', width: quarter.width + 'px' }"
-        >
-          <div class="cell-quarter">Q{{ quarter.quarter }}</div>
-          <div class="cell-year">{{ quarter.year }}</div>
+      <template v-else-if="timelineFormat === 'year-month-day'">
+        <!-- 三层：年月日 -->
+        <div class="timeline-years-row" v-if="timelineYears && timelineYears.length > 0">
+          <div
+            v-for="year in timelineYears"
+            :key="year.key"
+            class="timeline-year-cell"
+            :style="{ left: year.position + 'px', width: year.width + 'px' }"
+          >
+            <div class="year-label">{{ year.label }}</div>
+          </div>
+        </div>
+        <div class="timeline-months-row-2" v-if="timelineHeaderMonths && timelineHeaderMonths.length > 0">
+          <div
+            v-for="month in timelineHeaderMonths"
+            :key="month.key"
+            class="timeline-month-cell-2"
+            :style="{ left: month.position + 'px', width: month.width + 'px' }"
+          >
+            <div class="month-label-2">{{ month.month }}月</div>
+          </div>
+        </div>
+        <div class="timeline-days-row-3">
+          <div
+            v-for="day in filteredDays"
+            :key="day.date"
+            class="timeline-day-cell"
+            :class="{ 'is-today': day.isToday, 'is-weekend': day.isWeekend }"
+            :style="{ left: day.position + 'px', width: dayWidth + 'px' }"
+          >
+            <div class="day-number">{{ day.day }}</div>
+          </div>
+        </div>
+      </template>
+
+      <template v-else-if="timelineFormat === 'week'">
+        <!-- 单层：周 -->
+        <div class="timeline-weeks-row timeline-single-row">
+          <div
+            v-for="week in timelineWeeks"
+            :key="week.key"
+            class="timeline-cell timeline-cell-week"
+            :class="{ 'is-current': week.isCurrent }"
+            :style="{ left: week.position + 'px', width: week.width + 'px' }"
+          >
+            <div class="cell-week">W{{ week.weekNumber }}</div>
+            <div class="cell-date-range">{{ week.start }} ~ {{ week.end }}</div>
+          </div>
+        </div>
+      </template>
+
+      <template v-else-if="timelineFormat === 'month'">
+        <!-- 单层：月 -->
+        <div class="timeline-months-row-3 timeline-single-row">
+          <div
+            v-for="month in timelineMonths"
+            :key="month.key"
+            class="timeline-cell timeline-cell-month"
+            :style="{ left: month.position + 'px', width: month.width + 'px' }"
+          >
+            <div class="cell-month">{{ month.year }}-{{ month.month }}</div>
+            <div class="cell-day-count">{{ month.dayCount }}天</div>
+          </div>
+        </div>
+      </template>
+
+      <template v-else-if="timelineFormat === 'quarter'">
+        <!-- 单层：季度 -->
+        <div class="timeline-quarters-row timeline-single-row">
+          <div
+            v-for="quarter in timelineQuarters"
+            :key="quarter.key"
+            class="timeline-cell timeline-cell-quarter"
+            :class="{ 'is-current': quarter.isCurrent }"
+            :style="{ left: quarter.position + 'px', width: quarter.width + 'px' }"
+          >
+            <div class="cell-quarter">Q{{ quarter.quarter }}</div>
+            <div class="cell-year">{{ quarter.year }}</div>
+          </div>
         </div>
       </template>
 
@@ -70,12 +182,19 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ganttStore } from '@/stores/ganttStore'
 
-defineProps({
-  viewMode: {
+const { state, actions } = ganttStore
+
+const props = defineProps({
+  timelineFormat: {
     type: String,
-    default: 'day'
+    default: 'month-day'
+  },
+  dateDisplayFormat: {
+    type: String,
+    default: 'all'
   },
   timelineDays: {
     type: Array,
@@ -86,6 +205,10 @@ defineProps({
     default: () => []
   },
   timelineMonths: {
+    type: Array,
+    default: () => []
+  },
+  timelineHeaderMonths: {
     type: Array,
     default: () => []
   },
@@ -100,10 +223,234 @@ defineProps({
   todayPosition: {
     type: Number,
     default: null
+  },
+  panOffset: {
+    type: Number,
+    default: 0
   }
 })
 
+// 从 store 获取列宽配置
+const columnWidths = computed(() => state.columnWidths)
+const taskListWidth = computed(() => state.taskListWidth)
+
+// 列宽调整状态
+const resizingColumn = ref(null)
+const startX = ref(0)
+const startWidth = ref(0)
+
+// 任务列表宽度调整状态
+const resizingTaskList = ref(false)
+const taskListStartX = ref(0)
+const taskListStartWidth = ref(0)
+
+// 开始列宽调整
+const startColumnResize = (event) => {
+  const column = event.target.dataset.column
+  if (!column) return
+
+  resizingColumn.value = column
+  startX.value = event.clientX
+  startWidth.value = state.columnWidths[column]
+
+  document.addEventListener('mousemove', onColumnResizeMove)
+  document.addEventListener('mouseup', onColumnResizeEnd)
+
+  event.preventDefault()
+}
+
+// 列宽调整移动
+const onColumnResizeMove = (event) => {
+  if (!resizingColumn.value) return
+
+  const diff = event.clientX - startX.value
+  const newWidth = Math.max(
+    resizingColumn.value === 'name' ? 100 : 50,
+    Math.min(startWidth.value + diff, 400)
+  )
+
+  actions.setColumnWidth(resizingColumn.value, newWidth)
+}
+
+// 结束列宽调整
+const onColumnResizeEnd = () => {
+  resizingColumn.value = null
+  document.removeEventListener('mousemove', onColumnResizeMove)
+  document.removeEventListener('mouseup', onColumnResizeEnd)
+}
+
+// 开始任务列表宽度调整
+const startTaskListResize = (event) => {
+  resizingTaskList.value = true
+  taskListStartX.value = event.clientX
+  taskListStartWidth.value = state.taskListWidth
+
+  document.addEventListener('mousemove', onTaskListResizeMove)
+  document.addEventListener('mouseup', onTaskListResizeEnd)
+
+  event.preventDefault()
+}
+
+// 任务列表宽度调整移动
+const onTaskListResizeMove = (event) => {
+  if (!resizingTaskList.value) return
+
+  const diff = event.clientX - taskListStartX.value
+  const newWidth = Math.max(
+    state.minTaskListWidth,
+    Math.min(taskListStartWidth.value + diff, state.maxTaskListWidth)
+  )
+
+  actions.setTaskListWidth(newWidth)
+}
+
+// 结束任务列表宽度调整
+const onTaskListResizeEnd = () => {
+  resizingTaskList.value = false
+  document.removeEventListener('mousemove', onTaskListResizeMove)
+  document.removeEventListener('mouseup', onTaskListResizeEnd)
+}
+
+// 清理事件监听
+onUnmounted(() => {
+  document.removeEventListener('mousemove', onColumnResizeMove)
+  document.removeEventListener('mouseup', onColumnResizeEnd)
+  document.removeEventListener('mousemove', onTaskListResizeMove)
+  document.removeEventListener('mouseup', onTaskListResizeEnd)
+})
+
 const timelineHeaderRef = ref(null)
+
+// 计算年份层级数据（用于 year-month 和 year-month-day 格式）
+const timelineYears = computed(() => {
+  if (props.timelineFormat !== 'year-month' && props.timelineFormat !== 'year-month-day') {
+    return []
+  }
+
+  const months = props.timelineMonths
+  if (!months || months.length === 0) return []
+
+  const years = []
+  let currentYear = null
+  let yearStartIndex = 0
+  let yearStartPosition = null
+
+  months.forEach((month, index) => {
+    if (currentYear !== month.year) {
+      if (currentYear !== null) {
+        const width = month.position - yearStartPosition
+        years.push({
+          key: `${currentYear}`,
+          label: `${currentYear}年`,
+          position: yearStartPosition,
+          width: width
+        })
+      }
+      currentYear = month.year
+      yearStartIndex = index
+      yearStartPosition = month.position
+    }
+  })
+
+  // 添加最后一年
+  if (currentYear !== null && months.length > 0) {
+    const lastMonth = months[months.length - 1]
+    const width = lastMonth.position + lastMonth.width - yearStartPosition
+    years.push({
+      key: `${currentYear}`,
+      label: `${currentYear}年`,
+      position: yearStartPosition,
+      width: width
+    })
+  }
+
+  return years
+})
+
+// 计算时间轴高度类
+const timelineHeightClass = computed(() => {
+  const format = props.timelineFormat
+  if (format === 'year-month-day') {
+    return 'height-3layers' // 三层：年月日
+  } else if (format === 'month-day' || format === 'year-month') {
+    return 'height-2layers' // 双层
+  }
+  return 'height-1layer' // 单层
+})
+
+// 根据日期显示格式过滤日期
+const filteredDays = computed(() => {
+  if (!props.timelineDays || props.timelineDays.length === 0) {
+    return []
+  }
+
+  const format = props.dateDisplayFormat
+  const result = []
+  let index = 0
+
+  // 显示全部日期
+  if (format === 'all') {
+    return props.timelineDays
+  }
+
+  // 只显示奇数日期
+  if (format === 'odd') {
+    props.timelineDays.forEach((day) => {
+      if (day.day % 2 === 1) {
+        result.push({
+          ...day,
+          position: index * props.dayWidth
+        })
+        index++
+      }
+    })
+    return result
+  }
+
+  // 间隔3天
+  if (format === 'interval3') {
+    props.timelineDays.forEach((day, i) => {
+      if (i % 3 === 0) {
+        result.push({
+          ...day,
+          position: index * props.dayWidth
+        })
+        index++
+      }
+    })
+    return result
+  }
+
+  // 间隔5天
+  if (format === 'interval5') {
+    props.timelineDays.forEach((day, i) => {
+      if (i % 5 === 0) {
+        result.push({
+          ...day,
+          position: index * props.dayWidth
+        })
+        index++
+      }
+    })
+    return result
+  }
+
+  // 每月1号
+  if (format === 'first') {
+    props.timelineDays.forEach((day) => {
+      if (day.day === 1) {
+        result.push({
+          ...day,
+          position: index * props.dayWidth
+        })
+        index++
+      }
+    })
+    return result
+  }
+
+  return props.timelineDays
+})
 
 defineExpose({
   timelineHeaderRef
@@ -123,7 +470,7 @@ defineExpose({
 }
 
 .header-tasks {
-  width: 550px;
+  width: 670px;
   padding: 0;
   font-weight: bold;
   color: #303133;
@@ -132,8 +479,9 @@ defineExpose({
   display: flex;
   position: sticky;
   left: 0;
-  z-index: 20;
+  z-index: 200; /* 确保在时间轴上方 */
   background: #f5f7fa;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1); /* 添加阴影增强视觉层次 */
 }
 
 .header-column {
@@ -142,23 +490,29 @@ defineExpose({
   display: flex;
   align-items: center;
   border-right: 1px solid #e4e7ed;
+  position: relative;
+  flex-shrink: 0;
 }
 
 .header-column:last-child {
   border-right: none;
 }
 
+.column-id {
+  justify-content: center;
+  font-weight: bold;
+  color: #606266;
+}
+
 .column-name {
-  flex: 0 0 200px;
+  /* 动态宽度 */
 }
 
 .column-duration {
-  flex: 0 0 70px;
   justify-content: center;
 }
 
 .column-dates {
-  flex: 0 0 150px;
   justify-content: center;
 }
 
@@ -167,13 +521,241 @@ defineExpose({
   justify-content: center;
 }
 
+/* 列宽调整手柄 */
+.resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.2s;
+  z-index: 10;
+}
+
+.resize-handle:hover {
+  background: #409eff;
+}
+
+.resize-handle:active {
+  background: #409eff;
+}
+
+/* 任务列表宽度调整手柄 */
+.tasklist-resize-handle {
+  position: absolute;
+  right: -5px;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: ew-resize;
+  background: transparent;
+  transition: background 0.2s;
+  z-index: 201;
+}
+
+.tasklist-resize-handle:hover {
+  background: #67c23a;
+}
+
+.tasklist-resize-handle:active {
+  background: #67c23a;
+}
+
 .header-timeline {
   flex: 1;
   position: relative;
-  min-height: 50px;
   min-width: 800px;
+  min-height: 32px; /* 单层默认高度 */
 }
 
+.header-timeline.height-1layer {
+  min-height: 32px;
+}
+
+.header-timeline.height-2layers {
+  min-height: 60px; /* 28px * 2 + 4px gap */
+}
+
+.header-timeline.height-3layers {
+  min-height: 88px; /* 28px * 3 + 4px gap * 2 */
+}
+
+/* 单行时间轴 */
+.timeline-single-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* 双层时间轴 - 上层月份 */
+.timeline-months-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  border-bottom: 1px solid #dcdfe6;
+}
+
+.timeline-month-cell {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-right: 1px solid #e4e7ed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: bold;
+  color: #303133;
+  background: #fff;
+}
+
+.month-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 4px;
+}
+
+/* 年份行 */
+.timeline-years-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  border-bottom: 1px solid #dcdfe6;
+}
+
+.timeline-year-cell {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-right: 1px solid #e4e7ed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: bold;
+  color: #303133;
+  background: #fff;
+}
+
+.year-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 4px;
+}
+
+/* 双层时间轴 - 下层日期 */
+.timeline-days-row {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* 三层时间轴 - 中层月份 */
+.timeline-days-row-3 {
+  position: absolute;
+  top: 56px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* 双层时间轴 - 下层月份 */
+.timeline-months-row-2 {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  right: 0;
+  height: 28px;
+  border-bottom: 1px solid #dcdfe6;
+}
+
+.timeline-month-cell-2 {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-right: 1px solid #e4e7ed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: bold;
+  color: #303133;
+  background: #fff;
+}
+
+.month-label-2 {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 4px;
+}
+
+/* 三层时间轴 - 下层月份 */
+.timeline-months-row-3 {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* 周视图 */
+.timeline-weeks-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* 季度视图 */
+.timeline-quarters-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* 日期单元格 */
+.timeline-day-cell {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-right: 1px solid #e4e7ed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #606266;
+}
+
+.timeline-day-cell.is-today {
+  background: #fff3e0;
+}
+
+.timeline-day-cell.is-weekend {
+  background: #fafafa;
+}
+
+.day-number {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 通用单元格样式 */
 .timeline-cell {
   position: absolute;
   top: 0;
@@ -187,16 +769,10 @@ defineExpose({
   color: #606266;
 }
 
-.timeline-cell.is-today,
 .timeline-cell.is-current {
   background: #fff3e0;
 }
 
-.timeline-cell.is-weekend {
-  background: #fafafa;
-}
-
-.cell-date,
 .cell-week,
 .cell-month,
 .cell-quarter {
@@ -205,7 +781,6 @@ defineExpose({
   color: #303133;
 }
 
-.cell-weekday,
 .cell-date-range,
 .cell-day-count,
 .cell-year {
@@ -226,6 +801,7 @@ defineExpose({
   padding: 16px 0;
 }
 
+/* 今天标记线 */
 .today-line {
   position: absolute;
   top: 0;

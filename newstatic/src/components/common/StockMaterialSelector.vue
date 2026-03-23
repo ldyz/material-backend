@@ -390,7 +390,7 @@ const handleConfirm = () => {
         material_name: row.material_name,
         spec: row.specification || row.spec || '',
         unit: row.unit,
-        quantity: 1,
+        quantity: row.stock_quantity || 0, // 默认使用最大库存数量
         stock_quantity: row.stock_quantity,
         remark: ''
       })

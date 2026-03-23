@@ -236,7 +236,7 @@ func RegisterCategoryRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 		// 检查是否有物资使用此分类或其子分类
 		var count int64
-		db.Table("materials").Where("category = ?", category.Name).Count(&count)
+		db.Table("material_master").Where("category = ?", category.Name).Count(&count)
 		if count > 0 {
 			response.BadRequest(c, "该分类下还有物资，无法删除")
 			return

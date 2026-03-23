@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -22,7 +21,7 @@ func RegisterReportRoutes(r *gin.RouterGroup, db *gorm.DB) {
 		thirtyDaysAgo := now.AddDate(0, 0, -30)
 		var materialCount, stockCount, inboundCount, inboundApproved, reqCount, reqApproved int64
 		var totalStockValue float64
-		db.Model(&struct{}{}).Table("materials").Count(&materialCount)
+		db.Model(&struct{}{}).Table("material_master").Count(&materialCount)
 		db.Model(&struct{}{}).Table("stocks").Count(&stockCount)
 		db.Model(&struct{}{}).Table("stocks").Select("SUM(quantity * price)").Row().Scan(&totalStockValue)
 		db.Model(&struct{}{}).Table("inbound_orders").Where("created_at >= ?", thirtyDaysAgo).Count(&inboundCount)
@@ -99,7 +98,7 @@ func RegisterReportRoutes(r *gin.RouterGroup, db *gorm.DB) {
 		switch req.Type {
 		case "material":
 			var materials []map[string]any
-			query := db.Model(&struct{}{}).Table("materials")
+			query := db.Model(&struct{}{}).Table("material_master")
 			if req.ProjectID > 0 {
 				query = query.Where("project_id = ?", req.ProjectID)
 			}
@@ -192,39 +191,5 @@ func RegisterReportRoutes(r *gin.RouterGroup, db *gorm.DB) {
 			return
 		}
 		response.SuccessOnlyMessage(c, "报表删除成功")
-	})
-
-	// 备份创建(旧端点，兼容性)
-	r.POST("/backup/create", auth.PermissionMiddleware(db, "system_backup"), func(c *gin.Context) {
-		backupDir := "./backups"
-		os.MkdirAll(backupDir, 0755)
-		timestamp := time.Now().Format("20060102_150405")
-		filename := fmt.Sprintf("backup_%s.sql", timestamp)
-		backupPath := filepath.Join(backupDir, filename)
-		dbHost := os.Getenv("POSTGRES_HOST")
-		if dbHost == "" {
-			dbHost = "127.0.0.1"
-		}
-		dbUser := os.Getenv("POSTGRES_USER")
-		if dbUser == "" {
-			dbUser = "materials"
-		}
-		dbName := os.Getenv("POSTGRES_DB")
-		if dbName == "" {
-			dbName = "materials"
-		}
-		dbPassword := os.Getenv("POSTGRES_PASSWORD")
-		cmd := exec.Command("pg_dump", "-h", dbHost, "-U", dbUser, "-d", dbName, "-f", backupPath)
-		if dbPassword != "" {
-			cmd.Env = append(os.Environ(), "PGPASSWORD="+dbPassword)
-		}
-		if err := cmd.Run(); err != nil {
-			response.InternalError(c, fmt.Sprintf("数据库备份失败: %v", err))
-			return
-		}
-		response.SuccessWithMessage(c, map[string]string{
-			"filename": filename,
-			"path":     backupPath,
-		}, "备份创建成功")
 	})
 }

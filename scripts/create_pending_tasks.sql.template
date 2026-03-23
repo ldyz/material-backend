@@ -1,0 +1,43 @@
+-- 手动创建待办任务SQL脚本
+-- 用法：替换 {instance_id} 为实际的工作流实例ID
+
+-- 为指定实例的所有待审批角色创建待办任务
+INSERT INTO workflow_pending_tasks (
+  instance_id,
+  node_id,
+  node_key,
+  node_name,
+  business_type,
+  business_id,
+  business_no,
+  approver_id,
+  approver_name,
+  status,
+  created_at
+)
+SELECT
+  wi.id as instance_id,
+  wn.id as node_id,
+  wn.node_key,
+  wn.node_name,
+  wi.business_type,
+  wi.business_id,
+  mp.plan_no as business_no,
+  u.id as approver_id,
+  u.username as approver_name,
+  'pending' as status,
+  CURRENT_TIMESTAMP
+FROM workflow_instances wi
+JOIN workflow_nodes wn ON wi.current_node = wn.node_key AND wi.workflow_id = wi.workflow_id
+JOIN material_plans mp ON wi.business_id = mp.id
+CROSS JOIN workflow_node_approvers wna
+JOIN workflow_nodes wn2 ON wna.node_id = wn2.id
+JOIN users u ON u.id = (
+  SELECT ur.user_id FROM user_roles ur
+  WHERE ur.role_id = wna.approver_id
+  LIMIT 1
+)
+WHERE wi.id = {instance_id}
+  AND wn.node_type = 'approval'
+  AND wna.approver_type = 'role'
+ON CONFLICT DO NOTHING;

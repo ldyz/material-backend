@@ -328,11 +328,31 @@ const addTemplateTask = (type) => {
 
 // 保存计划
 const handleSave = async () => {
-  // 验证任务
-  const validTasks = tasks.value.filter(t => t.name && t.name.trim())
+  console.log('CreateScheduleDialog - 开始验证，任务数量:', tasks.value.length)
+
+  // 验证任务名称
+  const emptyTasks = []
+  const validTasks = []
+
+  tasks.value.forEach((task, index) => {
+    console.log(`任务 ${index}: name="${task.name}", trim="${task.name?.trim()}"`)
+    if (!task.name || !task.name.trim()) {
+      emptyTasks.push(index + 1)
+    } else {
+      validTasks.push(task)
+    }
+  })
+
+  console.log('空任务索引:', emptyTasks)
+  console.log('有效任务数量:', validTasks.length)
 
   if (validTasks.length === 0) {
-    ElMessage.warning('请至少添加一个有效的任务')
+    ElMessage.warning('请至少添加一个任务，并填写任务名称')
+    return
+  }
+
+  if (emptyTasks.length > 0) {
+    ElMessage.warning(`第 ${emptyTasks.join(', ')} 行的任务名称不能为空，请填写后再保存`)
     return
   }
 
@@ -350,12 +370,14 @@ const handleSave = async () => {
 
   try {
     saving.value = true
+    console.log('开始批量创建任务，数量:', validTasks.length)
 
     // 批量创建任务
+    let successCount = 0
     for (const task of validTasks) {
       const taskData = {
         project_id: props.projectId,
-        task_name: task.name,
+        name: task.name,
         start_date: task.start,
         end_date: task.end,
         progress: 0,
@@ -363,15 +385,21 @@ const handleSave = async () => {
         status: 'not_started'
       }
 
+      console.log('创建任务:', taskData)
       await progressApi.create(taskData)
+      successCount++
     }
 
-    ElMessage.success(`成功创建 ${validTasks.length} 个任务`)
+    console.log(`成功创建 ${successCount} 个任务`)
+    ElMessage.success(`成功创建 ${successCount} 个任务`)
     emit('created', props.projectId)
     handleClose()
   } catch (error) {
     console.error('创建计划失败:', error)
-    ElMessage.error(error?.message || '创建计划失败，请重试')
+    console.error('错误详情:', error.response?.data)
+
+    const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || '创建计划失败，请重试'
+    ElMessage.error(`创建失败: ${errorMsg}`)
   } finally {
     saving.value = false
   }

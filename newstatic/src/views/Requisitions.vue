@@ -117,15 +117,6 @@
               审核
             </el-button>
             <el-button
-              type="warning"
-              size="small"
-              :icon="Van"
-              @click="handleIssue(scope.row)"
-              v-if="canIssue(scope.row)"
-            >
-              发货
-            </el-button>
-            <el-button
               type="danger"
               size="small"
               :icon="Delete"
@@ -247,13 +238,36 @@
             style="width: 100%"
             size="small"
           >
-            <!-- 序号列已移除 -->
-            <el-table-column prop="material" label="材质" width="100" show-overflow-tooltip />
-            <el-table-column prop="material_name" label="物资名称" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="specification" label="规格型号" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="unit" label="单位" width="80" />
-            <el-table-column prop="requested_quantity" label="申请数量" width="100" align="right" />
-            <el-table-column prop="approved_quantity" label="批准数量" width="100" align="right" />
+            <el-table-column label="材质" width="100" show-overflow-tooltip>
+              <template #default="scope">
+                {{ scope.row.material || scope.row.material_code || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="物资名称" min-width="150" show-overflow-tooltip>
+              <template #default="scope">
+                {{ scope.row.material_name || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="规格型号" min-width="150" show-overflow-tooltip>
+              <template #default="scope">
+                {{ scope.row.specification || scope.row.spec || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="单位" width="80">
+              <template #default="scope">
+                {{ scope.row.unit || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="requested_quantity" label="申请数量" width="100" align="right">
+              <template #default="scope">
+                {{ scope.row.requested_quantity || 0 }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="approved_quantity" label="批准数量" width="100" align="right">
+              <template #default="scope">
+                {{ scope.row.approved_quantity || 0 }}
+              </template>
+            </el-table-column>
           </el-table>
 
           <!-- 工作流历史记录 -->
@@ -373,51 +387,6 @@
         </el-form-item>
       </el-form>
     </Dialog>
-
-    <!-- 发货对话框 -->
-    <Dialog
-      v-model="issueDialogVisible"
-      title="出库发货"
-      width="600px"
-      :loading="issueDialogLoading"
-      @confirm="handleIssueSubmit"
-    >
-      <el-alert
-        title="发货提示"
-        type="warning"
-        :closable="false"
-        style="margin-bottom: 20px"
-      >
-        发货后将自动扣减库存，请确认物资信息无误
-      </el-alert>
-
-      <el-form
-        ref="issueFormRef"
-        :model="issueForm"
-        :rules="issueFormRules"
-        label-width="100px"
-      >
-        <el-form-item label="发货日期" prop="issue_date">
-          <el-date-picker
-            v-model="issueForm.issue_date"
-            type="date"
-            placeholder="选择日期"
-            value-format="YYYY-MM-DD"
-            style="width: 100%"
-          />
-        </el-form-item>
-
-        <el-form-item label="备注" prop="remark">
-          <el-input
-            v-model="issueForm.remark"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入备注"
-            maxlength="500"
-          />
-        </el-form-item>
-      </el-form>
-    </Dialog>
   </div>
 </template>
 
@@ -436,7 +405,6 @@ import {
   Delete,
   View,
   Check,
-  Van,
   Printer
 } from '@element-plus/icons-vue'
 import Dialog from '@/components/common/Dialog.vue'
@@ -578,20 +546,6 @@ const approveFormRules = {
         }
       }
     }
-  ]
-}
-
-// 发货对话框
-const issueDialogVisible = ref(false)
-const issueDialogLoading = ref(false)
-const issueFormRef = ref(null)
-const issueForm = reactive({
-  issue_date: new Date().toISOString().split('T')[0],
-  remark: ''
-})
-const issueFormRules = {
-  issue_date: [
-    { required: true, message: '请选择发货日期', trigger: 'change' }
   ]
 }
 
@@ -900,12 +854,9 @@ const handleSubmit = async () => {
       urgent: formData.urgent,
       remark: formData.remark,
       items: formData.items.map(item => ({
-        stock_id: item.stock_id || item.material_id,
-        name: item.material_name || item.name,
-        spec: item.spec || item.specification,
-        unit: item.unit,
-        material: item.material,
-        quantity: item.quantity || 0,
+        stock_id: item.stock_id,
+        material_id: item.material_id,
+        requested_quantity: item.quantity || 0,
         remark: item.remark || ''
       }))
     }
@@ -929,6 +880,10 @@ const handleSubmit = async () => {
 
 // 审核
 const handleApprove = (row) => {
+  if (!row || !row.id) {
+    ElMessage.error('出库单信息不完整')
+    return
+  }
   currentRequisition.value = row
   approveForm.approved = true
   approveForm.remark = ''
@@ -952,34 +907,6 @@ const handleApproveSubmit = async () => {
     console.error('审核失败:', error)
   } finally {
     approveDialogLoading.value = false
-  }
-}
-
-// 发货
-const handleIssue = (row) => {
-  currentRequisition.value = row
-  issueForm.issue_date = new Date().toISOString().split('T')[0]
-  issueForm.remark = ''
-  issueDialogVisible.value = true
-}
-
-// 提交发货
-const handleIssueSubmit = async () => {
-  if (!issueFormRef.value) return
-
-  try {
-    await issueFormRef.value.validate()
-    issueDialogLoading.value = true
-
-    await requisitionApi.issue(currentRequisition.value.id, issueForm)
-    ElMessage.success('发货成功')
-
-    issueDialogVisible.value = false
-    fetchData()
-  } catch (error) {
-    console.error('发货失败:', error)
-  } finally {
-    issueDialogLoading.value = false
   }
 }
 
@@ -1128,9 +1055,9 @@ const handlePrint = () => {
             ${pageItems.map((item, index) => `
               <tr>
                 <td style="text-align: center;">${page * itemsPerPage + index + 1}</td>
-                <td>${item.material || '-'}</td>
+                <td>${item.material || item.material_code || '-'}</td>
                 <td>${item.material_name || '-'}</td>
-                <td>${item.specification || '-'}</td>
+                <td>${item.specification || item.spec || '-'}</td>
                 <td>${item.unit || '-'}</td>
                 <td style="text-align: right;">${Number(item.requested_quantity || 0).toLocaleString('zh-CN')}</td>
                 <td style="text-align: right;">${Number(item.approved_quantity || 0).toLocaleString('zh-CN')}</td>
@@ -1267,7 +1194,7 @@ const getStatusText = (status) => {
     draft: '草稿',
     pending: '待审核',
     approved: '已审核',
-    issued: '已发货',
+    issued: '已发放',
     rejected: '已拒绝'
   }
   return texts[status] || status
@@ -1278,8 +1205,8 @@ const getStatusDescription = (status) => {
   const descriptions = {
     draft: '出库单为草稿状态，可以编辑或提交审核',
     pending: '等待审核人员进行审核',
-    approved: '审核已通过，等待发货',
-    issued: '物资已发货出库',
+    approved: '审核已通过，系统正在自动发放物资',
+    issued: '物资已发放出库，库存已扣减',
     rejected: '审核未通过，需要修改后重新提交'
   }
   return descriptions[status] || ''
@@ -1338,25 +1265,25 @@ const generateMockHistory = (requisition) => {
     }
   }
 
-  // 发货记录
-  if (requisition.status === 'issued' && requisition.issuer) {
+  // 自动发放记录（审批通过后系统自动执行）
+  if (requisition.status === 'issued') {
     histories.push({
       action: 'approved',
-      operator_name: '仓管员',
-      operator: '仓管员',
-      department: '仓储部',
-      remark: '准备发货',
-      description: '审核通过，转入发货流程',
+      operator_name: '系统',
+      operator: 'system',
+      department: '系统',
+      remark: '',
+      description: '审核通过，系统自动发放物资',
       created_at: requisition.approved_at || requisition.updated_at
     })
 
     histories.push({
       action: 'issued',
-      operator_name: requisition.issuer || '仓管员',
-      operator: requisition.issuer || '仓管员',
-      department: '仓储部',
-      remark: requisition.issue_remark || '',
-      description: '完成发货',
+      operator_name: '系统',
+      operator: 'system',
+      department: '系统',
+      remark: '',
+      description: '物资已发放，库存已扣减',
       created_at: requisition.issued_at || requisition.updated_at
     })
   }
@@ -1370,8 +1297,6 @@ const handleWorkflowAction = async (action) => {
     handleApprove(currentRequisition.value)
   } else if (action === 'reject') {
     handleApprove(currentRequisition.value)
-  } else if (action === 'issue') {
-    handleIssue(currentRequisition.value)
   }
 }
 
@@ -1385,12 +1310,6 @@ const canEdit = (row) => {
 const canApprove = (row) => {
   if (!authStore.hasPermission('requisition_approve')) return false
   return row.status === 'pending'
-}
-
-// 判断是否可发货
-const canIssue = (row) => {
-  if (!authStore.hasPermission('requisition_issue')) return false
-  return row.status === 'approved'
 }
 
 // 判断是否可删除

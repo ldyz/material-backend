@@ -127,12 +127,12 @@
             <div class="arrival-info">
               <div class="arrival-stats">
                 <span class="stat-item">计划: {{ scope.row.planned_quantity }}</span>
-                <span class="stat-item arrived">已到: {{ scope.row.arrived_quantity || 0 }}</span>
+                <span class="stat-item arrived">已到: {{ scope.row.received_quantity || 0 }}</span>
                 <span class="stat-item warning">可入: {{ scope.row.remaining_quantity }}</span>
               </div>
               <el-tag v-if="scope.row.status === 'completed'" type="success" size="small">已到齐</el-tag>
               <el-tag v-else-if="scope.row.status === 'partial'" type="warning" size="small">
-                {{ ((scope.row.arrived_quantity / scope.row.planned_quantity) * 100).toFixed(1) }}%
+                {{ ((scope.row.received_quantity / scope.row.planned_quantity) * 100).toFixed(1) }}%
               </el-tag>
               <el-tag v-else type="info" size="small">未到货</el-tag>
             </div>
@@ -213,13 +213,22 @@ const fetchPlanItems = async () => {
 
   loading.value = true
   try {
-    const { data } = await materialPlanApi.getPlanItems(props.planId)
-    const allItems = data || []
+    // 使用计划详情API获取完整计划数据（包含计算好的进度）
+    const { data } = await materialPlanApi.getPlanDetail(props.planId)
+    const planDetail = data || {}
 
-    // 过滤出未到齐的物资
+    // 从计划详情中获取物资项列表
+    const allItems = planDetail.items || []
+
+    // 过滤出未到齐的物资（排除已完成入库的物资）
+    // 使用计划详情API中已经计算好的 receive_progress
     const itemsWithRemaining = allItems.filter(item => {
-      const remaining = (item.planned_quantity || 0) - (item.arrived_quantity || 0)
-      return remaining > 0
+      // 检查是否有剩余数量
+      const remaining = (item.planned_quantity || 0) - (item.received_quantity || 0)
+      // 检查完成度（使用后端计算好的值）
+      const progress = item.receive_progress || 0
+      // 只显示还有剩余且未完成100%的物资
+      return remaining > 0 && progress < 100
     })
 
     // 检查是否有物资缺少material_id
@@ -279,7 +288,7 @@ const fetchPlanItems = async () => {
 
     planItemList.value = validItems.map(item => ({
       ...item,
-      remaining_quantity: (item.planned_quantity || 0) - (item.arrived_quantity || 0),
+      remaining_quantity: (item.planned_quantity || 0) - (item.received_quantity || 0),
       spec: item.specification || item.spec || ''
     }))
 
@@ -297,18 +306,12 @@ const fetchPlanItems = async () => {
 // 更新计划项的material_id
 const updatePlanItemsMaterialID = async (planId, items) => {
   try {
-    // 调用后端API更新material_plan_items
-    await fetch(`/api/material-plan/plans/${planId}/sync-materials`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        items: items.map(item => ({
-          id: item.id,
-          material_id: item.material_id
-        }))
-      })
+    // 使用API层调用后端API更新material_plan_items
+    await materialPlanApi.syncPlanMaterialIds(planId, {
+      items: items.map(item => ({
+        id: item.id,
+        material_id: item.material_id
+      }))
     })
   } catch (error) {
     console.error('更新计划项material_id失败:', error)
@@ -375,7 +378,7 @@ const handleConfirm = () => {
         remark: '',
         plan_item_id: row.id,
         planned_quantity: row.planned_quantity,
-        arrived_quantity: row.arrived_quantity || 0,
+        received_quantity: row.received_quantity || 0,
         remaining_quantity: row.remaining_quantity
       })
     }

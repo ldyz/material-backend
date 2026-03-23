@@ -53,6 +53,23 @@ request.interceptors.request.use(
       config.headers.Authorization = `Bearer ${authStore.token}`
     }
 
+    // Debug log for material-plan requests to trace material field
+    if (config.url?.includes('material-plan') && config.method === 'post') {
+      console.log('[API Request] URL:', config.url)
+      console.log('[API Request] Method:', config.method?.toUpperCase())
+      if (config.data) {
+        console.log('[API Request] Payload:', JSON.parse(JSON.stringify(config.data)))
+        if (config.data.items) {
+          console.log('[API Request] Items material field check:')
+          config.data.items.forEach((item, index) => {
+            console.log(`  Item ${index}: material="${item.material}", material_name="${item.material_name}"`)
+          })
+        }
+      } else {
+        console.log('[API Request] Payload: (no body)')
+      }
+    }
+
     return config
   },
   error => {

@@ -2,6 +2,8 @@ package requisition
 
 import (
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // Requisition model maps to 'requisitions' table (unchanged)
@@ -37,6 +39,86 @@ type RequisitionItem struct {
 	Remark            string    `gorm:"type:text" json:"remark"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// ToDTOWithEnrichment returns requisition DTO with enriched items (including material details)
+func (r *Requisition) ToDTOWithEnrichment(db *gorm.DB) map[string]any {
+	// Collect material IDs
+	materialIDs := make([]uint, 0, len(r.Items))
+	for _, item := range r.Items {
+		materialIDs = append(materialIDs, item.MaterialID)
+	}
+
+	// Fetch materials in batch from material_master
+	matMap := make(map[uint]map[string]any)
+	if len(materialIDs) > 0 {
+		type MaterialMaster struct {
+			ID            uint
+			Code          string
+			Name          string
+			Specification string
+			Unit          string
+			Material      string
+		}
+		var materials []MaterialMaster
+		db.Table("material_master").Where("id IN ?", materialIDs).Find(&materials)
+		for _, m := range materials {
+			matMap[m.ID] = map[string]any{
+				"code":          m.Code,
+				"name":          m.Name,
+				"specification": m.Specification,
+				"unit":          m.Unit,
+				"material":      m.Material,
+			}
+		}
+	}
+
+	// Build enriched items
+	itemsCount := len(r.Items)
+	items := make([]map[string]any, 0, itemsCount)
+	for _, item := range r.Items {
+		itemDTO := item.ToDTO()
+		if mat, ok := matMap[item.MaterialID]; ok {
+			itemDTO["material_code"] = mat["code"]
+			itemDTO["material_name"] = mat["name"]
+			itemDTO["specification"] = mat["specification"]
+			itemDTO["unit"] = mat["unit"]
+			itemDTO["material"] = mat["material"]
+		}
+		items = append(items, itemDTO)
+	}
+
+	// Handle nullable datetime fields
+	var approvedAtStr, issuedAtStr string
+	if r.ApprovedAt != nil {
+		approvedAtStr = r.ApprovedAt.Format("2006-01-02 15:04:05")
+	}
+	if r.IssuedAt != nil {
+		issuedAtStr = r.IssuedAt.Format("2006-01-02 15:04:05")
+	}
+
+	return map[string]any{
+		"id":                 r.ID,
+		"requisition_no":     r.RequisitionNo,
+		"requisition_number": r.RequisitionNo,
+		"project_id":         r.ProjectID,
+		"plan_id":            r.PlanID,
+		"applicant":          r.Applicant,
+		"applicant_name":     r.Applicant,
+		"department":         r.Department,
+		"status":             r.Status,
+		"created_at":         r.CreatedAt.Format("2006-01-02 15:04:05"),
+		"requisition_date":   r.CreatedAt.Format("2006-01-02"),
+		"remark":             r.Remark,
+		"approved_at":        approvedAtStr,
+		"approved_by":        r.ApprovedBy,
+		"urgent":             r.Urgent == 1,
+		"purpose":            r.Purpose,
+		"issued_by":          r.IssuedBy,
+		"issued_at":          issuedAtStr,
+		"items_count":        itemsCount,
+		"items":              items,
+	}
 }
 
 func (r *Requisition) ToDTO() map[string]any {

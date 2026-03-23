@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -58,80 +59,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 		response.SuccessWithMeta(c, user.ToDTO(), map[string]interface{}{
 			"token": token,
-		})
-	})
-
-	// register (public)
-	r.POST("/auth/register", func(c *gin.Context) {
-		var req struct {
-			Username string `json:"username" binding:"required"`
-			Password string `json:"password" binding:"required"`
-			Email    string `json:"email"`
-			FullName string `json:"full_name"`
-		}
-		if err := c.ShouldBindJSON(&req); err != nil {
-			response.BadRequest(c, err.Error())
-			return
-		}
-
-		// Check if username already exists
-		var existingUser User
-		if err := db.Where("username = ?", req.Username).First(&existingUser).Error; err == nil {
-			response.BadRequest(c, "用户名已存在")
-			return
-		}
-
-		// Create new user
-		user := User{
-			Username: req.Username,
-			Email:    req.Email,
-			FullName: req.FullName,
-			IsActive: true,
-			Role:     "user",
-		}
-
-		if err := user.SetPassword(req.Password); err != nil {
-			response.InternalError(c, "设置密码失败")
-			return
-		}
-
-		if err := db.Create(&user).Error; err != nil {
-			response.InternalError(c, err.Error())
-			return
-		}
-
-		response.Created(c, user.ToDTO(), "注册成功")
-	})
-
-	// debug-token (public)
-	r.GET("/auth/debug-token", func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			response.SuccessWithMeta(c, nil, map[string]interface{}{
-				"token":   nil,
-				"message": "No token provided",
-			})
-			return
-		}
-
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		claims, err := jwtpkg.ParseToken(tokenString)
-		if err != nil {
-			response.SuccessWithMeta(c, nil, map[string]interface{}{
-				"token": tokenString,
-				"valid": false,
-				"error": err.Error(),
-			})
-			return
-		}
-
-		response.SuccessWithMeta(c, map[string]interface{}{
-			"valid":    true,
-			"user_id":  claims["user_id"],
-			"username": claims["username"],
-			"exp":      claims["exp"],
-		}, map[string]interface{}{
-			"token": tokenString,
 		})
 	})
 
@@ -193,6 +120,58 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			response.SuccessWithMessage(c, nil, "密码修改成功")
 		})
 
+		// update avatar
+		auth.POST("/avatar", func(c *gin.Context) {
+			user, err := GetCurrentUser(c, db)
+			if err != nil || user == nil {
+				response.NotFound(c, "用户不存在")
+				return
+			}
+
+			// 获取上传的文件
+			file, err := c.FormFile("avatar")
+			if err != nil {
+				response.BadRequest(c, "请选择要上传的头像文件")
+				return
+			}
+
+			// 检查文件大小（最大2MB）
+			if file.Size > 2*1024*1024 {
+				response.BadRequest(c, "头像文件大小不能超过2MB")
+				return
+			}
+
+			// 检查文件类型
+			ext := filepath.Ext(file.Filename)
+			allowedExts := map[string]bool{
+				".jpg":  true,
+				".jpeg": true,
+				".png":  true,
+				".gif":  true,
+				".webp": true,
+			}
+			if !allowedExts[strings.ToLower(ext)] {
+				response.BadRequest(c, "只支持 JPG、PNG、GIF、WEBP 格式的图片")
+				return
+			}
+
+			// 创建上传目录
+			uploadDir := "static/uploads/avatars"
+			if err := c.SaveUploadedFile(file, filepath.Join(uploadDir, file.Filename)); err != nil {
+				response.InternalError(c, "文件保存失败")
+				return
+			}
+
+			// 更新用户头像路径
+			user.Avatar = "/uploads/avatars/" + file.Filename
+			if err := db.Save(user).Error; err != nil {
+				response.InternalError(c, "头像更新失败")
+				return
+			}
+
+			response.SuccessWithMessage(c, map[string]string{"avatar": user.Avatar}, "头像更新成功")
+		})
+
 		// USERS CRUD
 		// list users
 		auth.GET("/users", PermissionMiddleware(db, "user_view"), func(c *gin.Context) {
@@ -213,12 +192,24 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 		// create user
 		auth.POST("/users", PermissionMiddleware(db, "user_create"), func(c *gin.Context) {
-			var req struct{ Username, Password, Email, FullName, Role string; IsActive bool }
+			var req struct {
+				Username string `json:"username"`
+				Password string `json:"password"`
+				Email    string `json:"email"`
+				FullName string `json:"full_name"`
+				Role     string `json:"role"`
+				RoleIDs  []uint `json:"role_ids"`
+				IsActive bool   `json:"is_active"`
+			}
 			if err := c.ShouldBindJSON(&req); err != nil {
 				response.BadRequest(c, err.Error())
 				return
 			}
-			u := User{Username: req.Username, Email: req.Email, FullName: req.FullName, Role: req.Role, IsActive: req.IsActive}
+			u := User{Username: req.Username, Email: req.Email, FullName: req.FullName, Role: req.Role, IsActive: true}
+			// 默认启用，只有在请求明确指定false时才禁用
+			if req.IsActive == false {
+				u.IsActive = false
+			}
 			if err := u.SetPassword(req.Password); err != nil {
 				response.InternalError(c, "设置密码失败")
 				return
@@ -227,6 +218,28 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 				response.InternalError(c, err.Error())
 				return
 			}
+
+			 // 如果提供了 role_ids，使用 many2many 关联
+		 if len(req.RoleIDs) > 0 {
+			 var roles []Role
+			 if err := db.Find(&roles, req.RoleIDs).Error; err != nil {
+				 response.InternalError(c, "角色查找失败")
+				 return
+			 }
+			 if err := db.Model(&u).Association("Roles").Append(roles); err != nil {
+				 response.InternalError(c, "角色关联失败")
+				 return
+			 }
+			 // 同步更新 role 字段（使用第一个角色名称作为兼容性字段）
+			 if len(roles) > 0 && u.Role == "" {
+				 // 根据角色名称设置兼容的 role 字段值
+				 u.Role = mapRoleNameToCode(roles[0].Name)
+				 db.Save(&u)
+			 }
+			 // 重新加载用户数据
+			 db.Preload("Roles").First(&u, u.ID)
+		 }
+
 			response.Created(c, u.ToDTO(), "用户创建成功")
 		})
 
@@ -266,7 +279,48 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			if v, ok := req["role"].(string); ok { u.Role = v }
 			if v, ok := req["is_active"].(bool); ok { u.IsActive = v }
 			if v, ok := req["password"].(string); ok && v != "" { u.SetPassword(v) }
+
+			// 处理 role_ids many2many 关联
+			if roleIDs, ok := req["role_ids"].([]interface{}); ok {
+				// 转换为 []uint
+				var ids []uint
+				for _, id := range roleIDs {
+					switch v := id.(type) {
+					case float64:
+						ids = append(ids, uint(v))
+					case int:
+						ids = append(ids, uint(v))
+					case int64:
+						ids = append(ids, uint(v))
+					}
+				}
+
+				// 查找角色
+				var roles []Role
+				if len(ids) > 0 {
+					if err := db.Find(&roles, ids).Error; err != nil {
+						response.InternalError(c, "角色查找失败")
+						return
+					}
+				}
+
+				// 替换关联
+				if err := db.Model(&u).Association("Roles").Replace(roles); err != nil {
+					response.InternalError(c, "角色更新失败")
+					return
+				}
+
+				// 同步更新 role 字段（使用第一个角色名称作为兼容性字段）
+				if len(roles) > 0 {
+					u.Role = mapRoleNameToCode(roles[0].Name)
+				} else {
+					u.Role = ""
+				}
+			}
+
 			db.Save(&u)
+			// 重新加载用户数据以包含更新后的角色
+			db.Preload("Roles").First(&u, u.ID)
 			response.SuccessWithMessage(c, u.ToDTO(), "用户更新成功")
 		})
 
@@ -380,46 +434,100 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 				Key  string
 				Name string
 			}{
+				// 用户管理 (4)
 				{"user_view", "查看用户"},
 				{"user_create", "创建用户"},
 				{"user_edit", "编辑用户"},
 				{"user_delete", "删除用户"},
+				// 角色管理 (5)
 				{"role_view", "查看角色"},
 				{"role_create", "创建角色"},
 				{"role_edit", "编辑角色"},
 				{"role_delete", "删除角色"},
+				{"role_assign_permissions", "分配权限"},
+				// 项目管理 (4)
 				{"project_view", "查看项目"},
 				{"project_create", "创建项目"},
 				{"project_edit", "编辑项目"},
 				{"project_delete", "删除项目"},
+				// 物资管理 (5)
 				{"material_view", "查看物资"},
 				{"material_create", "创建物资"},
 				{"material_edit", "编辑物资"},
 				{"material_delete", "删除物资"},
+				{"material_import", "导入物资"},
+				// 物资计划 (5)
+				{"material_plan_view", "查看物资计划"},
+				{"material_plan_create", "创建物资计划"},
+				{"material_plan_edit", "编辑物资计划"},
+				{"material_plan_delete", "删除物资计划"},
+				{"material_plan_approve", "审核物资计划"},
+				// 库存管理 (8)
 				{"stock_view", "查看库存"},
 				{"stock_create", "创建库存"},
 				{"stock_edit", "编辑库存"},
 				{"stock_delete", "删除库存"},
 				{"stock_in", "库存入库"},
 				{"stock_out", "库存出库"},
+				{"stock_export", "导出库存"},
+				{"stock_alerts", "库存预警"},
+				// 库存日志 (2)
 				{"stocklog_view", "查看库存日志"},
 				{"stocklog_delete", "删除库存日志"},
-				{"stock_export", "导出库存"},
+				// 入库管理 (6)
 				{"inbound_view", "查看入库单"},
 				{"inbound_create", "创建入库单"},
 				{"inbound_edit", "编辑入库单"},
 				{"inbound_delete", "删除入库单"},
 				{"inbound_approve", "审核入库单"},
+				{"inbound_export", "导出入库单"},
+				// 出库管理 (7)
 				{"requisition_view", "查看出库单"},
 				{"requisition_create", "创建出库单"},
 				{"requisition_edit", "编辑出库单"},
 				{"requisition_delete", "删除出库单"},
 				{"requisition_approve", "审核出库单"},
+				{"requisition_issue", "发货"},
+				{"requisition_export", "导出出库单"},
+				// 施工日志 (5)
+				{"construction_log_view", "查看日志"},
+				{"construction_log_create", "创建日志"},
+				{"construction_log_edit", "编辑日志"},
+				{"construction_log_delete", "删除日志"},
+				{"construction_log_export", "导出日志"},
+				// 进度管理 (5)
 				{"progress_view", "查看进度"},
 				{"progress_create", "创建进度"},
 				{"progress_edit", "编辑进度"},
 				{"progress_delete", "删除进度"},
+				{"progress_export", "导出进度"},
+				// 审计日志 (1)
+				{"audit_view", "查看审计日志"},
+				// AI 智能体 (5)
+				{"ai_agent_view", "查看 AI"},
+				{"ai_agent_query", "AI 查询"},
+				{"ai_agent_operate", "AI 操作"},
+				{"ai_agent_workflow", "AI 工作流"},
+				{"ai_agent_logs", "AI 日志"},
+				// 系统管理 (5)
 				{"system_log", "查看系统日志"},
+				{"system_backup", "数据备份"},
+				{"system_config", "系统配置"},
+				{"system_statistics", "系统统计"},
+				{"system_activities", "系统动态"},
+				// 工作流管理 (12)
+				{"workflow_view", "查看工作流"},
+				{"workflow_create", "创建工作流"},
+				{"workflow_edit", "编辑工作流"},
+				{"workflow_delete", "删除工作流"},
+				{"workflow_activate", "激活工作流"},
+				{"workflow_instance_view", "查看实例"},
+				{"workflow_instance_resubmit", "重新提交"},
+				{"workflow_task_view", "查看任务"},
+				{"workflow_task_approve", "审批任务"},
+				{"workflow_task_reject", "拒绝任务"},
+				{"workflow_task_delegate", "委派任务"},
+				{"workflow_log_view", "查看流程日志"},
 			}
 
 			// Group permissions by module
@@ -458,6 +566,14 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 					moduleName = "出库管理"
 				case "progress":
 					moduleName = "进度管理"
+				case "construction_log":
+					moduleName = "施工日志"
+				case "audit":
+					moduleName = "审计日志"
+				case "ai_agent":
+					moduleName = "AI 智能体"
+				case "workflow":
+					moduleName = "工作流管理"
 				case "system":
 					moduleName = "系统管理"
 				default:
@@ -481,5 +597,33 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 			response.Success(c, data)
 		})
+	}
+}
+
+// mapRoleNameToCode 将角色名称映射为代码（用于移动端兼容）
+func mapRoleNameToCode(roleName string) string {
+	// 映射中文名称到代码
+	switch roleName {
+	case "施工员":
+		return "foreman" // 施工员负责审批
+	case "作业人员":
+		return "worker" // 作业人员负责执行施工
+	case "项目经理":
+		return "project_manager"
+	case "admin":
+		return "admin"
+	case "管理员":
+		return "admin"
+	case "保管员":
+		return "keeper"
+	case "材料员":
+		return "material_staff"
+	case "分包材料员":
+		return "subcontractor_material_staff"
+	case "预约管理员":
+		return "appointment_admin"
+	default:
+		// 如果是英文代码，直接返回
+		return roleName
 	}
 }

@@ -46,7 +46,7 @@ func TestMaterialCRUD(t *testing.T) {
 	db.Create(&p)
 
 	// create material
-	body := map[string]any{"name": "Steel Rod", "code": "MAT-001", "category": "metal", "project_id": p.ID, "quantity": 100, "price": 50.5}
+	body := map[string]any{"name": "Steel Rod", "code": "MAT-001", "category": "metal", "project_id": strconv.Itoa(int(p.ID)), "quantity": 100, "price": 50.5}
 	bb, _ := json.Marshal(body)
 	req := httptest.NewRequest("POST", "/api/material/materials", bytes.NewReader(bb))
 	req.Header.Set("Content-Type", "application/json")

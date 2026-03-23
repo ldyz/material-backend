@@ -39,6 +39,7 @@ func (wi *WorkflowIntegration) StartPlanWorkflow(plan *MaterialPlan, creatorID u
 		plan.PlanNo,
 		creatorID,
 		creatorName,
+		nil, // material_plan 不关联项目
 	)
 
 	if err != nil {

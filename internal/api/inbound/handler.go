@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/yourorg/material-backend/backend/internal/api/auth"
+	"github.com/yourorg/material-backend/backend/internal/api/audit"
 	"github.com/yourorg/material-backend/backend/internal/api/response"
 	"github.com/yourorg/material-backend/backend/internal/api/workflow"
 	jwtpkg "github.com/yourorg/material-backend/backend/pkg/jwt"
@@ -357,23 +358,56 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		totalAmount := 0
 		for _, item := range req.Items {
 			orderItem := InboundOrderItem{
-				MaterialID: item.MaterialID,
-				Quantity:   item.Quantity,
-				UnitPrice:  item.UnitPrice,
-				Remark:     item.Remark,
+				StockID:    nil, // Will be set when approved
+				MaterialID:  item.MaterialID,
+				Quantity:    item.Quantity,
+				UnitPrice:   item.UnitPrice,
+				Remark:      item.Remark,
 			}
 			order.Items = append(order.Items, orderItem)
 			totalAmount += int(item.Quantity * item.UnitPrice * 100)
 		}
 		order.TotalAmount = totalAmount
 
-		if err := db.Create(&order).Error; err != nil {
+		// 使用事务确保工作流启动成功才创建入库单
+		tx := db.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+			}
+		}()
+
+		// 创建入库单
+		if err := tx.Create(&order).Error; err != nil {
+			tx.Rollback()
 			response.InternalError(c, err.Error())
+			return
+		}
+
+		// 启动工作流
+		wfIntegration := NewWorkflowIntegration(db)
+		if err := wfIntegration.StartInboundWorkflow(&order, creatorID, creatorName); err != nil {
+			tx.Rollback()
+			response.InternalError(c, fmt.Sprintf("启动工作流失败: %v", err))
+			return
+		}
+
+		// 提交事务
+		if err := tx.Commit().Error; err != nil {
+			response.InternalError(c, "保存入库单失败")
 			return
 		}
 
 		// Reload with items for enrichment
 		db.Preload("Items").First(&order, order.ID)
+
+		// 记录操作日志
+		if err := audit.LogCreate(&creatorID, creatorName, audit.ModuleInbound, audit.ResourceInboundOrder,
+			order.ID, order.OrderNo, req); err != nil {
+			// 记录日志失败不应影响业务流程，只记录错误
+			fmt.Printf("记录操作日志失败: %v\n", err)
+		}
+
 		response.Created(c, order.ToDTOWithEnrichment(db), "入库单创建成功")
 	})
 
@@ -603,6 +637,12 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			// 重新加载订单
 			db.Preload("Items").First(&order, id)
 
+			// 记录操作日志
+			if err := audit.LogApprove(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
+				order.ID, order.OrderNo, remark); err != nil {
+				fmt.Printf("记录操作日志失败: %v\n", err)
+			}
+
 			response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "审批通过")
 			return
 		}
@@ -666,18 +706,24 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 			// Find or create stock record for the material
 			type StockRecord struct {
-				ID           uint
-				MaterialID   uint
-				Quantity     float64
-				SafetyStock  float64
-				Location     string
-				Unit         string
+				ID          uint
+				ProjectID   uint
+				MaterialID  uint
+				WarehouseID *uint
+				Quantity    float64
+				SafetyStock float64
+				Location    string
+				UnitCost    float64
 			}
 
-			// Try to find existing stock
+			// Try to find existing stock for this project and material
 			var quantityBefore, quantityAfter float64
 			var stockRecord StockRecord
-			if err := db.Table("stocks").Where("material_id = ?", item.MaterialID).First(&stockRecord).Error; err != nil {
+			var detail string
+
+			if err := db.Table("stocks").
+				Where("project_id = ? AND material_id = ?", order.ProjectID, item.MaterialID).
+				First(&stockRecord).Error; err != nil {
 				// Get material details to get unit
 				var material struct {
 					Unit string
@@ -688,16 +734,21 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 				quantityBefore = 0
 				quantityAfter = approvedQty
 				stockRecord = StockRecord{
+					ProjectID:   order.ProjectID,
 					MaterialID:  item.MaterialID,
+					WarehouseID: nil,
 					Quantity:    quantityAfter,
 					SafetyStock: 0,
 					Location:    "",
-					Unit:        material.Unit,
+					UnitCost:    0,
 				}
 				if err := db.Table("stocks").Create(&stockRecord).Error; err != nil {
 					response.InternalError(c, fmt.Sprintf("创建库存记录失败(material_id=%d): %v", item.MaterialID, err))
 					return
 				}
+
+				// Log the stock operation with material unit
+				detail = fmt.Sprintf("入库 %.2f %s，备注：入库单 %s", approvedQty, material.Unit, order.OrderNo)
 			} else {
 				// Update existing stock quantity
 				quantityBefore = stockRecord.Quantity
@@ -707,10 +758,16 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 					response.InternalError(c, fmt.Sprintf("更新库存记录失败(stock_id=%d): %v", stockRecord.ID, err))
 					return
 				}
-			}
 
-			// Log the stock operation with requisition ID
-			detail := fmt.Sprintf("入库 %.2f %s，备注：入库单 %s", approvedQty, stockRecord.Unit, order.OrderNo)
+				// Get material unit for logging
+				var material struct {
+					Unit string
+				}
+				db.Table("material_master").Where("id = ?", item.MaterialID).Select("unit").First(&material)
+
+				// Log the stock operation
+				detail = fmt.Sprintf("入库 %.2f %s，备注：入库单 %s", approvedQty, material.Unit, order.OrderNo)
+			}
 
 			// Get user ID for logging
 			userID, _ := c.Get("current_user_id")
@@ -724,22 +781,20 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			// Get project ID from order
 			projectID := order.ProjectID
 
-			// Get price from item (UnitPrice is in yuan)
-			price := item.UnitPrice
-
 			// Create StockLog entry with full details
 			stockLog := map[string]interface{}{
 				"stock_id":        stockRecord.ID,
-				"type":             "in",
-				"quantity":         approvedQty,
-				"quantity_before":  quantityBefore,
-				"quantity_after":   quantityAfter,
-				"price":            price,
-				"remark":           detail,
-				"project_id":       projectID,
-				"user_id":          uid,
-				"requisition_id":   nil,
-				"inbound_code":     order.OrderNo,
+				"type":            "in",
+				"quantity":        approvedQty,
+				"quantity_before": quantityBefore,
+				"quantity_after":  quantityAfter,
+				"source_type":     "inbound",
+				"source_id":       order.ID,
+				"source_no":       order.OrderNo,
+				"remark":          detail,
+				"project_id":      projectID,
+				"material_id":     item.MaterialID,
+				"user_id":         uid,
 			}
 			if err := db.Table("stock_logs").Create(&stockLog).Error; err != nil {
 				response.InternalError(c, fmt.Sprintf("创建库存日志失败: %v", err))
@@ -760,6 +815,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			}
 		}
 
+
 		// Update order status to completed
 		order.Status = StatusCompleted
 
@@ -770,6 +826,29 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 		// Reload with items for enrichment
 		db.Preload("Items").First(&order, order.ID)
+
+		// Get user info for logging
+		userID, _ := c.Get("current_user_id")
+		var uid uint
+		if userID != nil {
+			if id, ok := userID.(int64); ok {
+				uid = uint(id)
+			}
+		}
+		userName, _ := c.Get("username")
+		var name string
+		if userName != nil {
+			name = userName.(string)
+		} else {
+			name = "未知用户"
+		}
+
+		// 记录操作日志
+		if err := audit.LogApprove(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
+			order.ID, order.OrderNo, remark); err != nil {
+			fmt.Printf("记录操作日志失败: %v\n", err)
+		}
+
 		response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "入库单已批准")
 	})
 
@@ -819,6 +898,12 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			// 重新加载订单
 			db.Preload("Items").First(&order, id)
 
+			// 记录操作日志
+			if err := audit.LogReject(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
+				order.ID, order.OrderNo, req.Remark); err != nil {
+				fmt.Printf("记录操作日志失败: %v\n", err)
+			}
+
 			response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "已拒绝")
 			return
 		}
@@ -850,7 +935,108 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 		// Reload with items for enrichment
 		db.Preload("Items").First(&order, order.ID)
+
+		// Get user info for logging
+		userID, _ := c.Get("current_user_id")
+		var uid uint
+		if userID != nil {
+			if id, ok := userID.(int64); ok {
+				uid = uint(id)
+			}
+		}
+		userName, _ := c.Get("username")
+		var name string
+		if userName != nil {
+			name = userName.(string)
+		} else {
+			name = "未知用户"
+		}
+
+		// 记录操作日志
+		if err := audit.LogReject(&uid, name, audit.ModuleInbound, audit.ResourceInboundOrder,
+			order.ID, order.OrderNo, req.Remark); err != nil {
+			fmt.Printf("记录操作日志失败: %v\n", err)
+		}
+
 		response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "入库单已拒绝")
+	})
+
+	// Resubmit inbound order
+	g.POST("/inbound-orders/:id/resubmit", auth.PermissionMiddleware(db, "inbound_create"), func(c *gin.Context) {
+		id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+		var order InboundOrder
+		if err := db.First(&order, id).Error; err != nil {
+			response.NotFound(c, "入库单不存在")
+			return
+		}
+
+		// Get user info from JWT middleware
+		userIDInt64, _ := c.Get("current_user_id")
+		var submitterID uint
+		if userIDInt64 != nil {
+			if id, ok := userIDInt64.(int64); ok {
+				submitterID = uint(id)
+			}
+		}
+		username, _ := c.Get("current_username")
+		var submitterName string
+		if username != nil {
+			if name, ok := username.(string); ok {
+				submitterName = name
+			}
+		}
+
+		// Use workflow integration to resubmit
+		wfIntegration := NewWorkflowIntegration(db)
+		if err := wfIntegration.ResubmitInboundOrder(order.ID, submitterID, submitterName); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+
+		// Reload order
+		db.Preload("Items").First(&order, id)
+
+		// 记录操作日志
+		if err := audit.LogCreate(&submitterID, submitterName, audit.ModuleInbound, audit.ResourceInboundOrder,
+			order.ID, order.OrderNo, map[string]any{"action": "resubmit"}); err != nil {
+			fmt.Printf("记录操作日志失败: %v\n", err)
+		}
+
+		response.SuccessWithMessage(c, order.ToDTOWithEnrichment(db), "入库单已重新提交")
+	})
+
+	// Get workflow history for inbound order
+	g.GET("/inbound-orders/:id/workflow-history", auth.PermissionMiddleware(db, "inbound_view"), func(c *gin.Context) {
+		id, _ := strconv.ParseUint(c.Param("id"), 10, 32)
+
+		// Get workflow integration
+		wfIntegration := NewWorkflowIntegration(db)
+		approvals, err := wfIntegration.GetInboundWorkflowApprovals(uint(id))
+		if err != nil {
+			// If no workflow instance found, return empty array
+			response.Success(c, []any{})
+			return
+		}
+
+		// Transform approval records to match frontend format
+		data := make([]map[string]any, 0)
+		for _, approval := range approvals {
+			item := map[string]any{
+				"id":            approval.ID,
+				"instance_id":   approval.InstanceID,
+				"node_id":       approval.NodeID,
+				"node_key":      approval.NodeKey,
+				"approver_id":   approval.ApproverID,
+				"approver_name": approval.ApproverName,
+				"action":        approval.Action,
+				"remark":        approval.Remark,
+				"approved_at":   approval.ApprovedAt,
+				"created_at":    approval.CreatedAt,
+			}
+			data = append(data, item)
+		}
+
+		response.Success(c, data)
 	})
 
 	// Submit inbound order (same as create, for compatibility)

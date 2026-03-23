@@ -140,6 +140,7 @@
       :title="dialogTitle"
       width="900px"
       :loading="dialogLoading"
+      :show-footer="!isViewMode"
       @confirm="handleSubmit"
     >
       <template #extra v-if="isViewMode">
@@ -212,8 +213,7 @@
             size="small"
           >
             <el-table-column prop="material_name" label="物资名称" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="spec" label="规格型号" width="120" show-overflow-tooltip />
-            <el-table-column prop="material" label="材质" width="100" show-overflow-tooltip />
+            <el-table-column prop="specification" label="规格型号" width="120" show-overflow-tooltip />
             <el-table-column prop="unit" label="单位" width="80" />
             <el-table-column prop="quantity" label="数量" width="100" align="right" />
             <el-table-column prop="unit_price" label="单价" width="100" align="right">
@@ -230,10 +230,9 @@
           </el-table>
 
           <!-- 工作流历史记录 -->
-          <template v-if="workflowHistories.length > 0">
-            <el-divider content-position="left">审批历史</el-divider>
-            <WorkflowHistory :histories="workflowHistories" />
-          </template>
+          <el-divider content-position="left">审批历史</el-divider>
+          <WorkflowHistory v-if="workflowHistories.length > 0" :histories="workflowHistories" />
+          <el-empty v-else description="暂无审批历史" :image-size="80" />
         </template>
 
         <!-- 编辑模式：显示表单 -->
@@ -275,9 +274,8 @@
               <el-form-item label="关联计划" prop="plan_id">
                 <el-select
                   v-model="formData.plan_id"
-                  placeholder="选择物资计划（可选）"
+                  placeholder="请选择物资计划"
                   filterable
-                  clearable
                   style="width: 100%"
                   :popper-options="{
                     strategy: 'fixed',
@@ -325,14 +323,8 @@
               :project-id="formData.project_id"
               @change="handleItemsChange"
             />
-            <MaterialSelector
-              v-else
-              v-model="formData.items"
-              :editable="!isViewMode"
-              @change="handleItemsChange"
-            />
-            <div v-if="!formData.plan_id" class="tip-text">
-              提示：选择物资计划后，可以选择计划中未到货的物资
+            <div v-else class="tip-text">
+              请先选择物资计划
             </div>
           </el-form-item>
         </template>
@@ -402,7 +394,6 @@ import {
 } from '@element-plus/icons-vue'
 import Dialog from '@/components/common/Dialog.vue'
 import TableToolbar from '@/components/common/TableToolbar.vue'
-import MaterialSelector from '@/components/common/MaterialSelector.vue'
 import PlanMaterialSelector from '@/components/common/PlanMaterialSelector.vue'
 import WorkflowHistory from '@/components/common/WorkflowHistory.vue'
 import WorkflowStatus from '@/components/common/WorkflowStatus.vue'
@@ -478,6 +469,9 @@ const formRules = {
   ],
   inbound_date: [
     { required: true, message: '请选择入库日期', trigger: 'change' }
+  ],
+  plan_id: [
+    { required: true, message: '请选择物资计划', trigger: 'change' }
   ]
 }
 
@@ -490,7 +484,25 @@ const approveForm = reactive({
   approved: true,
   remark: ''
 })
-const approveFormRules = {}
+
+// 审核表单验证规则
+const approveFormRules = computed(() => ({
+  remark: [
+    {
+      required: !approveForm.approved,
+      message: '拒绝时必须填写审核意见',
+      trigger: 'blur',
+      validator: (rule, value, callback) => {
+        // 拒绝时必须填写原因
+        if (approveForm.approved === false && !value) {
+          callback(new Error('拒绝时必须填写审核意见'))
+        } else {
+          callback()
+        }
+      }
+    }
+  ]
+}))
 
 // 获取列表数据
 // 适配统一响应格式
@@ -673,6 +685,13 @@ watch(() => searchForm.project_id, () => {
   fetchData()
 })
 
+// 监听审核结果变化，重新验证表单
+watch(() => approveForm.approved, () => {
+  if (approveFormRef.value) {
+    approveFormRef.value.validateField('remark')
+  }
+})
+
 // 搜索
 const handleSearch = () => {
   pagination.page = 1
@@ -699,11 +718,15 @@ const handleAdd = () => {
 
 // 编辑
 const handleEdit = (row) => {
+  // 编辑已拒绝的入库单时，自动填充验收人和入库日期
+  const receiver = row.receiver || authStore.displayName
+  const inboundDate = row.inbound_date || new Date().toISOString().split('T')[0]
+
   Object.assign(formData, {
     id: row.id,
     supplier: row.supplier,
-    receiver: row.receiver,
-    inbound_date: row.inbound_date,
+    receiver: receiver,
+    inbound_date: inboundDate,
     remark: row.remark || '',
     items: row.items || [],
     plan_id: row.plan_id || null
@@ -715,7 +738,7 @@ const handleEdit = (row) => {
 }
 
 // 查看
-const handleView = (row) => {
+const handleView = async (row) => {
   // 保存完整数据到currentInbound，供审批使用
   currentInbound.value = row
 
@@ -736,11 +759,18 @@ const handleView = (row) => {
     total_amount: row.total_amount || 0,
     updated_at: row.updated_at,
     created_at: row.created_at,
-    plan_id: row.plan_id || null
+    plan_id: row.plan_id || null,
+    // 添加审批相关字段
+    approver: row.approver || row.approved_by || '',
+    approved_at: row.approved_at || '',
+    approve_remark: row.approve_remark || ''
   })
+
+  // 先填充数据，再获取审批历史
+  await fetchWorkflowHistory(row.id)
+
   isViewMode.value = true
   dialogVisible.value = true
-  fetchWorkflowHistory(row.id)
 }
 
 // 删除
@@ -820,7 +850,20 @@ const handleSubmit = async () => {
 const handleApprove = (row) => {
   currentInbound.value = row
   approveForm.approved = true
-  approveForm.remark = ''
+
+  // 如果是已拒绝的单据，提取拒绝理由
+  if (row.status === 'rejected' && row.remark) {
+    // 尝试从备注中提取拒绝原因
+    const rejectMatch = row.remark.match(/拒绝原因[：:]\s*(.+?)(?:\n|$)/)
+    if (rejectMatch && rejectMatch[1]) {
+      approveForm.remark = rejectMatch[1].trim()
+    } else {
+      approveForm.remark = row.remark
+    }
+  } else {
+    approveForm.remark = ''
+  }
+
   approveDialogVisible.value = true
 }
 
@@ -832,13 +875,25 @@ const handleApproveSubmit = async () => {
     await approveFormRef.value.validate()
     approveDialogLoading.value = true
 
-    await inboundApi.approve(currentInbound.value.id, approveForm)
-    ElMessage.success(approveForm.approved ? '审核通过' : '已拒绝')
+    // 构建请求数据
+    const requestData = {
+      remark: approveForm.remark
+    }
+
+    // 根据审核结果调用不同的API
+    if (approveForm.approved) {
+      await inboundApi.approve(currentInbound.value.id, requestData)
+      ElMessage.success('审核通过')
+    } else {
+      await inboundApi.reject(currentInbound.value.id, requestData)
+      ElMessage.success('已拒绝')
+    }
 
     approveDialogVisible.value = false
     fetchData()
   } catch (error) {
     console.error('审核失败:', error)
+    ElMessage.error(error?.message || '审核失败')
   } finally {
     approveDialogLoading.value = false
   }
@@ -943,8 +998,8 @@ const handlePrint = () => {
           ${formData.items.map((item, index) => `
             <tr>
               <td>${item.material_name || '-'}</td>
-              <td>${item.spec || '-'}</td>
-              <td>${item.material || '-'}</td>
+              <td>${item.specification || item.spec || '-'}</td>
+              <td>${item.material || item.material_code || '-'}</td>
               <td>${item.unit || '-'}</td>
               <td style="text-align: right;">${Number(item.quantity || 0).toLocaleString('zh-CN')}</td>
               <td style="text-align: right;">${item.unit_price ? Number(item.unit_price).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '-'}</td>
@@ -1138,59 +1193,15 @@ const getStatusDescription = (status) => {
 }
 
 // 获取工作流历史
-// 适配统一响应格式
 const fetchWorkflowHistory = async (id) => {
   try {
     const { data } = await inboundApi.getWorkflowHistory(id)
     workflowHistories.value = data || []
   } catch (error) {
-    console.error('获取工作流历史失败:', error)
-    // 如果没有专门的接口，使用审核历史模拟
-    workflowHistories.value = generateMockHistory(formData.value)
+    console.error('获取审批历史失败:', error)
+    // API调用失败时设置为空数组
+    workflowHistories.value = []
   }
-}
-
-// 生成模拟工作流历史
-const generateMockHistory = (inbound) => {
-  const histories = []
-
-  // 创建记录
-  histories.push({
-    action: 'draft',
-    operator_name: inbound.receiver || '当前用户',
-    operator: inbound.receiver || '当前用户',
-    department: '采购部',
-    remark: '创建入库单',
-    description: `创建入库单 ${inbound.inbound_no}`,
-    created_at: inbound.created_at
-  })
-
-  // 审核记录
-  if (inbound.status === 'completed' || inbound.status === 'rejected') {
-    histories.push({
-      action: 'pending',
-      operator_name: '审核员',
-      operator: '审核员',
-      department: '管理部',
-      remark: '',
-      description: '提交审核',
-      created_at: inbound.created_at
-    })
-
-    if (inbound.approver) {
-      histories.push({
-        action: inbound.status,
-        operator_name: inbound.approver || '审核员',
-        operator: inbound.approver || '审核员',
-        department: '管理部',
-        remark: inbound.approve_remark || '',
-        description: inbound.status === 'completed' ? '审核通过，库存已更新' : '审核拒绝',
-        created_at: inbound.approved_at || inbound.updated_at
-      })
-    }
-  }
-
-  return histories.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 }
 
 // 处理工作流操作
@@ -1203,7 +1214,8 @@ const handleWorkflowAction = async (action) => {
 // 判断是否可编辑
 const canEdit = (row) => {
   if (!authStore.hasPermission('inbound_edit')) return false
-  return row.status === 'draft' || row.status === 'rejected'
+  // 只允许编辑草稿状态的入库单，已拒绝的不可以编辑
+  return row.status === 'draft'
 }
 
 // 判断是否可审核

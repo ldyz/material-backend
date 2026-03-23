@@ -1,20 +1,9 @@
 {
-  "appId": "com.material.app",
-  "appName": "材料管理系统",
-  "webDir": "dist",
+  "appId": "com.material.management",
+  "appName": "化建仪表",
+  "webDir": "dist-capacitor",
   "server": {
+    "cleartext": true,
     "androidScheme": "https"
-  },
-  "android": {
-    "overrideUserAgent": "MaterialManagementApp/1.0"
-  },
-  "plugins": {
-    "SplashScreen": {
-      "launchShowDuration": 0,
-      "launchAutoHide": true
-    },
-    "App": {
-      "overrideUserAgent": "MaterialManagementApp/1.0"
-    }
   }
 }

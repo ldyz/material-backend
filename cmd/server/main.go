@@ -1,29 +1,37 @@
 package main
 
 import (
+	"context"
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
+	"github.com/yourorg/material-backend/backend/internal/api/agent"
+	"github.com/yourorg/material-backend/backend/internal/api/app"
+	"github.com/yourorg/material-backend/backend/internal/api/appointment"
 	"github.com/yourorg/material-backend/backend/internal/api/auth"
-	"github.com/yourorg/material-backend/backend/internal/api/project"
+	"github.com/yourorg/material-backend/backend/internal/api/construction_log"
+	"github.com/yourorg/material-backend/backend/internal/api/inbound"
+	audit2 "github.com/yourorg/material-backend/backend/internal/api/audit"
 	"github.com/yourorg/material-backend/backend/internal/api/material"
 	"github.com/yourorg/material-backend/backend/internal/api/material_master"
-	"github.com/yourorg/material-backend/backend/internal/api/inbound"
+	"github.com/yourorg/material-backend/backend/internal/api/material_plan"
+	"github.com/yourorg/material-backend/backend/internal/api/notification"
+	appconfig "github.com/yourorg/material-backend/backend/internal/config"
+	"github.com/yourorg/material-backend/backend/internal/api/project"
+	"github.com/yourorg/material-backend/backend/internal/api/progress"
 	"github.com/yourorg/material-backend/backend/internal/api/requisition"
 	"github.com/yourorg/material-backend/backend/internal/api/stock"
 	"github.com/yourorg/material-backend/backend/internal/api/system"
-	"github.com/yourorg/material-backend/backend/internal/api/construction_log"
 	"github.com/yourorg/material-backend/backend/internal/api/upload"
-	"github.com/yourorg/material-backend/backend/internal/api/progress"
-	"github.com/yourorg/material-backend/backend/internal/api/notification"
 	"github.com/yourorg/material-backend/backend/internal/api/workflow"
-	"github.com/yourorg/material-backend/backend/internal/api/material_plan"
 	"github.com/yourorg/material-backend/backend/internal/db"
 	"github.com/yourorg/material-backend/backend/internal/middleware"
 	"golang.org/x/crypto/bcrypt"
@@ -95,20 +103,22 @@ func initializeMaterialCategories(dbConn *gorm.DB) {
 }
 
 func main() {
-	// Load .env file if exists
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("Warning: .env file not found or error loading")
-	}
-	// Load config from env
-	// Only use PostgreSQL database as requested
-	dsn := os.Getenv("POSTGRES_DSN")
-	if dsn == "" {
-		log.Fatal("POSTGRES_DSN environment variable is required. No fallback database will be used.")
-	}
-	log.Println("Using PostgreSQL database from POSTGRES_DSN")
+	// 定义命令行参数
+	configFile := flag.String("c", "config.yaml", "配置文件路径")
+	flag.Parse()
 
-	dbConn, err := db.New(dsn)
+	// 加载配置文件
+	cfg, err := appconfig.Load(*configFile)
+	if err != nil {
+		log.Fatalf("加载配置文件失败: %v", err)
+	}
+
+	log.Printf("配置文件加载成功: %s", *configFile)
+	log.Printf("数据库类型: %s, 主机: %s:%d, 数据库: %s",
+		cfg.Database.Type, cfg.Database.Host, cfg.Database.Port, cfg.Database.Database)
+
+	// 使用配置文件中的数据库连接
+	dbConn, err := db.New(cfg.Database.GetDSN())
 	if err != nil {
 		log.Fatalf("db connect failed: %v", err)
 	}
@@ -136,6 +146,11 @@ func main() {
 		&workflow.WorkflowDefinition{}, &workflow.WorkflowNode{}, &workflow.WorkflowEdge{},
 		&workflow.WorkflowNodeApprover{}, &workflow.WorkflowInstance{}, &workflow.WorkflowApproval{},
 		&workflow.WorkflowPendingTask{}, &workflow.WorkflowLog{},
+		&agent.AgentOperationLog{},
+		&audit2.OperationLog{}, // 操作日志表
+		&notification.DeviceToken{}, // 设备推送令牌表
+		&appointment.ConstructionAppointment{}, // 施工预约单表
+		&appointment.WorkerCalendar{}, // 作业人员日历表
 	)
 
 	// create default admin role/user if not exists
@@ -160,6 +175,13 @@ func main() {
 	// 初始化默认物资分类
 	initializeMaterialCategories(dbConn)
 
+	// 初始化操作日志服务
+	audit2.InitAuditService(dbConn)
+
+	// 初始化 WebSocket Hub
+	notification.InitHub()
+	log.Println("WebSocket Hub initialized")
+
 	r := gin.Default()
 
 	// 配置受信任的代理（安全设置）
@@ -180,10 +202,40 @@ func main() {
 	r.Use(middleware.ValidateJSON(10<<20)) // 10MB
 
 	// 设置静态文件服务
-	r.Static("/static", "./static")
-	r.Static("/assets", "./static/assets")
+	r.Static("/static", "./newstatic/dist")
+	r.Static("/assets", "./newstatic/dist/assets")
+	r.Static("/uploads", "./static/uploads")  // 上传文件访问路径（保留在原位置）
 	// 移动端应用（生产模式使用构建后的 dist，开发模式可配置源码目录）
+	// 添加缓存控制中间件，确保 index.html 和 JS 文件不被缓存
+	r.Use(func(c *gin.Context) {
+		// 只处理 /mobile 路径
+		if !strings.HasPrefix(c.Request.URL.Path, "/mobile") {
+			c.Next()
+			return
+		}
+
+		// 设置缓存控制头
+		// index.html 和 version.json 不缓存
+		// JS/CSS 文件使用短缓存（1小时）
+		if c.Request.URL.Path == "/mobile/index.html" ||
+		   c.Request.URL.Path == "/mobile/version.json" {
+			c.Header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+		} else if strings.HasSuffix(c.Request.URL.Path, ".js") ||
+		          strings.HasSuffix(c.Request.URL.Path, ".css") {
+			c.Header("Cache-Control", "public, max-age=3600") // 1小时
+		} else {
+			c.Header("Cache-Control", "public, max-age=86400") // 24小时
+		}
+
+		c.Next()
+	})
 	r.Static("/mobile", "./mobile-app/dist")
+	// 移动端更新文件（APK下载）
+	r.Static("/mobile-updates", "./mobile-app-updates")
+	// 版本文件（用于移动端版本检测）
+	r.GET("/version.json", func(c *gin.Context) {
+		c.File("./mobile-app/dist/version.json")
+	})
 
 	// API路由组
 	api := r.Group("/api")
@@ -200,7 +252,7 @@ func main() {
 				})
 				return
 			}
-			
+
 			err = sqlDB.Ping()
 			if err != nil {
 				c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -210,7 +262,7 @@ func main() {
 				})
 				return
 			}
-			
+
 			// 返回健康状态
 			c.JSON(http.StatusOK, gin.H{
 				"status":  "ok",
@@ -218,7 +270,6 @@ func main() {
 				"database": "PostgreSQL",
 			})
 		})
-		
 		auth.RegisterRoutes(api, dbConn)
 		project.RegisterRoutes(api, dbConn)
 		material.RegisterRoutes(api, dbConn)
@@ -234,31 +285,47 @@ func main() {
 		notification.RegisterRoutes(api, dbConn)
 		material_plan.RegisterRoutes(api, dbConn)
 		workflow.RegisterRoutes(api, dbConn)
+		agent.RegisterRoutes(api, dbConn)
+		audit2.RegisterRoutes(api, dbConn) // 操作日志路由
+		appointment.RegisterRoutes(api, dbConn) // 施工预约路由
+		app.RegisterRoutes(api, dbConn) // 应用版本路由
 	}
 
 	// SPA路由回退 - 所有非API和非静态文件请求都返回对应的前端入口
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		// 移动端应用路由回退
+		// 排除静态资源路径和API路径
+		if filepath.HasPrefix(path, "/api") ||
+		   filepath.HasPrefix(path, "/static") ||
+		   filepath.HasPrefix(path, "/assets") ||
+		   filepath.HasPrefix(path, "/uploads") ||
+		   filepath.HasPrefix(path, "/mobile-updates") {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+
+		// 移动端应用路由回退（排除 mobile-updates 和静态资源）
+		// 只对移动端的主路径和没有扩展名的路径返回 index.html
 		if filepath.HasPrefix(path, "/mobile") {
+			// 检查是否请求静态资源（有文件扩展名）
+			ext := filepath.Ext(path)
+			if ext != "" {
+				// 有扩展名，让静态文件路由处理
+				c.AbortWithStatus(http.StatusNotFound)
+				return
+			}
+			// 没有扩展名，返回 index.html（SPA 路由）
 			c.File("./mobile-app/dist/index.html")
 			return
 		}
 
 		// PC端 SPA 路由回退 - 使用新构建的 Vue 3 应用
-		// 排除 API 路径和静态资源路径
-		if !filepath.HasPrefix(path, "/api") &&
-		   !filepath.HasPrefix(path, "/static") &&
-		   !filepath.HasPrefix(path, "/assets") &&
-		   !filepath.HasPrefix(path, "/mobile") {
-			c.File("./static/index.html")
-			return
-		}
-
-		// 其他情况返回404
-		c.AbortWithStatus(http.StatusNotFound)
+		c.File("./newstatic/dist/index.html")
 	})
+
+	// 设置Gin运行模式
+	gin.SetMode(cfg.Server.Mode)
 
 	// 创建并启动进度监听器
 	progressWatcher := progress.NewProgressWatcher(dbConn)
@@ -266,14 +333,17 @@ func main() {
 	log.Println("进度监听器已启动，将自动同步进度计划变化到项目进度")
 
 	// 创建HTTP服务器
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	srv := &http.Server{
-		Addr:    ":8088",
-		Handler: r,
+		Addr:         addr,
+		Handler:      r,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
 	// 在goroutine中启动服务器
 	go func() {
-		log.Println("服务器启动在 :8088")
+		log.Printf("服务器启动在 %s (模式: %s)", addr, cfg.Server.Mode)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("服务器启动失败: %v", err)
 		}
@@ -289,5 +359,11 @@ func main() {
 	progressWatcher.Stop()
 
 	// 优雅关闭HTTP服务器
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("服务器关闭失败: %v", err)
+	}
+
 	log.Println("服务器已关闭")
 }

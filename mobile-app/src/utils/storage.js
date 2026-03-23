@@ -1,56 +1,48 @@
-import { STORAGE_KEYS } from './constants'
+const TOKEN_KEY = 'token'
+const USER_KEY = 'user_info'
+const PUSH_TOKEN_KEY = 'push_token'
 
-// 本地存储工具
 export const storage = {
-  // 设置 token
-  setToken(token) {
-    localStorage.setItem(STORAGE_KEYS.TOKEN, token)
-  },
-
-  // 获取 token
   getToken() {
-    return localStorage.getItem(STORAGE_KEYS.TOKEN)
+    return localStorage.getItem(TOKEN_KEY)
   },
 
-  // 移除 token
+  setToken(token) {
+    localStorage.setItem(TOKEN_KEY, token)
+  },
+
   removeToken() {
-    localStorage.removeItem(STORAGE_KEYS.TOKEN)
+    localStorage.removeItem(TOKEN_KEY)
   },
 
-  // 设置用户信息
-  setUserInfo(userInfo) {
-    localStorage.setItem(STORAGE_KEYS.USER_INFO, JSON.stringify(userInfo))
+  getUser() {
+    const userStr = localStorage.getItem(USER_KEY)
+    return userStr ? JSON.parse(userStr) : null
   },
 
-  // 获取用户信息
-  getUserInfo() {
-    const info = localStorage.getItem(STORAGE_KEYS.USER_INFO)
-    return info ? JSON.parse(info) : null
+  setUser(user) {
+    localStorage.setItem(USER_KEY, JSON.stringify(user))
   },
 
-  // 移除用户信息
-  removeUserInfo() {
-    localStorage.removeItem(STORAGE_KEYS.USER_INFO)
+  removeUser() {
+    localStorage.removeItem(USER_KEY)
   },
 
-  // 设置权限
-  setPermissions(permissions) {
-    localStorage.setItem(STORAGE_KEYS.PERMISSIONS, JSON.stringify(permissions))
+  getPushToken() {
+    return localStorage.getItem(PUSH_TOKEN_KEY)
   },
 
-  // 获取权限
-  getPermissions() {
-    const perms = localStorage.getItem(STORAGE_KEYS.PERMISSIONS)
-    return perms ? JSON.parse(perms) : []
+  setPushToken(token) {
+    localStorage.setItem(PUSH_TOKEN_KEY, token)
   },
 
-  // 移除权限
-  removePermissions() {
-    localStorage.removeItem(STORAGE_KEYS.PERMISSIONS)
+  removePushToken() {
+    localStorage.removeItem(PUSH_TOKEN_KEY)
   },
 
-  // 清除所有数据
   clear() {
-    localStorage.clear()
-  },
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(USER_KEY)
+    localStorage.removeItem(PUSH_TOKEN_KEY)
+  }
 }

@@ -1,138 +1,137 @@
-/**
- * Axios HTTP 请求封装 (移动端)
- *
- * 本文件提供移动端统一的 HTTP 请求封装，包括：
- * - 请求/响应拦截器
- * - 自动添加认证 Token
- * - 统一的错误处理
- * - 后端统一响应格式适配
- * - 自动登出机制
- *
- * 后端统一响应格式：
- * - 成功：{ success: true, data: ..., pagination?: {...}, message?: "...", meta?: {...} }
- * - 失败：{ success: false, error: "错误信息", code?: "ERROR_CODE" }
- *
- * @module Request
- * @author Material Management System (Mobile)
- * @date 2025-01-28
- */
-
 import axios from 'axios'
 import { showToast } from 'vant'
 import { storage } from './storage'
-import router from '@/router'
 
-// 创建 axios 实例
+// 检测是否在 Capacitor 原生环境中
+const isCapacitor = typeof window !== 'undefined' && window.Capacitor
+const baseURL = isCapacitor ? 'https://home.mbed.org.cn:9090/api' : '/api'
+
+// 获取完整的资源URL（头像等）
+export function getAssetUrl(path) {
+  // 如果路径为空，返回默认头像
+  if (!path || path === '' || path === 'null') {
+    console.log('[getAssetUrl] 路径为空，返回默认头像')
+    return getDefaultAvatar()
+  }
+
+  // 如果已经是完整URL，直接返回
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+
+  // 动态检测 Capacitor 环境（确保在运行时检测）
+  const isCapacitorEnv = typeof window !== 'undefined' && window.Capacitor
+
+  // 在 Capacitor 环境中，使用完整的URL
+  if (isCapacitorEnv) {
+    return 'https://home.mbed.org.cn:9090' + path
+  }
+
+  // Web环境直接返回相对路径
+  return path
+}
+
+// 获取默认头像URL
+function getDefaultAvatar() {
+  const isCapacitorEnv = typeof window !== 'undefined' && window.Capacitor
+  const defaultAvatar = '/uploads/avatars/default.png'
+  return isCapacitorEnv ? ('https://home.mbed.org.cn:9090' + defaultAvatar) : defaultAvatar
+}
+
+let router = null
+
 const request = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL,
   timeout: 15000,
   headers: {
-    'Content-Type': 'application/json',
-  },
+    'Content-Type': 'application/json'
+  }
 })
 
-// 请求拦截器
+// 设置 router 实例（延迟设置，避免循环依赖）
+export function setRouter(routerInstance) {
+  router = routerInstance
+}
+
 request.interceptors.request.use(
-  (config) => {
-    // 添加 token
+  config => {
     const token = storage.getToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
     return config
   },
-  (error) => {
+  error => {
     return Promise.reject(error)
   }
 )
 
-// 响应拦截器
 request.interceptors.response.use(
-  (response) => {
+  response => {
     const res = response.data
 
-    /**
-     * 后端统一响应格式处理
-     *
-     * 成功响应格式：
-     * { success: true, data: ..., pagination?: {...}, message?: "...", meta?: {...} }
-     *
-     * 失败响应格式：
-     * { success: false, error: "错误信息", code?: "ERROR_CODE" }
-     */
-
-    // 处理业务逻辑错误（success: false）
     if (res.success === false) {
+      // 业务逻辑错误，不在这里显示 toast，让调用方处理
       const errorMsg = res.error || '操作失败'
-      showToast({
-        type: 'fail',
-        message: errorMsg,
-      })
-      return Promise.reject(new Error(errorMsg))
+      const errorObj = new Error(errorMsg)
+      errorObj.error = errorMsg
+      errorObj.code = res.code
+      errorObj.response = response
+      return Promise.reject(errorObj)
     }
 
-    // 成功响应，返回完整的响应对象
-    // 调用方可以访问 res.data, res.pagination, res.message, res.meta 等
     return res
   },
-  (error) => {
-    // HTTP 错误处理
-    if (error.response) {
-      const { status, data } = error.response
-
-      switch (status) {
-        case 401:
-          // 未授权或token失效
-          showToast({
-            type: 'fail',
-            message: data?.error || '登录已失效，请重新登录',
-          })
-          storage.clear()
-          router.push('/login')
-          break
-        case 403:
-          // 权限不足
-          showToast({
-            type: 'fail',
-            message: data?.error || '没有权限执行此操作',
-          })
-          break
-        case 404:
-          // 资源不存在
-          showToast({
-            type: 'fail',
-            message: data?.error || '请求的资源不存在',
-          })
-          break
-        case 500:
-          // 服务器错误
-          showToast({
-            type: 'fail',
-            message: data?.error || '服务器错误',
-          })
-          break
-        default:
-          // 其他HTTP错误
-          showToast({
-            type: 'fail',
-            message: data?.error || `请求失败 (${status})`,
-          })
+  error => {
+    // 网络错误或 HTTP 错误状态码 - 构建错误对象，由调用方显示 toast
+    if (error.response?.status === 401) {
+      // 401 错误特殊处理 - 拦截器直接处理并跳转
+      showToast({ type: 'fail', message: '登录已过期', duration: 3000 })
+      storage.clear()
+      if (router) {
+        router.push('/login').catch(err => {
+          console.error('Router navigation error:', err)
+        })
+      } else {
+        // Fallback: reload page to go to login
+        window.location.href = '/login'
       }
-    } else if (error.request) {
-      // 网络错误
-      showToast({
-        type: 'fail',
-        message: '网络错误，请检查网络连接',
-      })
-    } else {
-      // 请求配置错误
-      showToast({
-        type: 'fail',
-        message: error.message || '请求失败',
-      })
-    }
+      return Promise.reject(error)
+    } else if (error.response) {
+      // HTTP 错误状态码 (400, 500 等) - 构建错误对象，让调用方显示
+      let errorMsg = '请求失败'
 
-    return Promise.reject(error)
+      // 尝试从响应中提取错误信息
+      const data = error.response.data
+      if (typeof data === 'string') {
+        errorMsg = data
+      } else if (data) {
+        // 尝试多个可能的错误字段
+        errorMsg = data.error || data.message || data.msg || data.detail || '请求失败'
+      }
+
+      const errorObj = new Error(errorMsg)
+      errorObj.error = errorMsg
+      errorObj.response = error.response
+      errorObj.code = error.response.status
+      // 不在这里显示 toast，让组件层处理
+      return Promise.reject(errorObj)
+    } else if (error.request) {
+      // 请求已发出但没有收到响应 - 网络错误
+      const errorMsg = '网络连接失败，请检查网络'
+      const errorObj = new Error(errorMsg)
+      errorObj.error = errorMsg
+      // 网络错误在拦截器显示 toast
+      showToast({ type: 'fail', message: errorMsg })
+      return Promise.reject(errorObj)
+    } else {
+      // 其他错误
+      const errorMsg = '网络错误'
+      const errorObj = new Error(errorMsg)
+      errorObj.error = errorMsg
+      showToast({ type: 'fail', message: errorMsg })
+      return Promise.reject(errorObj)
+    }
   }
 )
 

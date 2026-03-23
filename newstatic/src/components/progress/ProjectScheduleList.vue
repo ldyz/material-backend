@@ -3,7 +3,7 @@
     <!-- 项目和进度计划列表 -->
     <el-table
       v-loading="loading"
-      :data="projectsWithSchedule"
+      :data="paginatedProjects"
       border
       stripe
       style="width: 100%"
@@ -73,7 +73,7 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="300" fixed="right">
+      <el-table-column label="操作" width="380" fixed="right">
         <template #default="scope">
           <!-- 只对有子项目权限的项目显示操作 -->
           <template v-if="!scope.row.children || scope.row.children.length === 0">
@@ -84,17 +84,19 @@
               size="small"
               @click="handleViewGantt(scope.row)"
             >
-              甘特图
+              编辑进度计划
             </el-button>
 
-            <!-- 查看网络图 - 只在已创建进度计划时显示 -->
+
+
+            <!-- 删除进度计划 - 只在已创建进度计划时显示 -->
             <el-button
               v-if="scope.row.has_schedule"
-              type="success"
+              type="danger"
               size="small"
-              @click="handleViewNetwork(scope.row)"
+              @click="handleDeleteSchedule(scope.row)"
             >
-              网络图
+              删除进度计划
             </el-button>
 
             <!-- 创建进度计划 - 只在未创建进度计划时显示 -->
@@ -104,7 +106,7 @@
               size="small"
               @click="handleCreateSchedule(scope.row)"
             >
-              创建计划
+              创建进度计划
             </el-button>
 
             <!-- AI生成计划 -->
@@ -120,6 +122,22 @@
         </template>
       </el-table-column>
     </el-table>
+
+    <!-- 分页 -->
+    <div class="pagination-container" v-if="totalItems > 0">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        :total="totalItems"
+        layout="total, sizes, prev, pager, next, jumper"
+        @size-change="handleSizeChange"
+        @current-change="handlePageChange"
+      />
+    </div>
+
+    <!-- 空状态 -->
+    <el-empty v-if="totalItems === 0 && !loading" description="暂无项目数据" />
   </div>
 </template>
 
@@ -144,10 +162,14 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['view-gantt', 'view-network', 'create-schedule'])
+const emit = defineEmits(['view-gantt', 'view-network', 'create-schedule', 'delete-schedule', 'generate-plan'])
 
 const authStore = useAuthStore()
 const router = useRouter()
+
+// 分页状态
+const currentPage = ref(1)
+const pageSize = ref(20)
 
 // 项目和进度计划数据
 const projectsWithSchedule = computed(() => {
@@ -169,6 +191,90 @@ const projectsWithSchedule = computed(() => {
   })
 })
 
+// 展平项目树以进行分页（包括所有层级的项目）
+const flattenedProjects = computed(() => {
+  const result = []
+
+  const flatten = (projects) => {
+    for (const project of projects) {
+      result.push(project)
+      if (project.children && project.children.length > 0) {
+        flatten(project.children)
+      }
+    }
+  }
+
+  flatten(projectsWithSchedule.value)
+  return result
+})
+
+// 总项目数
+const totalItems = computed(() => flattenedProjects.value.length)
+
+// 当前页的项目（保持树形结构）
+const paginatedProjects = computed(() => {
+  if (pageSize.value >= totalItems.value) {
+    return projectsWithSchedule.value
+  }
+
+  // 计算当前页应该显示的根项目范围
+  let count = 0
+  const startIndex = (currentPage.value - 1) * pageSize.value
+  const endIndex = startIndex + pageSize.value
+
+  const result = []
+
+  const collectPageProjects = (projects) => {
+    for (const project of projects) {
+      // 计算该项目及其所有子项目的总数
+      const projectAndChildrenCount = countProjectAndChildren(project)
+
+      // 检查是否应该包含此项目
+      const shouldInclude = (
+        count >= startIndex && count < endIndex || // 当前项目在范围内
+        count + projectAndChildrenCount > startIndex && count < endIndex || // 跨越范围开始
+        count >= startIndex && count < endIndex // 跨越范围结束
+      )
+
+      if (shouldInclude) {
+        result.push(project)
+      }
+
+      count += projectAndChildrenCount
+
+      // 如果已经达到范围末尾，停止处理
+      if (count >= endIndex) {
+        return true
+      }
+    }
+    return false
+  }
+
+  collectPageProjects(projectsWithSchedule.value)
+  return result
+})
+
+// 计算项目及其所有子项目的总数
+const countProjectAndChildren = (project) => {
+  let count = 1
+  if (project.children && project.children.length > 0) {
+    for (const child of project.children) {
+      count += countProjectAndChildren(child)
+    }
+  }
+  return count
+}
+
+// 分页事件处理
+const handlePageChange = (page) => {
+  currentPage.value = page
+}
+
+const handleSizeChange = (size) => {
+  pageSize.value = size
+  currentPage.value = 1
+}
+
 // 查看甘特图
 const handleViewGantt = (project) => {
   emit('view-gantt', project.id)
@@ -182,6 +288,11 @@ const handleViewNetwork = (project) => {
 // 创建进度计划
 const handleCreateSchedule = (project) => {
   emit('create-schedule', project.id)
+}
+
+// 删除进度计划
+const handleDeleteSchedule = (project) => {
+  emit('delete-schedule', project.id)
 }
 
 // 生成计划
@@ -236,6 +347,9 @@ const getLevelIcon = (level) => {
 <style scoped>
 .project-schedule-list {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .project-name-cell {
@@ -244,8 +358,15 @@ const getLevelIcon = (level) => {
   gap: 8px;
 }
 
+.pagination-container {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 0;
+  background: #fff;
+}
+
 :deep(.el-table__body-wrapper) {
-  max-height: calc(100vh - 300px);
+  max-height: calc(100vh - 400px);
   overflow-y: auto;
 }
 </style>

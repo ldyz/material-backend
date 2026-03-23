@@ -1,6 +1,7 @@
 <template>
   <el-dialog
-    v-model="visible"
+    :model-value="visible"
+    @update:model-value="val => visible = val"
     title="资源库管理"
     width="900px"
     @close="handleClose"

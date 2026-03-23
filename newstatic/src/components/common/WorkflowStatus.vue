@@ -109,7 +109,7 @@ const currentStep = computed(() => {
     pending: 1,
     approved: 2,
     rejected: 1,
-    issued: 3,
+    issued: 2,
     completed: 2
   }
   return stepMap[props.status] || 0
@@ -131,13 +131,8 @@ const workflowSteps = computed(() => {
       },
       {
         status: 'approved',
-        title: '已审核',
-        description: '审核通过，准备发货'
-      },
-      {
-        status: 'issued',
-        title: '已发货',
-        description: '物资已出库发货'
+        title: '已完成',
+        description: '审核通过，物资已自动发放'
       }
     ]
   } else if (props.workflowType === 'inbound') {
@@ -179,13 +174,6 @@ const actions = computed(() => {
       icon: 'CircleClose',
       handler: () => emit('action', 'reject')
     })
-  } else if (props.status === 'approved' && props.workflowType === 'requisition') {
-    actionList.push({
-      label: '发货',
-      type: 'warning',
-      icon: 'Box',
-      handler: () => emit('action', 'issue')
-    })
   }
 
   return actionList
@@ -218,7 +206,7 @@ const getStatusText = (status) => {
     pending: '待审核',
     approved: '已审核',
     rejected: '已拒绝',
-    issued: '已发货',
+    issued: '已发放',
     completed: '已完成'
   }
   return texts[status] || status
@@ -240,7 +228,10 @@ const formatTime = (time) => {
 
 <style scoped>
 .workflow-status {
-  padding: 20px 0;
+  padding: 10px 0;
+  /* 限制为2行高度：标题1行 + 描述1行 */
+  max-height: 80px;
+  overflow: hidden;
 }
 
 .status-title {
@@ -248,6 +239,7 @@ const formatTime = (time) => {
   align-items: center;
   gap: 10px;
   font-size: 14px;
+  line-height: 1.5;
 }
 
 .status-time {
@@ -257,25 +249,39 @@ const formatTime = (time) => {
 }
 
 .status-description {
-  margin-top: 8px;
+  margin-top: 4px;
   font-size: 13px;
   color: #606266;
+  line-height: 1.5;
+  /* 限制为1行 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .workflow-actions {
-  margin-top: 20px;
+  margin-top: 10px;
   display: flex;
   gap: 10px;
   justify-content: center;
 }
 
+/* 隐藏步骤条的描述，只保留标题，节省空间 */
 :deep(.el-step__title) {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
+  line-height: 1.5;
 }
 
 :deep(.el-step__description) {
-  font-size: 12px;
-  color: #909399;
+  display: none;
+}
+
+:deep(.el-steps) {
+  max-height: 40px;
+}
+
+:deep(.el-step) {
+  flex-basis: 30% !important;
 }
 </style>

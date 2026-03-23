@@ -3,30 +3,46 @@
     class="task-timeline"
     :class="{ 'is-grabbing': isCanvasDragging }"
     ref="timelineRef"
-    :style="{ height: totalHeight + 'px', width: width + 'px', cursor: currentCursor }"
+    :style="{ height: totalHeight + 'px', cursor: currentCursor }"
     @contextmenu="$emit('context-menu', $event)"
     @mousedown="handleCanvasMouseDown"
+    @dblclick="handleCanvasDblClick"
     @mousemove="handleAllMouseMove($event)"
     @mouseup="handleCanvasMouseUp"
     @mouseleave="handleCanvasMouseUp"
+    @wheel="handleWheel"
   >
     <svg
-      :width="width"
+      :width="svgWidth"
       :height="totalHeight"
       :style="{ background: 'linear-gradient(to right, rgba(0, 0, 0, 0.02) 1px, rgba(0, 0, 0, 0.02) 1px)', backgroundSize: dayWidth + 'px 100%' }"
     >
       <!-- 定义箭头标记 -->
       <defs>
+        <!-- 普通依赖关系箭头 - 更小 -->
         <marker
           :id="arrowMarkerId"
-          markerWidth="10"
-          markerHeight="10"
-          refX="9"
-          refY="3"
+          markerWidth="8"
+          markerHeight="8"
+          refX="7"
+          refY="2.5"
+          orient="0"
+          markerUnits="strokeWidth"
+        >
+          <path d="M0,0 L0,5 L7,2.5 z" :fill="arrowColor" />
+        </marker>
+
+        <!-- 临时连线箭头 - 灰色更小 -->
+        <marker
+          id="temp-arrow"
+          markerWidth="8"
+          markerHeight="8"
+          refX="7"
+          refY="2.5"
           orient="auto"
           markerUnits="strokeWidth"
         >
-          <path d="M0,0 L0,6 L9,3 z" :fill="arrowColor" />
+          <path d="M0,0 L0,5 L7,2.5 z" fill="#999999" />
         </marker>
       </defs>
 
@@ -57,7 +73,9 @@
             'is-selected': selectedTaskId === task.id,
             'is-critical': task.is_critical && showCriticalPath,
             'is-dragging': isDragging && draggedTask?.id === task.id,
+            'is-preview': task.isPreview,
             'is-creating-dependency': isCreatingDependency && sourceTaskId === task.id,
+            'is-dependency-target': isCreatingDependency && hoveredTargetTaskId === task.id,
             'is-dragging-over': timelineDragOverTaskId === task.id,
             'drop-before': timelineDragOverTaskId === task.id && timelineDropPosition === 'before',
             'drop-after': timelineDragOverTaskId === task.id && timelineDropPosition === 'after',
@@ -78,7 +96,7 @@
         >
           <!-- 任务条矩形 -->
           <rect
-            v-if="!task.isMilestone"
+            v-if="!task.isMilestone && !task.isDummy"
             :x="0"
             :y="0"
             :width="task.width"
@@ -92,7 +110,7 @@
           />
 
           <!-- 里程碑 (菱形) -->
-          <g v-else class="milestone-group">
+          <g v-else-if="task.isMilestone" class="milestone-group">
             <rect
               :x="task.width / 2 - task.height / 2"
               :y="-task.height / 2"
@@ -104,12 +122,41 @@
             />
           </g>
 
+          <!-- 虚任务 (宝盖形状 - 简化平版) -->
+          <!-- 父任务展开且有子任务时显示宝盖，折叠时显示进度条 -->
+          <g v-else-if="task.isDummy" class="dummy-task-group">
+            <!-- 有可见子任务时显示平宝盖 -->
+            <path
+              v-if="task.hasVisibleChildren"
+              :d="`M 0,${taskHeight * 0.7} L ${task.width * 0.15},${taskHeight * 0.7} L ${task.width * 0.85},${taskHeight * 0.7} L ${task.width},${taskHeight * 0.7} L ${task.width},${taskHeight * 0.3} L ${task.width * 0.85},${taskHeight * 0.3} L ${task.width * 0.15},${taskHeight * 0.3} L 0,${taskHeight * 0.3}`"
+              fill="none"
+              :stroke="task.is_critical && showCriticalPath ? '#f56c6c' : '#9ca3af'"
+              stroke-width="1"
+              stroke-dasharray="4,2"
+              style="pointer-events: all;"
+            />
+            <!-- 折叠时显示进度条 -->
+            <rect
+              v-else
+              :x="0"
+              :y="0"
+              :width="task.width"
+              :height="taskHeight"
+              :fill="getProgressBarColor(task)"
+              :stroke="task.is_critical && showCriticalPath ? '#f56c6c' : 'none'"
+              :stroke-width="task.is_critical && showCriticalPath ? 2 : 0"
+              :rx="4"
+              opacity="0.3"
+              style="pointer-events: all;"
+            />
+          </g>
+
           <!-- 进度条 (内部填充) -->
           <rect
-            v-if="!task.isMilestone && task.progress > 0"
+            v-if="!task.isMilestone && !task.isDummy && task.progress > 0"
             :x="0"
             :y="0"
-            :width="task.width * (task.progress / 100)"
+            :width="task.width * (Number(task.progress) / 100)"
             :height="taskHeight"
             :fill="getProgressBarColor(task)"
             :rx="4"
@@ -120,19 +167,19 @@
           <!-- 任务文本 -->
           <text
             :x="task.width / 2"
-            :y="taskHeight / 2 + 4"
+            :y="taskHeight / 2 + 3"
             text-anchor="middle"
             fill="white"
-            font-size="12"
+            font-size="10"
             font-weight="bold"
             style="pointer-events: none; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);"
           >
-            {{ task.isMilestone ? '' : task.progress + '%' }}
+            {{ task.isMilestone ? '' : (task.isDummy ? '⌒' : (showTaskNames ? task.name : task.progress + '%')) }}
           </text>
 
           <!-- 拖拽手柄 (左侧) -->
           <rect
-            v-if="!task.isMilestone"
+            v-if="!task.isMilestone && !task.isDummy"
             :x="0"
             :y="0"
             :width="8"
@@ -144,7 +191,7 @@
 
           <!-- 拖拽手柄 (右侧) -->
           <rect
-            v-if="!task.isMilestone"
+            v-if="!task.isMilestone && !task.isDummy"
             :x="task.width - 8"
             :y="0"
             :width="8"
@@ -156,34 +203,37 @@
         </g>
       </g>
 
-      <!-- 临时连线层（用于创建依赖关系） -->
+      <!-- 临时连线层（用于创建依赖关系）- 灰色 -->
       <g v-if="isCreatingDependency && tempLinePath" class="temp-line-layer">
+        <!-- 主连线 - 灰色虚线 -->
         <path
           :d="tempLinePath"
-          stroke="#409eff"
-          stroke-width="2"
+          stroke="#999999"
+          stroke-width="1.5"
           fill="none"
-          stroke-dasharray="5,5"
-          :marker-end="`url(#${arrowMarkerId})`"
+          stroke-dasharray="6,3"
+          marker-end="url(#temp-arrow)"
           class="temp-line-path"
         />
       </g>
 
-      <!-- 依赖关系箭头层 -->
+      <!-- 依赖关系箭头层 - 黑色细线 -->
       <g
         v-if="showDependencies"
         class="dependencies-layer"
-        style="pointer-events: none;"
       >
         <path
           v-for="dep in visibleDependencies"
           :key="dep.id"
           :d="dep.path"
-          :stroke="dep.isCritical ? '#f56c6c' : '#909399'"
-          :stroke-width="dep.isCritical ? 2 : 1.5"
+          :stroke="dep.isCritical ? '#f56c6c' : '#303133'"
+          :stroke-width="dep.isCritical ? 1.5 : 1"
           fill="none"
           :marker-end="`url(#${arrowMarkerId})`"
           class="dependency-path"
+          style="pointer-events: stroke; cursor: pointer;"
+          @contextmenu.stop="handleDependencyContextMenu($event, dep)"
+          @click.stop="handleDependencyClick($event, dep)"
         />
       </g>
 
@@ -218,9 +268,11 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { isMilestone } from '@/utils/ganttHelpers'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
+import { isMilestone, isDummyTask } from '@/utils/ganttHelpers'
 import { ganttStore } from '@/stores/ganttStore'
+import { useGanttDrag, DragMode } from '@/composables/useGanttDrag'
+import { formatDate, addDays } from '@/utils/dateFormat'
 
 const props = defineProps({
   tasks: {
@@ -262,11 +314,11 @@ const props = defineProps({
   },
   rowHeight: {
     type: Number,
-    default: 60
+    default: 50
   },
   taskHeight: {
     type: Number,
-    default: 32
+    default: 24
   },
   showDependencies: {
     type: Boolean,
@@ -304,6 +356,14 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  previewTask: {
+    type: Object,
+    default: null
+  },
+  dragMode: {
+    type: String,
+    default: 'none'
+  },
   todayPosition: {
     type: Number,
     default: null
@@ -323,6 +383,14 @@ const props = defineProps({
   emptyDescription: {
     type: String,
     default: '暂无进度计划数据'
+  },
+  showTaskNames: {
+    type: Boolean,
+    default: false
+  },
+  contentHeight: {
+    type: Number,
+    default: undefined
   }
 })
 
@@ -332,8 +400,11 @@ const emit = defineEmits([
   'task-mousedown',
   'context-menu',
   'dependency-create',
+  'dependency-contextmenu',
   'mousemove',
-  'task-dragged'
+  'task-dragged',
+  'zoom-change',
+  'scroll'
 ])
 
 const timelineRef = ref(null)
@@ -395,6 +466,32 @@ const handleCanvasMouseDown = (event) => {
       }
     }
   }
+}
+
+// 画布双击 - 快速添加任务
+const handleCanvasDblClick = (event) => {
+  // 如果双击的是任务条，不触发
+  if (event.target.closest('.task-bar-group')) {
+    return
+  }
+
+  // 发送新建任务事件
+  emit('context-menu', {
+    event,
+    type: 'new-task',
+    action: 'create-immediate'
+  })
+}
+
+// 鼠标滚轮缩放 - 只有按住 Ctrl 键时才缩放
+const handleWheel = (event) => {
+  // 只有按住 Ctrl 键时才进行时间轴缩放
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault()
+    const delta = event.deltaY > 0 ? -2 : 2
+    emit('zoom-change', Math.max(10, Math.min(100, props.dayWidth + delta)))
+  }
+  // 否则允许正常的垂直滚动（不阻止默认行为）
 }
 
 // 画布鼠标移动
@@ -472,19 +569,63 @@ onMounted(() => {
   document.addEventListener('mouseup', handleGlobalMouseUp)
   document.addEventListener('keydown', handleGlobalKeyDown)
   document.addEventListener('keyup', handleGlobalKeyUp)
+
+  // 初始化容器宽度
+  updateContainerWidth()
+
+  // 监听容器宽度变化
+  const resizeObserver = new ResizeObserver(() => {
+    updateContainerWidth()
+  })
+
+  if (timelineRef.value?.parentElement) {
+    const scrollParent = timelineRef.value.parentElement
+    resizeObserver.observe(scrollParent)
+
+    // 监听父容器滚动事件，同步到时间轴头部
+    const scrollHandler = () => {
+      emit('scroll', { scrollLeft: scrollParent.scrollLeft })
+    }
+    scrollParent.addEventListener('scroll', scrollHandler)
+    timelineRef.value._scrollHandler = scrollHandler
+  }
+
+  // 保存observer引用以便清理
+  timelineRef.value._resizeObserver = resizeObserver
 })
 
 onUnmounted(() => {
   document.removeEventListener('mouseup', handleGlobalMouseUp)
   document.removeEventListener('keydown', handleGlobalKeyDown)
   document.removeEventListener('keyup', handleGlobalKeyUp)
+
+  // 清理ResizeObserver
+  if (timelineRef.value?._resizeObserver) {
+    timelineRef.value._resizeObserver.disconnect()
+  }
+
+  // 清理滚动监听器
+  if (timelineRef.value?.parentElement && timelineRef.value._scrollHandler) {
+    timelineRef.value.parentElement.removeEventListener('scroll', timelineRef.value._scrollHandler)
+  }
 })
 
 // ==================== 计算属性 ====================
-// 计算时间轴宽度（使用传入的 timelineWidth 保持与 header 一致）
-const width = computed(() => {
-  return props.timelineWidth || 800
+// 容器宽度监听
+const containerWidth = ref(800)
+
+// SVG宽度：取容器宽度和计算出的时间轴宽度中的较大值
+const svgWidth = computed(() => {
+  const calculatedWidth = props.timelineWidth || 800
+  return Math.max(containerWidth.value, calculatedWidth)
 })
+
+// 监听容器宽度变化
+const updateContainerWidth = () => {
+  if (timelineRef.value?.parentElement) {
+    containerWidth.value = timelineRef.value.parentElement.clientWidth
+  }
+}
 
 // 获取可见任务（过滤掉被折叠隐藏的任务）
 const { actions } = ganttStore
@@ -503,8 +644,12 @@ const renderTasks = computed(() => {
   if (!timelineStart) return []
 
   return visibleTasks.value.map((task, index) => {
-    const taskStart = new Date(task.start)
-    const taskEnd = new Date(task.end)
+    // 如果正在拖拽此任务且有预览数据，使用预览数据
+    const isDraggingThisTask = props.isDragging && props.draggedTask?.id === task.id
+    const taskData = isDraggingThisTask && props.previewTask ? props.previewTask : task
+
+    const taskStart = new Date(taskData.start)
+    const taskEnd = new Date(taskData.end)
     const timelineStartDate = new Date(timelineStart)
 
     // 计算位置和宽度
@@ -517,18 +662,27 @@ const renderTasks = computed(() => {
     // Y位置：居中于行
     const y = index * props.rowHeight + (props.rowHeight - props.taskHeight) / 2
 
-    const taskIsMilestone = isMilestone(task)
+    const taskIsMilestone = isMilestone(taskData)
+    const taskIsDummy = isDummyTask(taskData, props.rawTasks || [])
+
+    // 检查虚任务是否有子任务显示（未折叠）
+    const hasVisibleChildren = taskIsDummy && props.rawTasks ?
+      props.rawTasks.some(t => t.parent_id === task.id && !actions.isTaskHidden(t.id, props.rawTasks)) : false
 
     return {
       id: task.id,
+      name: taskData.name,
       x,
       y,
       width,
       isMilestone: taskIsMilestone,
+      isDummy: taskIsDummy,
+      hasVisibleChildren,
       height: taskIsMilestone ? props.taskHeight : props.taskHeight,
-      progress: task.progress || 0,
-      status: task.status,
-      is_critical: task.is_critical
+      progress: taskData.progress || 0,
+      status: taskData.status,
+      is_critical: taskData.is_critical,
+      isPreview: isDraggingThisTask
     }
   })
 })
@@ -564,7 +718,41 @@ const baselineTasks = computed(() => {
 })
 
 // ==================== 任务操作 ====================
-// 临时连线路径
+// 当前鼠标悬停的任务（用于依赖连线创建时的视觉反馈）
+const hoveredTargetTaskId = computed(() => {
+  if (!props.isCreatingDependency || !props.tempLineEnd) {
+    return null
+  }
+
+  const mouseX = props.tempLineEnd.x
+  const mouseY = props.tempLineEnd.y
+
+  // 检查鼠标是否在某个任务范围内
+  for (const task of renderTasks.value) {
+    if (task.id === props.sourceTaskId) continue // 跳过源任务本身
+
+    const taskLeft = task.x
+    const taskRight = task.x + task.width
+    const taskTop = task.y
+    const taskBottom = task.y + props.taskHeight
+
+    // 扩大检测范围，让用户更容易选中目标任务
+    const padding = 10
+
+    if (
+      mouseX >= taskLeft - padding &&
+      mouseX <= taskRight + padding &&
+      mouseY >= taskTop - padding &&
+      mouseY <= taskBottom + padding
+    ) {
+      return task.id
+    }
+  }
+
+  return null
+})
+
+// 临时连线路径（使用平滑的贝塞尔曲线）
 const tempLinePath = computed(() => {
   if (!props.isCreatingDependency || !props.sourceTaskId || !props.tempLineEnd) {
     return ''
@@ -582,14 +770,38 @@ const tempLinePath = computed(() => {
   const x2 = props.tempLineEnd.x
   const y2 = props.tempLineEnd.y
 
-  // 计算路径：从源任务右侧出发，先水平，再垂直，再水平
-  const midX = (x1 + x2) / 2
-  return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`
+  // 计算控制点偏移量
+  const curveOffset = Math.min(Math.abs(x2 - x1) * 0.5, 100) // 最大偏移 100px
+
+  if (x1 < x2) {
+    // 目标在源任务右侧：使用平滑的 S 型曲线
+    // 控制点让线条先水平延伸，再平滑过渡到目标点
+    const cp1x = x1 + curveOffset * 0.6
+    const cp1y = y1
+    const cp2x = x2 - curveOffset * 0.6
+    const cp2y = y2
+
+    return `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`
+  } else {
+    // 目标在源任务左侧：使用 U 型曲线
+    const midX = x1 + curveOffset + 40
+    const cp1x = x1 + curveOffset * 0.5
+    const cp1y = y1
+    const cp2x = midX
+    const cp2y = y1
+    const cp3x = midX
+    const cp3y = y2
+    const cp4x = x2 + curveOffset * 0.5
+    const cp4y = y2
+
+    return `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${midX} ${(y1 + y2) / 2} S ${cp4x} ${cp4y}, ${x2} ${y2}`
+  }
 })
 
 // 获取任务条颜色
 const getTaskBarColor = (task) => {
   if (task.isMilestone) return '#e6a23c'
+  if (task.isDummy) return '#d1d5db' // 虚任务使用浅灰色
 
   const colors = {
     completed: '#67c23a',
@@ -657,7 +869,32 @@ const handleTaskMouseDown = (event, task) => {
     return
   }
 
-  emit('task-mousedown', event, { id: task.id })
+  // 获取任务条DOM元素（用于检测拖拽边缘）
+  const taskBarElement = event.target.closest('.task-bar-group')
+
+  // 获取原始任务数据
+  const rawTask = props.rawTasks.find(t => t.id === task.id)
+  emit('task-mousedown', event, rawTask || task, taskBarElement)
+}
+
+// 依赖关系点击
+const handleDependencyClick = (event, dep) => {
+  event.stopPropagation()
+  console.log('Dependency clicked:', dep)
+}
+
+// 依赖关系右键菜单
+const handleDependencyContextMenu = (event, dep) => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  // 获取鼠标在页面上的位置
+  emit('dependency-contextmenu', {
+    event,
+    dependency: dep,
+    x: event.clientX,
+    y: event.clientY
+  })
 }
 
 // ==================== 拖拽排序处理 ====================
@@ -752,7 +989,6 @@ defineExpose({
 
 <style scoped>
 .task-timeline {
-  flex: 1;
   position: relative;
   min-width: 800px;
   overflow: hidden;
@@ -775,8 +1011,27 @@ defineExpose({
   opacity: 0.8;
 }
 
+.task-bar-group.is-preview {
+  opacity: 0.7;
+}
+
 .task-bar-group.is-creating-dependency {
   filter: brightness(1.2) drop-shadow(0 0 8px rgba(64, 158, 255, 0.6));
+}
+
+/* 依赖连线目标高亮 */
+.task-bar-group.is-dependency-target {
+  filter: brightness(1.3) drop-shadow(0 0 12px rgba(64, 158, 255, 0.9));
+  animation: pulse-target 1s ease-in-out infinite;
+}
+
+@keyframes pulse-target {
+  0%, 100% {
+    filter: brightness(1.2) drop-shadow(0 0 10px rgba(64, 158, 255, 0.8));
+  }
+  50% {
+    filter: brightness(1.4) drop-shadow(0 0 16px rgba(64, 158, 255, 1));
+  }
 }
 
 /* 拖拽排序视觉反馈 */
@@ -796,37 +1051,23 @@ defineExpose({
   filter: brightness(1.2) drop-shadow(0 0 6px rgba(64, 158, 255, 0.8));
 }
 
+/* 临时连线样式 */
+.temp-line-layer {
+  pointer-events: none;
+}
+
 .temp-line-path {
-  animation: dash 1s linear infinite;
-}
-
-@keyframes dash {
-  to {
-    stroke-dashoffset: -10;
-  }
-}
-
-.task-bar-rect {
-  transition: all 0.3s;
-}
-
-.resize-handle-left,
-.resize-handle-right {
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.task-bar-group:hover .resize-handle-left,
-.task-bar-group:hover .resize-handle-right {
-  opacity: 1;
+  /* 简单的灰色虚线，无动画 */
 }
 
 .dependency-path {
-  transition: stroke-width 0.2s;
+  transition: stroke-width 0.2s, stroke 0.2s;
+  cursor: pointer;
 }
 
 .dependency-path:hover {
-  stroke-width: 3 !important;
+  stroke-width: 2.5 !important;
+  stroke: #409EFF !important;
 }
 
 .drag-tooltip {

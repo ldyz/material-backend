@@ -50,22 +50,6 @@
         </template>
         <template #right>
           <el-button
-            type="primary"
-            :icon="Plus"
-            @click="handleIn"
-            v-if="authStore.hasPermission('stock_in')"
-          >
-            入库
-          </el-button>
-          <el-button
-            type="warning"
-            :icon="Minus"
-            @click="handleOut"
-            v-if="authStore.hasPermission('stock_out')"
-          >
-            出库
-          </el-button>
-          <el-button
             type="success"
             :icon="Download"
             @click="handleExport"
@@ -93,6 +77,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="specification" label="规格型号" width="120" show-overflow-tooltip />
+        <el-table-column label="材质" width="100" show-overflow-tooltip>
+          <template #default="scope">
+            {{ scope.row.material || '-' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="unit" label="单位" width="80" />
         <el-table-column prop="quantity" label="库存数量" width="120" align="right">
           <template #default="scope">
@@ -126,8 +115,26 @@
             {{ scope.row.updated_at || '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="scope">
+            <el-button
+              type="success"
+              size="small"
+              :icon="Plus"
+              @click="handleRowIn(scope.row)"
+              v-if="authStore.hasPermission('stock_in')"
+            >
+              入库
+            </el-button>
+            <el-button
+              type="warning"
+              size="small"
+              :icon="Minus"
+              @click="handleRowOut(scope.row)"
+              v-if="authStore.hasPermission('stock_out')"
+            >
+              出库
+            </el-button>
             <el-button
               type="primary"
               size="small"
@@ -153,93 +160,14 @@
       />
     </el-card>
 
-    <!-- 入库/出库对话框 -->
-    <Dialog
-      v-model="dialogVisible"
-      :title="dialogTitle"
-      width="700px"
-      :loading="dialogLoading"
-      @confirm="handleSubmit"
-    >
-      <el-form
-        ref="formRef"
-        :model="formData"
-        :rules="formRules"
-        label-width="100px"
-      >
-        <el-form-item label="物资" prop="material_id">
-          <el-select
-            v-model="formData.material_id"
-            placeholder="请选择物资"
-            filterable
-            style="width: 100%"
-            @change="handleMaterialChange"
-          >
-            <el-option
-              v-for="item in materialOptions"
-              :key="item.id"
-              :label="`${item.code} - ${item.name}`"
-              :value="item.id"
-            >
-              <span style="float: left">{{ item.code }} - {{ item.name }}</span>
-              <span style="float: right; color: #8492a6; font-size: 13px">
-                {{ item.category }}
-              </span>
-            </el-option>
-          </el-select>
-        </el-form-item>
-
-        <el-alert
-          v-if="selectedMaterial"
-          :title="`当前库存: ${selectedMaterial.quantity} ${selectedMaterial.unit}`"
-          type="info"
-          :closable="false"
-          class="mb-2"
-        />
-
-        <el-form-item label="数量" prop="quantity">
-          <el-input-number
-            v-model="formData.quantity"
-            :min="1"
-            :max="dialogType === 'out' ? selectedMaterial?.quantity : undefined"
-            :step="1"
-            :precision="0"
-            placeholder="请输入数量"
-            style="width: 100%"
-          />
-        </el-form-item>
-
-        <el-form-item label="单价" prop="price">
-          <el-input-number
-            v-model="formData.price"
-            :min="0"
-            :precision="2"
-            :step="0.01"
-            placeholder="请输入单价"
-            style="width: 100%"
-          />
-          <div class="text-gray">不填则使用物资默认单价</div>
-        </el-form-item>
-
-        <el-form-item label="操作类型" prop="type">
-          <el-radio-group v-model="formData.type">
-            <el-radio label="in">入库</el-radio>
-            <el-radio label="out">出库</el-radio>
-            <el-radio label="adjust">调整</el-radio>
-          </el-radio-group>
-        </el-form-item>
-
-        <el-form-item label="备注" prop="remark">
-          <el-input
-            v-model="formData.remark"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入备注"
-            maxlength="500"
-          />
-        </el-form-item>
-      </el-form>
-    </Dialog>
+    <!-- 库存操作对话框 -->
+    <StockOperationDialog
+      v-model="operationDialogVisible"
+      :material-id="operationMaterialId"
+      :operation-type="operationType"
+      :stock-data="operationStockData"
+      @success="fetchData"
+    />
 
     <!-- 库存日志对话框 -->
     <Dialog
@@ -278,7 +206,7 @@
               type="primary"
               @click="handleViewDetail(scope.row)"
             >
-              {{ scope.row.remark }}
+              {{ formatRemark(scope.row) }}
             </el-link>
             <span v-else>{{ scope.row.remark || '-' }}</span>
           </template>
@@ -312,9 +240,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { stockApi, materialApi } from '@/api'
+import { stockApi } from '@/api'
 import { ElMessage } from 'element-plus'
 import {
   Search,
@@ -329,6 +257,7 @@ import TableToolbar from '@/components/common/TableToolbar.vue'
 import InboundDetailDialog from '@/components/inbound/InboundDetailDialog.vue'
 import RequisitionDetailDialog from '@/components/requisition/RequisitionDetailDialog.vue'
 import ProjectSelector from '@/components/common/ProjectSelector.vue'
+import StockOperationDialog from '@/components/stock/StockOperationDialog.vue'
 
 const authStore = useAuthStore()
 
@@ -355,47 +284,11 @@ const projectList = ref([])
 // 物资分类列表
 const categoryList = ref([])
 
-// 入库/出库对话框
-const dialogVisible = ref(false)
-const dialogType = ref('in')
-const dialogTitle = computed(() => {
-  const titles = {
-    in: '库存入库',
-    out: '库存出库',
-    adjust: '库存调整'
-  }
-  return titles[dialogType.value] || '库存操作'
-})
-const dialogLoading = ref(false)
-const formRef = ref(null)
-
-// 表单数据
-const formData = reactive({
-  material_id: null,
-  quantity: null,
-  price: null,
-  type: 'in',
-  remark: ''
-})
-
-// 物资选项
-const materialOptions = ref([])
-const selectedMaterial = computed(() => {
-  return materialOptions.value.find(m => m.id === formData.material_id)
-})
-
-// 表单验证规则
-const formRules = {
-  material_id: [
-    { required: true, message: '请选择物资', trigger: 'change' }
-  ],
-  quantity: [
-    { required: true, message: '请输入数量', trigger: 'blur' }
-  ],
-  type: [
-    { required: true, message: '请选择操作类型', trigger: 'change' }
-  ]
-}
+// 库存操作对话框
+const operationDialogVisible = ref(false)
+const operationMaterialId = ref(null)
+const operationType = ref('in')
+const operationStockData = ref(null)
 
 // 库存日志
 const logsDialogVisible = ref(false)
@@ -550,63 +443,20 @@ const handleReset = () => {
   fetchData()
 }
 
-// 入库
-const handleIn = () => {
-  dialogType.value = 'in'
-  resetForm()
-  formData.type = 'in'
-  dialogVisible.value = true
-  fetchMaterialOptions()
+// 行入库（带物资信息）
+const handleRowIn = (row) => {
+  operationMaterialId.value = row.material_id
+  operationType.value = 'in'
+  operationStockData.value = row
+  operationDialogVisible.value = true
 }
 
-// 出库
-const handleOut = () => {
-  dialogType.value = 'out'
-  resetForm()
-  formData.type = 'out'
-  dialogVisible.value = true
-  fetchMaterialOptions()
-}
-
-// 物资选择变化
-const handleMaterialChange = () => {
-  const material = selectedMaterial.value
-  if (material) {
-    formData.price = material.price
-  }
-}
-
-// 提交表单
-const handleSubmit = async () => {
-  if (!formRef.value) return
-
-  try {
-    await formRef.value.validate()
-    dialogLoading.value = true
-
-    const data = {
-      material_id: formData.material_id,
-      quantity: formData.quantity,
-      price: formData.price,
-      type: formData.type,
-      remark: formData.remark
-    }
-
-    if (formData.type === 'in' || formData.type === 'adjust') {
-      await stockApi.in(data)
-      ElMessage.success('入库成功')
-    } else {
-      await stockApi.out(data)
-      ElMessage.success('出库成功')
-    }
-
-    dialogVisible.value = false
-    fetchData()
-  } catch (error) {
-    console.error('提交失败:', error)
-  } finally {
-    dialogLoading.value = false
-  }
+// 行出库（带物资信息）
+const handleRowOut = (row) => {
+  operationMaterialId.value = row.material_id
+  operationType.value = 'out'
+  operationStockData.value = row
+  operationDialogVisible.value = true
 }
 
 // 查看日志
@@ -614,17 +464,6 @@ const handleViewLogs = (row) => {
   currentLogStockId.value = row.id
   logsDialogVisible.value = true
   fetchLogs()
-}
-
-// 获取物资选项
-// 适配统一响应格式
-const fetchMaterialOptions = async () => {
-  try {
-    const { data } = await materialApi.getList({ pageSize: 1000 })
-    materialOptions.value = data || []
-  } catch (error) {
-    console.error('获取物资列表失败:', error)
-  }
 }
 
 // 获取库存日志
@@ -665,20 +504,6 @@ const handleExport = async () => {
     ElMessage.success('导出成功')
   } catch (error) {
     console.error('导出失败:', error)
-  }
-}
-
-// 重置表单
-const resetForm = () => {
-  Object.assign(formData, {
-    material_id: null,
-    quantity: null,
-    price: null,
-    type: 'in',
-    remark: ''
-  })
-  if (formRef.value) {
-    formRef.value.clearValidate()
   }
 }
 
@@ -740,7 +565,36 @@ const getLogTypeText = (type) => {
 // 检查是否关联到订单
 const isRelatedOrder = (remark) => {
   if (!remark) return false
-  return remark.includes('入库单') || remark.includes('出库单发放')
+  return remark.includes('入库单') || remark.includes('出库单')
+}
+
+// 格式化备注显示
+const formatRemark = (row) => {
+  // 优先使用直接字段
+  if (row.inbound_code) {
+    return `入库单-${row.inbound_code}`
+  }
+  if (row.requisition_code) {
+    return `出库单-${row.requisition_code}`
+  }
+
+  // 从备注中提取单号（兼容旧数据）
+  if (!row.remark) return '-'
+
+  // 入库单（多种格式）：入库单、入库单审核入库、备注：入库单等
+  const inboundMatch = row.remark.match(/入库单(?:审核入库)?\s*[:：]?\s*(\w+)/)
+  if (inboundMatch) {
+    return `入库单-${inboundMatch[1]}`
+  }
+
+  // 出库单（多种格式）：出库单、出库单发放等
+  const requisitionMatch = row.remark.match(/出库单(?:发放)?\s*[:：]?\s*(\w+)/)
+  if (requisitionMatch) {
+    return `出库单-${requisitionMatch[1]}`
+  }
+
+  // 其他情况返回原备注
+  return row.remark
 }
 
 // 查看详情
@@ -761,16 +615,16 @@ const handleViewDetail = (row) => {
   // 从备注中提取单号（兼容旧数据）
   if (!row.remark) return
 
-  // 入库单审核入库：xxx
-  const inboundMatch = row.remark.match(/入库单审核入库[:：]\s*(\w+)/)
+  // 入库单（多种格式）：入库单、入库单审核入库、备注：入库单等
+  const inboundMatch = row.remark.match(/入库单(?:审核入库)?\s*[:：]?\s*(\w+)/)
   if (inboundMatch) {
     currentOrderNo.value = inboundMatch[1]
     inboundDetailVisible.value = true
     return
   }
 
-  // 出库单发放：xxx
-  const requisitionMatch = row.remark.match(/出库单发放[:：]\s*(\w+)/)
+  // 出库单（多种格式）：出库单、出库单发放等
+  const requisitionMatch = row.remark.match(/出库单(?:发放)?\s*[:：]?\s*(\w+)/)
   if (requisitionMatch) {
     currentRequisitionNo.value = requisitionMatch[1]
     requisitionDetailVisible.value = true
@@ -823,16 +677,6 @@ onMounted(() => {
 <style scoped>
 .stock-container {
   padding: 0;
-}
-
-.text-gray {
-  color: #909399;
-  font-size: 12px;
-  margin-top: 4px;
-}
-
-.mb-2 {
-  margin-bottom: 12px;
 }
 
 .mt-20 {

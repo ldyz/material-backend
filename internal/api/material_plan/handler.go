@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/yourorg/material-backend/backend/internal/api/auth"
+	"github.com/yourorg/material-backend/backend/internal/api/audit"
 	"github.com/yourorg/material-backend/backend/internal/api/response"
 	jwtpkg "github.com/yourorg/material-backend/backend/pkg/jwt"
 	"gorm.io/gorm"
@@ -45,6 +46,18 @@ func getUserInfo(c *gin.Context) (uint, string, error) {
 	return userID, userNameStr, nil
 }
 
+// calculateProgressCapped calculates progress percentage (capped at 100)
+func calculateProgressCapped(current, total float64) float64 {
+	if total == 0 {
+		return 0
+	}
+	progress := current / total * 100
+	if progress > 100 {
+		return 100
+	}
+	return progress
+}
+
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	g := rg.Group("/material-plan")
 	g.Use(jwtpkg.TokenMiddleware())
@@ -72,6 +85,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	g.POST("/plans/:id/items", auth.PermissionMiddleware(db, "material_plan_edit"), addPlanItem(service))
 	g.PUT("/items/:id", auth.PermissionMiddleware(db, "material_plan_edit"), updatePlanItem(service))
 	g.DELETE("/items/:id", auth.PermissionMiddleware(db, "material_plan_edit"), deletePlanItem(service))
+	g.POST("/plans/:id/sync-materials", auth.PermissionMiddleware(db, "material_plan_edit"), syncPlanMaterials(db))
 
 	// Workflow status endpoints
 	g.GET("/plans/:id/workflow", auth.PermissionMiddleware(db, "material_plan_view"), getPlanWorkflowStatus(workflow))
@@ -217,11 +231,55 @@ func listPlans(db *gorm.DB) gin.HandlerFunc {
 		var plans []MaterialPlan
 		query.Offset((page - 1) * pageSize).Limit(pageSize).Find(&plans)
 
-		// Enrich with project names
+		// Enrich with project names and progress
 		enrichedPlans := make([]map[string]any, len(plans))
 		for i, plan := range plans {
 			dto := plan.ToDTO()
-			dto["progress"] = plan.CalculateProgress()
+
+			// Calculate progress from actual data
+			totalPlanned := 0.0
+			totalReceived := 0.0
+			totalIssued := 0.0
+
+			for _, item := range plan.Items {
+				totalPlanned += item.PlannedQuantity
+
+				// Get received quantity from inbound_items (approved or completed orders)
+				var receivedQty float64
+				db.Raw(`
+					SELECT COALESCE(SUM(ii.quantity), 0)
+					FROM inbound_items ii
+					INNER JOIN inbound_orders io ON ii.inbound_order_id = io.id
+					WHERE ii.material_id = ?
+					AND io.project_id = ?
+					AND io.status IN ('approved', 'completed')
+				`, item.MaterialID, plan.ProjectID).Scan(&receivedQty)
+				totalReceived += receivedQty
+
+				// Get issued quantity from stock_logs (出库/领料)
+				var issuedQty float64
+				db.Table("stock_logs").
+					Where("project_id = ? AND material_id = ?", plan.ProjectID, item.MaterialID).
+					Where("type = ?", "out").
+					Where("source_type = ?", "requisition").
+					Select("COALESCE(SUM(quantity), 0)").
+					Scan(&issuedQty)
+				totalIssued += issuedQty
+			}
+
+			// Calculate progress percentages
+			receiveProgress := calculateProgressCapped(totalReceived, totalPlanned)
+			issueProgress := calculateProgressCapped(totalIssued, totalPlanned)
+			overallProgress := (receiveProgress + issueProgress) / 2
+
+			dto["progress"] = map[string]float64{
+				"receive_progress":  receiveProgress,
+				"issue_progress":    issueProgress,
+				"overall_progress":  overallProgress,
+			}
+			dto["total_planned"] = totalPlanned
+			dto["total_received"] = totalReceived
+			dto["total_issued"] = totalIssued
 
 			// Get project name
 			var project struct {
@@ -249,6 +307,14 @@ func createPlan(service *Service) gin.HandlerFunc {
 			return
 		}
 
+		// Log request for debugging
+		fmt.Printf("[DEBUG] CreatePlan request: project_id=%d, plan_name=%s, items_count=%d\n",
+			req.ProjectID, req.PlanName, len(req.Items))
+		for i, item := range req.Items {
+			fmt.Printf("[DEBUG] Item %d: material_id=%d, material_name=%q, material_code=%q, material=%q, specification=%q, planned_quantity=%f\n",
+				i, item.MaterialID, item.MaterialName, item.MaterialCode, item.Material, item.Specification, item.PlannedQuantity)
+		}
+
 		// Get user info from JWT
 		userID, userName, err := getUserInfo(c)
 		if err != nil {
@@ -265,6 +331,10 @@ func createPlan(service *Service) gin.HandlerFunc {
 
 		// Load items for response
 		service.db.Preload("Items").First(plan, plan.ID)
+
+		// 记录操作日志
+		audit.LogCreate(&userID, userName, audit.ModuleMaterialPlan, audit.ResourceMaterialPlan,
+			plan.ID, plan.PlanNo, req)
 
 		response.Created(c, plan.ToDTOWithEnrichment(service.db), "计划创建成功")
 	}
@@ -308,7 +378,37 @@ func getPlanDetail(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		dto := plan.ToDTOWithEnrichment(db)
-		dto["progress"] = plan.CalculateProgress()
+
+		// Calculate overall progress from items
+		totalPlanned := 0.0
+		totalReceived := 0.0
+		totalIssued := 0.0
+		if items, ok := dto["items"].([]map[string]any); ok {
+			for _, item := range items {
+				if planned, ok := item["planned_quantity"].(float64); ok {
+					totalPlanned += planned
+				}
+				if received, ok := item["received_quantity"].(float64); ok {
+					totalReceived += received
+				}
+				if issued, ok := item["issued_quantity"].(float64); ok {
+					totalIssued += issued
+				}
+			}
+		}
+
+		receiveProgress := calculateProgressCapped(totalReceived, totalPlanned)
+		issueProgress := calculateProgressCapped(totalIssued, totalPlanned)
+		overallProgress := (receiveProgress + issueProgress) / 2
+
+		dto["progress"] = map[string]float64{
+			"receive_progress":  receiveProgress,
+			"issue_progress":    issueProgress,
+			"overall_progress":  overallProgress,
+		}
+		dto["total_planned"] = totalPlanned
+		dto["total_received"] = totalReceived
+		dto["total_issued"] = totalIssued
 
 		response.Success(c, dto)
 	}
@@ -324,6 +424,13 @@ func updatePlan(service *Service) gin.HandlerFunc {
 			return
 		}
 
+		// Get user info for logging
+		_, userName, _ := getUserInfo(c)
+
+		// Get original plan for logging
+		var originalPlan MaterialPlan
+		service.db.First(&originalPlan, uint(planID))
+
 		var req UpdateMaterialPlanRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			response.BadRequest(c, "Invalid request format: "+err.Error())
@@ -335,6 +442,10 @@ func updatePlan(service *Service) gin.HandlerFunc {
 			response.BadRequest(c, err.Error())
 			return
 		}
+
+		// 记录操作日志
+		audit.LogUpdate(nil, userName, audit.ModuleMaterialPlan, audit.ResourceMaterialPlan,
+			plan.ID, plan.PlanNo, originalPlan.ToDTO(), plan.ToDTO())
 
 		response.SuccessWithMessage(c, plan.ToDTOWithEnrichment(service.db), "计划更新成功")
 	}
@@ -350,10 +461,19 @@ func deletePlan(service *Service) gin.HandlerFunc {
 			return
 		}
 
+		// Get plan info for logging
+		var plan MaterialPlan
+		service.db.First(&plan, uint(planID))
+		_, userName, _ := getUserInfo(c)
+
 		if err := service.DeletePlan(uint(planID)); err != nil {
 			response.BadRequest(c, err.Error())
 			return
 		}
+
+		// 记录操作日志
+		audit.LogDelete(nil, userName, audit.ModuleMaterialPlan, audit.ResourceMaterialPlan,
+			uint(planID), plan.PlanNo, plan.ToDTO())
 
 		response.SuccessOnlyMessage(c, "计划删除成功")
 	}
@@ -403,6 +523,10 @@ func submitPlan(workflow *WorkflowIntegration) gin.HandlerFunc {
 			return
 		}
 
+		// 记录操作日志
+		audit.LogApprove(&userID, userName, audit.ModuleMaterialPlan, audit.ResourceMaterialPlan,
+			plan.ID, plan.PlanNo, "提交计划审核")
+
 		response.SuccessOnlyMessage(c, "计划已提交审核")
 	}
 }
@@ -438,6 +562,14 @@ func approvePlan(workflow *WorkflowIntegration) gin.HandlerFunc {
 			return
 		}
 
+		// Get plan info for logging
+		var plan MaterialPlan
+		workflow.db.First(&plan, uint(planID))
+
+		// 记录操作日志
+		audit.LogApprove(&userID, userName, audit.ModuleMaterialPlan, audit.ResourceMaterialPlan,
+			plan.ID, plan.PlanNo, req.Remark)
+
 		response.SuccessOnlyMessage(c, "审批成功")
 	}
 }
@@ -472,6 +604,14 @@ func rejectPlan(workflow *WorkflowIntegration) gin.HandlerFunc {
 			response.BadRequest(c, err.Error())
 			return
 		}
+
+		// Get plan info for logging
+		var plan MaterialPlan
+		workflow.db.First(&plan, uint(planID))
+
+		// 记录操作日志
+		audit.LogReject(&userID, userName, audit.ModuleMaterialPlan, audit.ResourceMaterialPlan,
+			plan.ID, plan.PlanNo, req.Remark)
 
 		response.SuccessOnlyMessage(c, "计划已拒绝")
 	}
@@ -579,14 +719,36 @@ func getPlanItems(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		var items []MaterialPlanItem
-		if err := db.Where("plan_id = ?", planID).Order("sort_order ASC").Find(&items).Error; err != nil {
+		if err := db.Where("plan_id = ?", planID).Order("id ASC").Find(&items).Error; err != nil {
 			response.InternalError(c, "Failed to fetch items")
 			return
 		}
 
+		// Enrich items with material details
 		result := make([]map[string]any, len(items))
 		for i, item := range items {
-			result[i] = item.ToDTO()
+			itemDTO := item.ToDTO()
+
+			// Get material details from material_master
+			var material struct {
+				Code          string
+				Name          string
+				Specification string
+				Unit          string
+				Category      string
+			}
+			if err := db.Table("material_master").Where("id = ?", item.MaterialID).
+				Select("code, name, specification, unit, category").First(&material).Error; err == nil {
+				itemDTO["material_code"] = material.Code
+				itemDTO["material_name"] = material.Name
+				itemDTO["specification"] = material.Specification
+				itemDTO["spec"] = material.Specification // Alias for frontend compatibility
+				itemDTO["unit"] = material.Unit
+				itemDTO["category"] = material.Category
+				itemDTO["material"] = "" // Material type/composition (材质) - to be implemented
+			}
+
+			result[i] = itemDTO
 		}
 
 		response.Success(c, result)
@@ -753,5 +915,42 @@ func getPendingTasks(workflow *WorkflowIntegration) gin.HandlerFunc {
 		}
 
 		response.Success(c, tasks)
+	}
+}
+
+// syncPlanMaterials syncs material IDs for plan items in batch
+func syncPlanMaterials(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		planID := c.Param("id")
+		_, err := strconv.ParseUint(planID, 10, 64)
+		if err != nil {
+			response.BadRequest(c, "Invalid plan ID")
+			return
+		}
+
+		var req SyncMaterialIDsRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "Invalid request format: "+err.Error())
+			return
+		}
+
+		if len(req.Items) == 0 {
+			response.BadRequest(c, "No items to sync")
+			return
+		}
+
+		// Batch update material IDs
+		for _, item := range req.Items {
+			if err := db.Model(&MaterialPlanItem{}).
+				Where("id = ?", item.ID).
+				Update("material_id", item.MaterialID).Error; err != nil {
+				response.InternalError(c, "Failed to update material_id for item "+strconv.Itoa(int(item.ID)))
+				return
+			}
+		}
+
+		response.SuccessWithMessage(c, map[string]any{
+			"updated": len(req.Items),
+		}, "Material IDs synced successfully")
 	}
 }

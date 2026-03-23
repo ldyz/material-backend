@@ -88,14 +88,6 @@
         <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="scope">
             <el-button
-              type="info"
-              size="small"
-              :icon="View"
-              @click="handleView(scope.row)"
-            >
-              查看
-            </el-button>
-            <el-button
               type="primary"
               size="small"
               :icon="Edit"
@@ -230,41 +222,7 @@
             v-model="formData.content"
             :min-height="300"
             :max-length="10000"
-            placeholder="请输入施工内容，支持富文本格式（文字、图片、列表等）"
             :read-only="isViewMode"
-          />
-        </el-form-item>
-
-        <el-form-item label="施工进度" prop="progress">
-          <RichTextEditor
-            :key="`progress-${editorKey}`"
-            v-model="formData.progress"
-            :min-height="150"
-            :max-length="5000"
-            placeholder="请输入施工进度情况，支持富文本格式"
-            :read-only="isViewMode"
-          />
-        </el-form-item>
-
-        <el-form-item label="存在问题" prop="issues">
-          <el-input
-            v-model="formData.issues"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入存在的问题及解决方案"
-            maxlength="1000"
-            :disabled="isViewMode"
-          />
-        </el-form-item>
-
-        <el-form-item label="备注" prop="remark">
-          <el-input
-            v-model="formData.remark"
-            type="textarea"
-            :rows="2"
-            placeholder="请输入备注"
-            maxlength="500"
-            :disabled="isViewMode"
           />
         </el-form-item>
       </el-form>

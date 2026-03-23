@@ -162,6 +162,16 @@ const routes = [
         }
       },
       {
+        path: 'appointments',
+        name: 'Appointments',
+        component: () => import('@/views/Appointments.vue'),
+        meta: {
+          requiresAuth: true,
+          title: '施工预约',
+          permissions: ['appointment_view']
+        }
+      },
+      {
         path: 'warehouse',
         name: 'Warehouse',
         component: () => import('@/views/Warehouse.vue'),
@@ -182,13 +192,43 @@ const routes = [
         }
       },
       {
+        path: 'operation-logs',
+        name: 'OperationLogs',
+        component: () => import('@/views/OperationLogs.vue'),
+        meta: {
+          requiresAuth: true,
+          title: '操作日志',
+          permissions: ['audit_view']
+        }
+      },
+      {
+        path: 'system/users',
+        name: 'UserManagement',
+        component: () => import('@/views/UserManagement.vue'),
+        meta: {
+          requiresAuth: true,
+          title: '用户管理',
+          permissions: ['user_view']
+        }
+      },
+      {
+        path: 'system/roles',
+        name: 'RoleManagement',
+        component: () => import('@/views/RoleManagement.vue'),
+        meta: {
+          requiresAuth: true,
+          title: '角色管理',
+          permissions: ['role_view']
+        }
+      },
+      {
         path: 'system',
         name: 'System',
         component: () => import('@/views/System.vue'),
         meta: {
           requiresAuth: true,
           title: '系统管理',
-          permissions: ['system_log', 'system_backup', 'system_statistics', 'system_config', 'system_report']
+          permissions: ['system_log', 'system_backup', 'system_config', 'system_report']
         }
       },
       {
@@ -196,6 +236,12 @@ const routes = [
         name: 'ResetPassword',
         component: () => import('@/views/ResetPassword.vue'),
         meta: { requiresAuth: true, title: '修改密码' }
+      },
+      {
+        path: 'notifications',
+        name: 'Notifications',
+        component: () => import('@/views/Notifications.vue'),
+        meta: { requiresAuth: true, title: '通知中心' }
       }
     ]
   },
@@ -240,7 +286,6 @@ router.beforeEach((to, from, next) => {
   // ========== 2. 检查是否需要认证 ==========
   if (to.meta.requiresAuth) {
     if (!authStore.isAuthenticated) {
-      // 用户未登录，跳转到登录页
       next({ name: 'Login', query: { redirect: to.fullPath } })
       return
     }

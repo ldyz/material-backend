@@ -8,6 +8,7 @@
   >
     <div class="calendar-toolbar">
       <el-radio-group v-model="viewMode" @change="handleViewChange">
+        <el-radio-button label="day">日视图</el-radio-button>
         <el-radio-button label="week">周视图</el-radio-button>
         <el-radio-button label="month">月视图</el-radio-button>
       </el-radio-group>
@@ -37,6 +38,62 @@
     </div>
 
     <div class="calendar-container" v-loading="loading">
+      <!-- 日视图 -->
+      <div v-if="viewMode === 'day'" class="day-view">
+        <div class="day-header-large">
+          <h3>{{ formatDayHeader(currentDate) }}</h3>
+          <span class="day-stats">{{ getDayStats(currentDate) }}</span>
+        </div>
+        <div class="day-slots">
+          <div
+            v-for="slot in dayTimeSlots"
+            :key="slot.time_slot"
+            class="day-slot-card"
+            :class="{ 'has-appointment': slot.appointments && slot.appointments.length > 0 }"
+          >
+            <div class="slot-header">
+              <span class="slot-title">{{ slot.label }}</span>
+              <span class="slot-count" v-if="slot.appointments && slot.appointments.length > 0">
+                {{ slot.appointments.length }} 个任务
+              </span>
+            </div>
+            <div class="slot-content">
+              <div v-if="slot.appointments && slot.appointments.length > 0">
+                <div
+                  v-for="apt in slot.appointments"
+                  :key="apt.id"
+                  class="appointment-card"
+                  :class="{ 'urgent': apt.is_urgent }"
+                  @click="showAppointment(apt)"
+                >
+                  <div class="apt-header">
+                    <el-tag :type="getStatusType(apt.status)" size="small">
+                      {{ getStatusLabel(apt.status) }}
+                    </el-tag>
+                    <el-tag v-if="apt.is_urgent" type="danger" size="small">加急</el-tag>
+                    <el-tag v-if="apt.time_slot === 'full_day'" type="info" size="small">全天</el-tag>
+                  </div>
+                  <div class="apt-content">
+                    <div class="apt-location">{{ apt.work_location }}</div>
+                    <div class="apt-detail">{{ apt.work_content }}</div>
+                  </div>
+                  <div class="apt-footer">
+                    <span v-if="apt.assigned_worker_names || apt.assigned_worker_name" class="apt-worker">
+                      <el-icon><User /></el-icon>
+                      {{ apt.assigned_worker_names || apt.assigned_worker_name }}
+                    </span>
+                    <span class="apt-no">{{ apt.appointment_no }}</span>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="slot-empty-large">
+                <el-empty description="暂无任务" :image-size="60" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 周视图 -->
       <div v-if="viewMode === 'week'" class="week-view">
         <el-row :gutter="10">
@@ -188,7 +245,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, User } from '@element-plus/icons-vue'
 import { appointmentApi } from '@/api'
 import AppointmentDetailDialog from './AppointmentDetailDialog.vue'
 
@@ -222,7 +279,9 @@ const dailyWorkload = ref({}) // 每日工作量统计
 
 const currentDateRange = computed(() => {
   const date = currentDate.value
-  if (viewMode.value === 'week') {
+  if (viewMode.value === 'day') {
+    return formatDayHeader(date)
+  } else if (viewMode.value === 'week') {
     // 计算周范围
     const start = new Date(date)
     const day = start.getDay()
@@ -235,6 +294,49 @@ const currentDateRange = computed(() => {
   }
   return ''
 })
+
+// 日视图时间段数据
+const dayTimeSlots = computed(() => {
+  const dateStr = currentDate.value.toISOString().split('T')[0]
+  const timeSlots = [
+    { time_slot: 'morning', label: '上午 (8:00-11:30)' },
+    { time_slot: 'noon', label: '中午 (12:00-13:30)' },
+    { time_slot: 'afternoon', label: '下午 (13:30-16:30)' }
+  ]
+
+  return timeSlots.map(slot => {
+    const slotAppointments = appointments.value.filter(a => {
+      const aptDate = a.work_date.split(' ')[0] || a.work_date.split('T')[0]
+      // 全天任务(full_day)在上午、中午、下午三个时间段都显示
+      if (a.time_slot === 'full_day') {
+        return aptDate === dateStr
+      }
+      return aptDate === dateStr && a.time_slot === slot.time_slot
+    })
+
+    return {
+      ...slot,
+      appointments: slotAppointments
+    }
+  })
+})
+
+// 格式化日期头部显示
+function formatDayHeader(date) {
+  const d = new Date(date)
+  const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${weekDays[d.getDay()]}`
+}
+
+// 获取某天的统计信息
+function getDayStats(date) {
+  const dateStr = new Date(date).toISOString().split('T')[0]
+  const dayAppointments = appointments.value.filter(a => {
+    const aptDate = a.work_date.split(' ')[0] || a.work_date.split('T')[0]
+    return aptDate === dateStr
+  })
+  return `共 ${dayAppointments.length} 个预约任务`
+}
 
 watch(() => props.modelValue, (val) => {
   if (val) {
@@ -307,7 +409,10 @@ function getDateRange() {
   const date = currentDate.value
   let startDate, endDate
 
-  if (viewMode.value === 'week') {
+  if (viewMode.value === 'day') {
+    startDate = new Date(date).toISOString().split('T')[0]
+    endDate = startDate
+  } else if (viewMode.value === 'week') {
     const start = new Date(date)
     const day = start.getDay()
     start.setDate(start.getDate() - (day === 0 ? 6 : day - 1))
@@ -346,6 +451,10 @@ function buildWeekData() {
     const slots = timeSlots.map(slot => {
       const slotAppointments = appointments.value.filter(a => {
         const aptDate = a.work_date.split(' ')[0]
+        // 全天任务(full_day)在上午、中午、下午三个时间段都显示
+        if (a.time_slot === 'full_day') {
+          return aptDate === dateStr
+        }
         return aptDate === dateStr && a.time_slot === slot.time_slot
       })
 
@@ -385,7 +494,9 @@ function handleViewChange() {
 
 function previousPeriod() {
   const date = new Date(currentDate.value)
-  if (viewMode.value === 'week') {
+  if (viewMode.value === 'day') {
+    date.setDate(date.getDate() - 1)
+  } else if (viewMode.value === 'week') {
     date.setDate(date.getDate() - 7)
   } else if (viewMode.value === 'month') {
     date.setMonth(date.getMonth() - 1)
@@ -396,7 +507,9 @@ function previousPeriod() {
 
 function nextPeriod() {
   const date = new Date(currentDate.value)
-  if (viewMode.value === 'week') {
+  if (viewMode.value === 'day') {
+    date.setDate(date.getDate() + 1)
+  } else if (viewMode.value === 'week') {
     date.setDate(date.getDate() + 7)
   } else if (viewMode.value === 'month') {
     date.setMonth(date.getMonth() + 1)
@@ -568,6 +681,150 @@ onMounted(() => {
   padding: 0 16px;
   font-weight: 500;
   color: #333;
+}
+
+/* 日视图样式 */
+.day-view {
+  padding: 20px;
+}
+
+.day-header-large {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  color: white;
+}
+
+.day-header-large h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.day-stats {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.day-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.day-slot-card {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: box-shadow 0.3s;
+}
+
+.day-slot-card.has-appointment {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.slot-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.slot-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: #303133;
+}
+
+.slot-count {
+  font-size: 13px;
+  color: #909399;
+}
+
+.slot-content {
+  padding: 12px;
+  min-height: 100px;
+}
+
+.slot-empty-large {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100px;
+}
+
+.appointment-card {
+  padding: 14px;
+  margin-bottom: 10px;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px solid #ebeef5;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.appointment-card:last-child {
+  margin-bottom: 0;
+}
+
+.appointment-card:hover {
+  background: #f0f7ff;
+  border-color: #409eff;
+}
+
+.appointment-card.urgent {
+  background: linear-gradient(135deg, #fff1f0 0%, #ffccc7 100%);
+  border-color: #ffa39e;
+}
+
+.apt-header {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.apt-content {
+  margin-bottom: 10px;
+}
+
+.apt-location {
+  font-size: 15px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 4px;
+}
+
+.apt-detail {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.5;
+}
+
+.apt-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #909399;
+}
+
+.apt-worker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #409eff;
+}
+
+.apt-no {
+  color: #c0c4cc;
 }
 
 .week-view {

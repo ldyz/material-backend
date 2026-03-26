@@ -348,7 +348,16 @@ export function getStatusOptions() {
 }
 
 // 判断是否可编辑
-export function isEditable(status) {
+export function isEditable(status, applicantId, currentUserId) {
+  // 状态必须是 draft 或 pending
+  if (status !== 'draft' && status !== 'pending') {
+    return false
+  }
+  // 如果传入了申请人ID和当前用户ID，则需要验证权限
+  if (applicantId !== undefined && currentUserId !== undefined) {
+    return applicantId === currentUserId
+  }
+  // 兼容旧的调用方式（只传 status）
   return status === 'draft'
 }
 

@@ -1,7 +1,7 @@
 <template>
   <div class="appointment-create">
     <van-nav-bar
-      title="创建预约单"
+      :title="isEditMode ? '编辑预约单' : '创建预约单'"
       left-arrow
       @click-left="handleBack"
     />
@@ -324,12 +324,15 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showSuccessToast, showFailToast, showConfirmDialog } from 'vant'
-import { createAppointment, submitAppointment, getTimeSlotOptions, getDailyStatistics, getWorkersList, getTimeSlotStatistics, getAvailableWorkers } from '@/api/appointment'
+import { createAppointment, updateAppointment, getAppointmentDetail, submitAppointment, getTimeSlotOptions, getDailyStatistics, getWorkersList, getTimeSlotStatistics, getAvailableWorkers } from '@/api/appointment'
 import { getAssetUrl } from '@/utils/request'
 import ProjectSelector from '@/components/common/ProjectSelector.vue'
 
 const router = useRouter()
 const route = useRoute()
+
+// 判断是否为编辑模式
+const isEditMode = computed(() => !!route.params.id)
 
 const form = ref({
   project_id: null,
@@ -502,13 +505,63 @@ function removeWorker(workerId) {
 onMounted(() => {
   fetchWorkers()
 
-  // 处理从日历页面传递的日期
-  const workDate = route.query.work_date
-  if (workDate) {
-    form.value.work_date = workDate
-    checkAvailabilityForDate(workDate)
+  // 处理编辑模式
+  if (isEditMode.value) {
+    loadAppointmentData()
+  } else {
+    // 处理从日历页面传递的日期
+    const workDate = route.query.work_date
+    if (workDate) {
+      form.value.work_date = workDate
+      checkAvailabilityForDate(workDate)
+    }
   }
 })
+
+// 加载预约单数据（编辑模式）
+async function loadAppointmentData() {
+  try {
+    const response = await getAppointmentDetail(route.params.id)
+    const data = response.data
+
+    // 填充表单
+    form.value = {
+      project_id: data.project_id,
+      work_location: data.work_location || '',
+      work_content: data.work_content || '',
+      work_type: data.work_type || '',
+      work_date: data.work_date || '',
+      time_slot: data.time_slot || '',
+      contact_person: data.contact_person || '',
+      contact_phone: data.contact_phone || '',
+      is_urgent: data.is_urgent || false,
+      priority: data.priority || 0,
+      urgent_reason: data.urgent_reason || ''
+    }
+
+    // 设置作业类型选择
+    if (data.work_type) {
+      selectedWorkTypes.value = data.work_type.split(',').filter(t => t)
+    }
+
+    // 设置已选择的作业人员
+    if (data.assigned_worker_ids && data.assigned_worker_ids.length > 0) {
+      selectedWorkers.value = data.assigned_worker_ids
+    } else if (data.assigned_worker_id) {
+      selectedWorkers.value = [data.assigned_worker_id]
+    }
+
+    // 检查日期可用性
+    if (form.value.work_date) {
+      checkAvailabilityForDate(form.value.work_date)
+      fetchTimeSlotStatistics()
+    }
+  } catch (error) {
+    console.error('加载预约单数据失败:', error)
+    showFailToast('加载预约单数据失败')
+    router.back()
+  }
+}
 
 const timeSlotOptions = getTimeSlotOptions().map(opt => ({
   text: opt.label,
@@ -559,8 +612,8 @@ async function handleSubmit() {
       return
     }
 
-    // 检查是否有空闲人员
-    if (!form.value.is_urgent && !hasAvailableWorkers.value) {
+    // 检查是否有空闲人员（编辑模式跳过此检查）
+    if (!isEditMode.value && !form.value.is_urgent && !hasAvailableWorkers.value) {
       showFailToast('该日期所有人员已被安排，请选择其他日期或创建加急预约单')
       return
     }
@@ -582,27 +635,40 @@ async function handleSubmit() {
       submitData.assigned_worker_names = workerNames.join(',')
     }
 
-    console.log('Creating appointment with data:', submitData)
-    const result = await createAppointment(submitData)
-    console.log('Create appointment result:', result)
+    let result
+    if (isEditMode.value) {
+      // 编辑模式：更新预约单
+      console.log('Updating appointment with data:', submitData)
+      result = await updateAppointment(route.params.id, submitData)
+      console.log('Update appointment result:', result)
+      showSuccessToast('修改成功')
+    } else {
+      // 创建模式
+      console.log('Creating appointment with data:', submitData)
+      result = await createAppointment(submitData)
+      console.log('Create appointment result:', result)
 
-    // 创建成功后提交
-    const appointmentId = result.data?.id || result.id
-    if (appointmentId) {
-      await submitAppointment(appointmentId)
+      // 创建成功后提交
+      const appointmentId = result.data?.id || result.id
+      if (appointmentId) {
+        await submitAppointment(appointmentId)
+      }
+      showSuccessToast('提交成功')
     }
 
-    showSuccessToast('提交成功')
-
-    // 根据来源页面返回，默认返回列表页
-    const fromPath = route.query.from || route.redirectedFrom?.path
-    if (fromPath === '/appointments/calendar') {
-      router.replace('/appointments/calendar')
+    // 根据来源页面返回，默认返回详情页（编辑模式）或列表页
+    if (isEditMode.value) {
+      router.replace(`/appointment/${route.params.id}`)
     } else {
-      router.replace('/appointments')
+      const fromPath = route.query.from || route.redirectedFrom?.path
+      if (fromPath === '/appointments/calendar') {
+        router.replace('/appointments/calendar')
+      } else {
+        router.replace('/appointments')
+      }
     }
   } catch (error) {
-    console.error('Create appointment error:', error)
+    console.error('Submit appointment error:', error)
     showFailToast(error.message || error.error?.message || '提交失败')
   } finally {
     submitting.value = false

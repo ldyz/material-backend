@@ -67,13 +67,13 @@ func (WorkerCalendar) TableName() string {
 func (a *ConstructionAppointment) ToDTO() map[string]any {
 	var submittedAt, approvedAt, completedAt string
 	if a.SubmittedAt != nil {
-		submittedAt = a.SubmittedAt.Format("2006-01-02 15:04:05")
+		submittedAt = a.SubmittedAt.Format(time.RFC3339)
 	}
 	if a.ApprovedAt != nil {
-		approvedAt = a.ApprovedAt.Format("2006-01-02 15:04:05")
+		approvedAt = a.ApprovedAt.Format(time.RFC3339)
 	}
 	if a.CompletedAt != nil {
-		completedAt = a.CompletedAt.Format("2006-01-02 15:04:05")
+		completedAt = a.CompletedAt.Format(time.RFC3339)
 	}
 
 	// 解析作业人员ID列表
@@ -107,8 +107,8 @@ func (a *ConstructionAppointment) ToDTO() map[string]any {
 		"submitted_at":          submittedAt,
 		"approved_at":           approvedAt,
 		"completed_at":          completedAt,
-		"created_at":            a.CreatedAt.Format("2006-01-02 15:04:05"),
-		"updated_at":            a.UpdatedAt.Format("2006-01-02 15:04:05"),
+		"created_at":            a.CreatedAt.Format(time.RFC3339),
+		"updated_at":            a.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -123,8 +123,8 @@ func (w *WorkerCalendar) ToDTO() map[string]any {
 		"status":         w.Status,
 		"appointment_id": w.AppointmentID,
 		"blocked_reason": w.BlockedReason,
-		"created_at":     w.CreatedAt.Format("2006-01-02 15:04:05"),
-		"updated_at":     w.UpdatedAt.Format("2006-01-02 15:04:05"),
+		"created_at":     w.CreatedAt.Format(time.RFC3339),
+		"updated_at":     w.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -359,6 +359,17 @@ func (w *WorkerCalendar) BeforeUpdate(tx *gorm.DB) error {
 // IsEditable 检查预约单是否可编辑
 func (a *ConstructionAppointment) IsEditable() bool {
 	return a.Status == StatusDraft
+}
+
+// IsEditableBy 检查预约单是否可被指定用户编辑
+// 只有申请人可以在 draft 或 pending 状态下编辑
+func (a *ConstructionAppointment) IsEditableBy(userID uint) bool {
+	// 状态必须是 draft 或 pending
+	if a.Status != StatusDraft && a.Status != StatusPending {
+		return false
+	}
+	// 必须是申请人本人
+	return a.ApplicantID == userID
 }
 
 // IsCancellable 检查预约单是否可取消

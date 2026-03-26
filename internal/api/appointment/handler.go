@@ -540,7 +540,7 @@ func updateAppointment(service *AppointmentService) gin.HandlerFunc {
 			return
 		}
 
-		appointment, err := service.Update(uint(id), req)
+		appointment, err := service.Update(uint(id), req, uint(userID))
 		if err != nil {
 			response.BadRequest(c, err.Error())
 			return

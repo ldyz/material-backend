@@ -25,6 +25,11 @@ const routes = [
         meta: { keepAlive: true }
       },
       {
+        path: 'plans/create',
+        name: 'PlanCreate',
+        component: () => import('@/views/Plan/Create.vue')
+      },
+      {
         path: 'plans/:id',
         name: 'PlanDetail',
         component: () => import('@/views/Plan/Detail.vue')
@@ -83,6 +88,12 @@ const routes = [
         meta: { keepAlive: true }
       },
       {
+        path: 'appointments/calendar',
+        name: 'AppointmentCalendar',
+        component: () => import('@/views/Appointment/Calendar.vue'),
+        meta: { keepAlive: true }
+      },
+      {
         path: 'appointment/:id',
         name: 'AppointmentDetail',
         component: () => import('@/views/Appointment/Detail.vue')
@@ -93,9 +104,25 @@ const routes = [
         component: () => import('@/views/Appointment/Create.vue')
       },
       {
+        path: 'appointment/:id/edit',
+        name: 'AppointmentEdit',
+        component: () => import('@/views/Appointment/Create.vue')
+      },
+      {
         path: 'appointment/:id/approve',
         name: 'AppointmentApprove',
         component: () => import('@/views/Appointment/Approve.vue')
+      },
+      {
+        path: 'attendance/clock-in',
+        name: 'AttendanceClockIn',
+        component: () => import('@/views/Attendance/ClockIn.vue')
+      },
+      {
+        path: 'attendance/records',
+        name: 'AttendanceRecords',
+        component: () => import('@/views/Attendance/RecordList.vue'),
+        meta: { keepAlive: true }
       },
       {
         path: 'profile',

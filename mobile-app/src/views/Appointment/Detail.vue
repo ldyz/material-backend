@@ -9,7 +9,7 @@
         <van-dropdown-menu v-if="appointment && canEditOrCancel">
           <van-dropdown-item>
             <van-cell
-              v-if="isEditable(appointment.status)"
+              v-if="canEditAppointment"
               title="编辑"
               is-link
               @click="router.push(`/appointment/${appointment.id}/edit`)"
@@ -445,7 +445,26 @@ watch([() => approveForm.value.reschedule, () => approveForm.value.newWorkDate, 
 const canEditOrCancel = computed(() => {
   if (!appointment.value) return false
   const status = appointment.value.status
-  return status === 'draft' || status === 'pending' || status === 'scheduled'
+
+  // 获取当前用户ID
+  const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}')
+  const currentUserId = userInfo.id || userInfo.user_id
+
+  // 编辑：只有申请人可以在 draft 或 pending 状态编辑
+  const canEdit = isEditable(status, appointment.value.applicant_id, currentUserId)
+
+  // 取消：draft, pending, scheduled 状态可以取消
+  const canCancel = isCancellable(status)
+
+  return canEdit || canCancel
+})
+
+// 是否可以编辑
+const canEditAppointment = computed(() => {
+  if (!appointment.value) return false
+  const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}')
+  const currentUserId = userInfo.id || userInfo.user_id
+  return isEditable(appointment.value.status, appointment.value.applicant_id, currentUserId)
 })
 
 // 检查是否有审批权限（不能审批自己的预约单）

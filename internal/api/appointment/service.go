@@ -99,7 +99,7 @@ func (s *AppointmentService) Create(req CreateAppointmentRequest, applicantID ui
 }
 
 // Update 更新预约单
-func (s *AppointmentService) Update(id uint, req UpdateAppointmentRequest) (*ConstructionAppointment, error) {
+func (s *AppointmentService) Update(id uint, req UpdateAppointmentRequest, currentUserID uint) (*ConstructionAppointment, error) {
 	var appointment ConstructionAppointment
 	if err := s.db.First(&appointment, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -108,9 +108,13 @@ func (s *AppointmentService) Update(id uint, req UpdateAppointmentRequest) (*Con
 		return nil, err
 	}
 
-	// 检查是否可编辑
-	if !appointment.IsEditable() {
-		return nil, errors.New("只有草稿状态的预约单可以编辑")
+	// 检查是否可编辑（包含权限验证）
+	if !appointment.IsEditableBy(currentUserID) {
+		// 根据具体情况返回不同的错误信息
+		if appointment.Status != StatusDraft && appointment.Status != StatusPending {
+			return nil, errors.New("只有草稿或待审批状态的预约单可以编辑")
+		}
+		return nil, errors.New("只有申请人可以编辑预约单")
 	}
 
 	// 解析日期

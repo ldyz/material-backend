@@ -21,43 +21,43 @@
         <span>数据概览</span>
       </div>
       <div class="stats-grid">
-        <div class="stat-card" @click="goToPendingPlans">
+        <div class="stat-card" @click="goToAppointments">
           <div class="stat-icon" style="background-color: #fff3e0;">
-            <van-icon name="clock-o" size="24" color="#ff976a" />
+            <van-icon name="calendar-o" size="24" color="#ff9800" />
           </div>
           <div class="stat-content">
-            <div class="stat-value">{{ stats.pendingPlans || 0 }}</div>
-            <div class="stat-label">待审批计划</div>
+            <div class="stat-value">{{ stats.todayAppointments || 0 }}</div>
+            <div class="stat-label">今日任务</div>
           </div>
         </div>
 
-        <div class="stat-card" @click="goToPendingInbound">
+        <div class="stat-card" @click="goToAppointments">
           <div class="stat-icon" style="background-color: #e3f2fd;">
-            <van-icon name="logistics" size="24" color="#1989fa" />
+            <van-icon name="todo-list-o" size="24" color="#1989fa" />
           </div>
           <div class="stat-content">
-            <div class="stat-value">{{ stats.pendingInbound || 0 }}</div>
-            <div class="stat-label">待入库</div>
+            <div class="stat-value">{{ stats.pendingAppointments || 0 }}</div>
+            <div class="stat-label">待执行任务</div>
           </div>
         </div>
 
-        <div class="stat-card" @click="goToPendingRequisition">
-          <div class="stat-icon" style="background-color: #f3e5f5;">
-            <van-icon name="send-gift-o" size="24" color="#9c27b0" />
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ stats.pendingRequisition || 0 }}</div>
-            <div class="stat-label">待出库</div>
-          </div>
-        </div>
-
-        <div class="stat-card" @click="goToPendingIssue">
+        <div class="stat-card" @click="goToClockIn">
           <div class="stat-icon" style="background-color: #e8f5e9;">
-            <van-icon name="bag-o" size="24" color="#07c160" />
+            <van-icon name="clock-o" size="24" color="#07c160" />
           </div>
           <div class="stat-content">
-            <div class="stat-value">{{ stats.pendingIssue || 0 }}</div>
-            <div class="stat-label">待发放</div>
+            <div class="stat-value">{{ stats.todayClockIns || 0 }}</div>
+            <div class="stat-label">今日打卡</div>
+          </div>
+        </div>
+
+        <div class="stat-card" @click="goToRecords">
+          <div class="stat-icon" style="background-color: #f3e5f5;">
+            <van-icon name="records" size="24" color="#7232dd" />
+          </div>
+          <div class="stat-content">
+            <div class="stat-value">{{ stats.monthClockIns || 0 }}</div>
+            <div class="stat-label">本月打卡</div>
           </div>
         </div>
       </div>
@@ -70,53 +70,73 @@
         <span>快捷功能</span>
       </div>
       <van-grid :column-num="4" :border="false" :gutter="12">
-        <van-grid-item @click="router.push('/plans/create')">
-          <div class="quick-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-            <van-icon name="plus" size="24" color="#fff" />
-          </div>
-          <div class="quick-label">新建计划</div>
-        </van-grid-item>
-
-        <van-grid-item @click="router.push('/inbound/create')">
-          <div class="quick-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
-            <van-icon name="logistics" size="24" color="#fff" />
-          </div>
-          <div class="quick-label">新建入库</div>
-        </van-grid-item>
-
-        <van-grid-item @click="router.push('/requisition/create')">
-          <div class="quick-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
-            <van-icon name="send-gift-o" size="24" color="#fff" />
-          </div>
-          <div class="quick-label">新建出库</div>
-        </van-grid-item>
-
-        <van-grid-item @click="router.push('/plans')">
-          <div class="quick-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
-            <van-icon name="orders-o" size="24" color="#fff" />
-          </div>
-          <div class="quick-label">计划管理</div>
-        </van-grid-item>
-
-        <van-grid-item @click="router.push('/inbound')">
-          <div class="quick-icon" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
-            <van-icon name="bag-o" size="24" color="#fff" />
-          </div>
-          <div class="quick-label">入库管理</div>
-        </van-grid-item>
-
-        <van-grid-item @click="router.push('/requisition')">
-          <div class="quick-icon" style="background: linear-gradient(135deg, #30cfd0 0%, #330867 100%);">
-            <van-icon name="todo-list-o" size="24" color="#fff" />
-          </div>
-          <div class="quick-label">出库管理</div>
-        </van-grid-item>
-
         <van-grid-item @click="router.push('/appointments/calendar')">
           <div class="quick-icon" style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);">
             <van-icon name="calendar-o" size="24" color="#fff" />
           </div>
           <div class="quick-label">预约管理</div>
+        </van-grid-item>
+
+        <van-grid-item @click="router.push('/attendance/clock-in')">
+          <div class="quick-icon" style="background: linear-gradient(135deg, #07c160 0%, #06ad56 100%);">
+            <van-icon name="clock-o" size="24" color="#fff" />
+          </div>
+          <div class="quick-label">打卡</div>
+        </van-grid-item>
+
+        <van-grid-item @click="router.push('/attendance/records')">
+          <div class="quick-icon" style="background: linear-gradient(135deg, #7232dd 0%, #5a17a9 100%);">
+            <van-icon name="records" size="24" color="#fff" />
+          </div>
+          <div class="quick-label">打卡记录</div>
+        </van-grid-item>
+
+        <!-- 物资计划 - 根据权限显示 -->
+        <van-grid-item v-if="canAccessMaterialPlan" @click="router.push('/plans')">
+          <div class="quick-icon" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+            <van-icon name="todo-list-o" size="24" color="#fff" />
+          </div>
+          <div class="quick-label">物资计划</div>
+        </van-grid-item>
+
+        <!-- 新建计划 - 根据权限显示 -->
+        <van-grid-item v-if="canCreatePlan" @click="router.push('/plans/create')">
+          <div class="quick-icon" style="background: linear-gradient(135deg, #e91e63 0%, #9c27b0 100%);">
+            <van-icon name="plus" size="24" color="#fff" />
+          </div>
+          <div class="quick-label">新建计划</div>
+        </van-grid-item>
+
+        <!-- 入库管理 - 根据权限显示 -->
+        <van-grid-item v-if="canAccessInbound" @click="router.push('/inbound')">
+          <div class="quick-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+            <van-icon name="logistics" size="24" color="#fff" />
+          </div>
+          <div class="quick-label">入库管理</div>
+        </van-grid-item>
+
+        <!-- 新建入库 - 根据权限显示 -->
+        <van-grid-item v-if="canCreateInbound" @click="router.push('/inbound/create')">
+          <div class="quick-icon" style="background: linear-gradient(135deg, #00c6fb 0%, #005bea 100%);">
+            <van-icon name="add-o" size="24" color="#fff" />
+          </div>
+          <div class="quick-label">新建入库</div>
+        </van-grid-item>
+
+        <!-- 出库管理(领料) - 根据权限显示 -->
+        <van-grid-item v-if="canAccessRequisition" @click="router.push('/requisition')">
+          <div class="quick-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+            <van-icon name="send-gift-o" size="24" color="#fff" />
+          </div>
+          <div class="quick-label">领料管理</div>
+        </van-grid-item>
+
+        <!-- 新建领料 - 根据权限显示 -->
+        <van-grid-item v-if="canCreateRequisition" @click="router.push('/requisition/create')">
+          <div class="quick-icon" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);">
+            <van-icon name="description" size="24" color="#333" />
+          </div>
+          <div class="quick-label">新建领料</div>
         </van-grid-item>
 
         <van-grid-item @click="handleRefresh">
@@ -136,9 +156,8 @@ import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
-import { getPlans } from '@/api/material_plan'
-import { getInboundOrders } from '@/api/inbound'
-import { getRequisitions } from '@/api/requisition'
+import { getAppointmentStats } from '@/api/appointment'
+import { getCalendarStatistics } from '@/api/attendance'
 import NotificationBadge from '@/components/NotificationBadge.vue'
 
 const router = useRouter()
@@ -174,14 +193,41 @@ const currentDate = computed(() => {
 
 // 统计数据
 const stats = ref({
-  pendingPlans: 0,
-  pendingInbound: 0,
-  pendingRequisition: 0,
-  pendingIssue: 0
+  todayAppointments: 0,
+  pendingAppointments: 0,
+  todayClockIns: 0,
+  monthClockIns: 0
+})
+
+// 权限控制
+const canAccessMaterialPlan = computed(() => {
+  return authStore.hasPermission('material_plan_view')
+})
+
+const canCreatePlan = computed(() => {
+  return authStore.hasPermission('material_plan_create')
+})
+
+const canAccessInbound = computed(() => {
+  return authStore.hasPermission('inbound_view')
+})
+
+const canCreateInbound = computed(() => {
+  return authStore.hasPermission('inbound_create')
+})
+
+const canAccessRequisition = computed(() => {
+  return authStore.hasPermission('requisition_view')
+})
+
+const canCreateRequisition = computed(() => {
+  return authStore.hasPermission('requisition_create')
 })
 
 // 页面加载
 onMounted(async () => {
+  // 刷新用户权限
+  await authStore.initAuth()
   await loadStats()
   // 初始化通知
   notificationStore.fetchUnreadCount()
@@ -190,49 +236,56 @@ onMounted(async () => {
 // 加载统计数据
 async function loadStats() {
   try {
-    const [planRes, inboundRes, reqRes] = await Promise.all([
-      getPlans({ status: 'pending', page: 1, page_size: 1 }),
-      getInboundOrders({ status: 'pending', page: 1, page_size: 1 }),
-      getRequisitions({ status: 'pending', page: 1, page_size: 1 })
-    ])
+    // 加载预约统计
+    const aptRes = await getAppointmentStats()
+    if (aptRes.data) {
+      stats.value.todayAppointments = aptRes.data.today_count || 0
+      stats.value.pendingAppointments = aptRes.data.pending_count || 0
+    }
 
-    stats.value.pendingPlans = planRes.pagination?.total || 0
-    stats.value.pendingInbound = inboundRes.pagination?.total || 0
-    stats.value.pendingRequisition = reqRes.pagination?.total || 0
-
-    // 待发放数量 = 已批准但未发放完成的领料单
-    const issueRes = await getRequisitions({
-      status: 'approved',
-      page: 1,
-      page_size: 1,
-      fully_issued: false
+    // 加载打卡统计
+    const today = new Date().toISOString().split('T')[0]
+    const clockRes = await getCalendarStatistics({
+      start_date: today,
+      end_date: today
     })
-    stats.value.pendingIssue = issueRes.pagination?.total || 0
+    if (clockRes.data && clockRes.data.length > 0) {
+      stats.value.todayClockIns = clockRes.data[0].total_count || 0
+    }
+
+    // 本月打卡统计
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
+    const monthRes = await getCalendarStatistics({
+      start_date: monthStart,
+      end_date: monthEnd
+    })
+    if (monthRes.data) {
+      stats.value.monthClockIns = monthRes.data.reduce((sum, item) => sum + (item.total_count || 0), 0)
+    }
   } catch (error) {
     console.error('加载统计数据失败:', error)
   }
 }
 
 // 导航方法
-function goToPendingPlans() {
-  router.push({ path: '/plans', query: { status: 'pending' } })
+function goToAppointments() {
+  router.push('/appointments/calendar')
 }
 
-function goToPendingInbound() {
-  router.push({ path: '/inbound', query: { status: 'pending' } })
+function goToClockIn() {
+  router.push('/attendance/clock-in')
 }
 
-function goToPendingRequisition() {
-  router.push({ path: '/requisition', query: { status: 'pending' } })
-}
-
-function goToPendingIssue() {
-  router.push({ path: '/requisition', query: { status: 'approved', fully_issued: 'false' } })
+function goToRecords() {
+  router.push('/attendance/records')
 }
 
 // 刷新数据
 async function handleRefresh() {
   showToast({ type: 'loading', message: '刷新中...', forbidClick: true })
+  await authStore.initAuth()
   await loadStats()
   showToast({ type: 'success', message: '刷新成功' })
 }
@@ -373,23 +426,5 @@ async function handleRefresh() {
   font-size: 12px;
   color: #646566;
   text-align: center;
-}
-
-/* 系统公告 */
-.notice-section {
-  margin: 0 16px;
-}
-
-.notice-card {
-  background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.notice-content {
-  font-size: 14px;
-  color: #2d3436;
-  line-height: 1.6;
 }
 </style>

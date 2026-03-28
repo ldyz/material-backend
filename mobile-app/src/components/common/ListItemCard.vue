@@ -29,9 +29,13 @@
           <van-icon name="shop-o" size="14" />
           <span>{{ item.project_name || '-' }}</span>
         </div>
-        <div v-if="item.supplier_name" class="info-row">
+        <div v-if="type === 'plan' && (item.plan_no || item.plan_number)" class="info-row">
+          <van-icon name="label-o" size="14" />
+          <span>编号：{{ item.plan_no || item.plan_number }}</span>
+        </div>
+        <div v-if="item.supplier || item.supplier_name" class="info-row">
           <van-icon name="user-o" size="14" />
-          <span>{{ item.supplier_name }}</span>
+          <span>{{ item.supplier || item.supplier_name }}</span>
         </div>
         <div v-if="item.applicant_name" class="info-row">
           <van-icon name="contact" size="14" />
@@ -79,12 +83,12 @@ const props = defineProps({
 
 const emit = defineEmits(['click'])
 
-// 单据编号
+// 单据编号/名称
 const itemNumber = computed(() => {
   // 支持多个可能的字段名
   const numberFieldAliases = {
     inbound: ['order_no', 'order_number', 'number'],
-    plan: ['plan_number', 'plan_no', 'number'],
+    plan: ['plan_name', 'name'], // 计划类型优先显示计划名称
     requisition: ['requisition_number', 'requisition_no', 'number'],
     appointment: ['appointment_number', 'appointment_no', 'number']
   }
@@ -106,9 +110,9 @@ const itemDate = computed(() => {
 
   // 支持多个可能的日期字段名
   const dateFieldAliases = {
-    inbound: ['inbound_date', 'date'],
+    inbound: ['created_at', 'inbound_date', 'date'],
     plan: ['plan_date', 'planned_start_date', 'date'],
-    requisition: ['requisition_date', 'date']
+    requisition: ['created_at', 'requisition_date', 'date']
   }
   const aliases = dateFieldAliases[props.type]
   if (aliases) {
@@ -131,6 +135,7 @@ const formattedWorkerNames = computed(() => {
   // 按逗号分隔名字
   const names = workerName.split(',').map(n => n.trim()).filter(n => n)
 
+  if (!names || names.length === 0) return ''
   if (names.length <= 4) {
     return workerName
   }

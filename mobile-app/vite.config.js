@@ -8,8 +8,8 @@ import { fileURLToPath, URL } from 'node:url'
 const isCapacitor = process.env.CAPACITOR_BUILD === 'true'
 
 export default defineConfig({
-  // Capacitor 环境使用相对路径，Web 生产环境使用 /mobile/ 路径，开发环境使用相对路径
-  base: isCapacitor ? './' : (process.env.NODE_ENV === 'production' ? '/mobile/' : './'),
+  // 统一使用相对路径，确保 Capacitor 和 Web 都能正常加载
+  base: './',
   // Capacitor 使用独立的构建目录
   build: isCapacitor ? {
     outDir: 'dist-capacitor'

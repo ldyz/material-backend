@@ -17,9 +17,14 @@
         <van-cell
           v-for="item in order.items"
           :key="item.id"
-          :title="item.material_name"
-          :label="`数量：${item.quantity || 0}`"
-        />
+          :title="item.material_name || '-'"
+          :label="itemInfo(item)"
+          is-link
+        >
+          <template #value>
+            <span class="item-quantity">{{ item.quantity || 0 }} {{ item.unit || '' }}</span>
+          </template>
+        </van-cell>
       </van-cell-group>
 
       <div v-if="order.status === 'pending'" class="footer-actions">
@@ -57,10 +62,10 @@ const resubmitting = ref(false)
 const order = ref(null)
 
 const basicFields = computed(() => [
-  { key: 'order_number', label: '入库单号' },
+  { key: 'order_no', label: '入库单号' },
   { key: 'project_name', label: '项目名称' },
-  { key: 'supplier_name', label: '供应商' },
-  { key: 'inbound_date', label: '入库日期', type: 'date' },
+  { key: 'supplier', label: '供应商' },
+  { key: 'created_at', label: '创建时间', type: 'datetime' },
   { key: 'status', label: '状态', type: 'status' }
 ])
 
@@ -107,6 +112,18 @@ async function handleResubmit() {
   }
 }
 
+// 格式化物料信息
+function itemInfo(item) {
+  const parts = []
+  if (item.specification) {
+    parts.push(`规格: ${item.specification}`)
+  }
+  if (item.material) {
+    parts.push(`材质: ${item.material}`)
+  }
+  return parts.join(' | ') || '暂无规格型号信息'
+}
+
 onMounted(() => {
   loadData()
 })
@@ -128,5 +145,15 @@ onMounted(() => {
 
 .footer-actions {
   padding: 16px;
+}
+
+.item-quantity {
+  font-weight: 500;
+  color: #323233;
+}
+
+.van-cell__label {
+  color: #969799;
+  font-size: 12px;
 }
 </style>

@@ -34,6 +34,9 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	// 我的预约
 	g.GET("/my", getMyAppointments(service))
 
+	// 我的历史联系人
+	g.GET("/my/contacts", getMyContacts(service))
+
 	// 待审批
 	g.GET("/pending", auth.PermissionMiddleware(db, "appointment_approve"), getPendingApprovals(workflowService))
 
@@ -78,9 +81,6 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 	// 分配作业人员
 	g.POST("/:id/assign", auth.PermissionMiddleware(db, "appointment_assign"), assignWorker(service))
-
-	// 开始作业
-	g.POST("/:id/start", auth.PermissionMiddleware(db, "appointment_execute"), startWork(service))
 
 	// 完成作业
 	g.POST("/:id/complete", auth.PermissionMiddleware(db, "appointment_execute"), completeAppointment(service))
@@ -785,33 +785,6 @@ func assignWorker(service *AppointmentService) gin.HandlerFunc {
 	}
 }
 
-// startWork 开始作业
-func startWork(service *AppointmentService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		idStr := c.Param("id")
-		id, err := strconv.ParseUint(idStr, 10, 32)
-		if err != nil {
-			response.BadRequest(c, "无效的预约单ID")
-			return
-		}
-
-		userID := c.GetInt64("current_user_id")
-		userName := c.GetString("current_username")
-
-		appointment, err := service.StartWork(uint(id))
-		if err != nil {
-			response.BadRequest(c, err.Error())
-			return
-		}
-
-		// 记录操作日志
-		uid := uint(userID)
-		audit.LogStart(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, appointment.ID, appointment.AppointmentNo)
-
-		response.Success(c, appointment.ToDTO())
-	}
-}
-
 // completeAppointment 完成作业
 func completeAppointment(service *AppointmentService) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -823,6 +796,10 @@ func completeAppointment(service *AppointmentService) gin.HandlerFunc {
 		}
 
 		userID := c.GetInt64("current_user_id")
+		if userID == 0 {
+			response.Unauthorized(c, "未授权")
+			return
+		}
 		userName := c.GetString("current_username")
 
 		var req CompleteAppointmentRequest
@@ -831,7 +808,7 @@ func completeAppointment(service *AppointmentService) gin.HandlerFunc {
 			return
 		}
 
-		appointment, err := service.Complete(uint(id), req)
+		appointment, err := service.Complete(uint(id), uint(userID), req)
 		if err != nil {
 			response.BadRequest(c, err.Error())
 			return
@@ -841,7 +818,7 @@ func completeAppointment(service *AppointmentService) gin.HandlerFunc {
 		uid := uint(userID)
 		audit.LogComplete(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, appointment.ID, appointment.AppointmentNo)
 
-		response.Success(c, appointment.ToDTO())
+		response.SuccessWithMessage(c, appointment.ToDTO(), "预约已完成")
 	}
 }
 
@@ -856,24 +833,17 @@ func cancelAppointment(service *AppointmentService) gin.HandlerFunc {
 		}
 
 		userID := c.GetInt64("current_user_id")
-		userName := c.GetString("current_username")
-
-		var req struct {
-			Reason string `json:"reason"`
+		if userID == 0 {
+			response.Unauthorized(c, "未授权")
+			return
 		}
-		c.ShouldBindJSON(&req)
 
-		appointment, err := service.Cancel(uint(id), req.Reason)
-		if err != nil {
+		if err := service.Cancel(uint(id), uint(userID)); err != nil {
 			response.BadRequest(c, err.Error())
 			return
 		}
 
-		// 记录操作日志
-		uid := uint(userID)
-		audit.LogCancel(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, appointment.ID, appointment.AppointmentNo, req.Reason)
-
-		response.Success(c, appointment.ToDTO())
+		response.SuccessWithMessage(c, nil, "预约已取消并删除")
 	}
 }
 
@@ -1196,5 +1166,24 @@ func getTimeSlotStatistics(service *AppointmentService) gin.HandlerFunc {
 		}
 
 		response.Success(c, stats)
+	}
+}
+
+// getMyContacts 获取用户历史联系人列表
+func getMyContacts(service *AppointmentService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetInt64("current_user_id")
+		if userID == 0 {
+			response.Unauthorized(c, "未授权")
+			return
+		}
+
+		contacts, err := service.GetUserContacts(uint(userID))
+		if err != nil {
+			response.InternalError(c, "获取联系人列表失败")
+			return
+		}
+
+		response.Success(c, contacts)
 	}
 }

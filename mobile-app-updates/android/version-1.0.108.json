@@ -1,0 +1,8 @@
+{
+  "version": "1.0.108",
+  "versionCode": 108,
+  "url": "/mobile-updates/android/material-management-1.0.108.apk",
+  "releaseNotes": "修复语音消息显示问题，修复入库单查询功能",
+  "forceUpdate": false,
+  "publishDate": "2026-03-27"
+}

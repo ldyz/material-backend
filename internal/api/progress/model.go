@@ -146,8 +146,8 @@ func (ps *ProjectSchedule) ToDTO() map[string]interface{} {
 		"id":         ps.ID,
 		"project_id": ps.ProjectID,
 		"data":       ps.Data,
-		"created_at": ps.CreatedAt.Format("2006-01-02 15:04:05"),
-		"updated_at": ps.UpdatedAt.Format("2006-01-02 15:04:05"),
+		"created_at": ps.CreatedAt.Format(time.RFC3339),
+		"updated_at": ps.UpdatedAt.Format(time.RFC3339),
 		"created_by": ps.CreatedBy,
 		"updated_by": ps.UpdatedBy,
 	}

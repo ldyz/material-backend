@@ -104,7 +104,7 @@ func (sb *SystemBackup) ToDTO() map[string]any {
 		"size":        sb.Size,
 		"status":      sb.Status,
 		"created_by":  sb.CreatedBy,
-		"created_at":  sb.CreatedAt.Format("2006-01-02 15:04:05"),
+		"created_at":  sb.CreatedAt.Format(time.RFC3339),
 		"description": sb.Description,
 	}
 }
@@ -121,7 +121,7 @@ func (sa *SystemActivity) ToDTO() map[string]any {
 		"ip_address":  sa.IPAddress,
 		"user_agent":  sa.UserAgent,
 		"status":      sa.Status,
-		"created_at":  sa.CreatedAt.Format("2006-01-02 15:04:05"),
+		"created_at":  sa.CreatedAt.Format(time.RFC3339),
 		"extra_data":  sa.ExtraData,
 	}
 }
@@ -134,7 +134,7 @@ func (sc *SystemConfig) ToDTO() map[string]any {
 		"value":       sc.Value,
 		"type":        sc.Type,
 		"description": sc.Description,
-		"created_at":  sc.CreatedAt.Format("2006-01-02 15:04:05"),
-		"updated_at":  sc.UpdatedAt.Format("2006-01-02 15:04:05"),
+		"created_at":  sc.CreatedAt.Format(time.RFC3339),
+		"updated_at":  sc.UpdatedAt.Format(time.RFC3339),
 	}
 }

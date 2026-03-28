@@ -1,5 +1,5 @@
 /**
- * WebSocket Service for Real-time Push Notifications
+ * WebSocket Service for Real-time Push Notifications and AI Chat
  *
  * @module WebSocket
  * @date 2025-02-09
@@ -17,6 +17,8 @@ class WebSocketService {
     this.reconnectDelay = 3000
     this.isManualClose = false
     this.heartbeatInterval = null
+    // AI response callbacks
+    this.aiCallbacks = new Set()
   }
 
   /**
@@ -105,28 +107,44 @@ class WebSocketService {
 
   /**
    * Handle incoming WebSocket messages
+   * 支持多消息合并发送（换行符分隔）
    */
   handleMessage(data) {
-    try {
-      const message = JSON.parse(data)
-      console.log('WebSocket message received:', message)
+    // 按换行符分割，处理多条消息
+    const lines = data.split('\n').filter(line => line.trim())
 
-      switch (message.type) {
-        case 'notification':
-          this.handleNotification(message.data)
-          break
-        case 'unread_count':
-          this.handleUnreadCount(message.data)
-          break
-        case 'heartbeat':
-          // Respond to heartbeat
-          this.send({ type: 'heartbeat_ack' })
-          break
-        default:
-          console.log('Unknown message type:', message.type)
+    for (const line of lines) {
+      try {
+        const message = JSON.parse(line)
+        console.log('WebSocket message received:', message)
+
+        switch (message.type) {
+          case 'notification':
+            this.handleNotification(message.data)
+            break
+          case 'unread_count':
+            this.handleUnreadCount(message.data)
+            break
+          case 'pong':
+            // 收到心跳响应，连接正常
+            console.log('WebSocket heartbeat: pong received')
+            break
+          // AI 相关消息类型
+          case 'voice_processing':
+          case 'voice_transcript':
+          case 'voice_transcript_partial':
+          case 'ai_response_start':
+          case 'ai_response_chunk':
+          case 'ai_response_done':
+          case 'error':
+            this.handleAIMessage(message)
+            break
+          default:
+            console.log('Unknown message type:', message.type)
+        }
+      } catch (error) {
+        console.error('Failed to parse WebSocket message:', error, 'line:', line)
       }
-    } catch (error) {
-      console.error('Failed to parse WebSocket message:', error)
     }
   }
 
@@ -154,6 +172,23 @@ class WebSocketService {
   }
 
   /**
+   * Handle AI-related messages
+   */
+  handleAIMessage(message) {
+    console.log('[WebSocket] handleAIMessage received:', JSON.stringify(message))
+    // Notify all registered callbacks
+    const callbackCount = this.aiCallbacks.size
+    console.log('[WebSocket] AI callbacks count:', callbackCount)
+    this.aiCallbacks.forEach(callback => {
+      try {
+        callback(message)
+      } catch (error) {
+        console.error('AI callback error:', error)
+      }
+    })
+  }
+
+  /**
    * Send message to WebSocket server
    */
   send(data) {
@@ -165,12 +200,68 @@ class WebSocketService {
   }
 
   /**
+   * Send voice message for AI processing
+   * @param {string} base64Data - Base64 encoded audio data
+   * @param {string} mimeType - Audio MIME type (e.g., 'audio/webm')
+   * @param {Array} history - Conversation history (optional)
+   */
+  sendVoice(base64Data, mimeType = 'audio/webm', history = []) {
+    this.send({
+      type: 'voice',
+      data: base64Data,
+      mimeType: mimeType,
+      history: history
+    })
+  }
+
+  /**
+   * Send text chat message for AI processing
+   * @param {string} message - Text message
+   * @param {Array} history - Conversation history
+   */
+  sendChat(message, history = []) {
+    this.send({
+      type: 'chat',
+      message: message,
+      history: history
+    })
+  }
+
+  /**
+   * Register callback for AI responses
+   * @param {Function} callback - Callback function that receives AI messages
+   * @returns {Function} Unregister function
+   */
+  onAiResponse(callback) {
+    this.aiCallbacks.add(callback)
+    // Return unregister function
+    return () => {
+      this.aiCallbacks.delete(callback)
+    }
+  }
+
+  /**
+   * Remove AI response listener
+   * @param {Function} callback - Callback to remove
+   */
+  removeAiListener(callback) {
+    this.aiCallbacks.delete(callback)
+  }
+
+  /**
+   * Clear all AI response listeners
+   */
+  clearAiListeners() {
+    this.aiCallbacks.clear()
+  }
+
+  /**
    * Start heartbeat to keep connection alive
    */
   startHeartbeat() {
     this.stopHeartbeat()
     this.heartbeatInterval = setInterval(() => {
-      this.send({ type: 'heartbeat' })
+      this.send({ type: 'ping' })
     }, 30000) // Send heartbeat every 30 seconds
   }
 
@@ -190,6 +281,7 @@ class WebSocketService {
   disconnect() {
     this.isManualClose = true
     this.stopHeartbeat()
+    this.clearAiListeners()
 
     if (this.ws) {
       this.ws.close()

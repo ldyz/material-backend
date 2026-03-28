@@ -401,6 +401,13 @@ func GetTimeSlotLabel(timeSlot string) string {
 	return timeSlot
 }
 
+// ContactInfo 联系人信息
+type ContactInfo struct {
+	ContactPerson string `json:"contact_person"`
+	ContactPhone  string `json:"contact_phone"`
+	Count         int    `json:"count"` // 使用次数
+}
+
 // GetStatusLabel 获取状态标签
 func GetStatusLabel(status string) string {
 	labels := map[string]string{

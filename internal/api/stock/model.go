@@ -68,8 +68,8 @@ func (s *Stock) ToDTO() map[string]any {
 		"safety_stock": s.SafetyStock,
 		"location":     s.Location,
 		"unit_cost":    s.UnitCost,
-		"created_at":   s.CreatedAt.Format("2006-01-02 15:04:05"),
-		"updated_at":   s.UpdatedAt.Format("2006-01-02 15:04:05"),
+		"created_at":   s.CreatedAt.Format(time.RFC3339),
+		"updated_at":   s.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -103,6 +103,6 @@ func (sl *StockLog) ToDTO(userName string) map[string]any {
 		"user":           userName,
 		"operator":       userName,
 		"remark":         sl.Remark,
-		"created_at":     sl.CreatedAt.Format("2006-01-02 15:04:05"),
+		"created_at":     sl.CreatedAt.Format(time.RFC3339),
 	}
 }

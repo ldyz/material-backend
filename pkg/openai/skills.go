@@ -202,6 +202,91 @@ var Skills = map[string]Skill{
 		},
 		Priority: 5,
 	},
+
+	// ==================== 考勤类技能 ====================
+	"check_today_attendance": {
+		Name:        "查看今日考勤",
+		Description: "查询今天的打卡记录",
+		Tools:       []string{"query_attendance"},
+		DefaultParams: map[string]interface{}{
+			"date": "today",
+		},
+		Priority: 9,
+		Examples: []SkillExample{
+			{
+				UserQuery: "今天的考勤情况",
+				ToolSequence: []SkillToolCall{
+					{ToolName: "query_attendance", Params: map[string]interface{}{"date": "today"}},
+				},
+				ExpectedReply: "今天有X人打卡，上午X人，下午X人...",
+			},
+		},
+	},
+
+	"check_user_attendance": {
+		Name:        "查看个人考勤",
+		Description: "查询特定用户的打卡记录",
+		Tools:       []string{"query_attendance"},
+		Priority:    8,
+		Examples: []SkillExample{
+			{
+				UserQuery: "张三的考勤记录",
+				ToolSequence: []SkillToolCall{
+					{ToolName: "query_attendance", Params: map[string]interface{}{"user_name": "张三"}},
+				},
+				ExpectedReply: "张三本月打卡X次...",
+			},
+		},
+	},
+
+	"check_monthly_attendance": {
+		Name:        "查看月度考勤统计",
+		Description: "查询月度考勤汇总数据",
+		Tools:       []string{"query_attendance_stats"},
+		Priority:    7,
+		Examples: []SkillExample{
+			{
+				UserQuery: "本月考勤统计",
+				ToolSequence: []SkillToolCall{
+					{ToolName: "query_attendance_stats", Params: map[string]interface{}{"month": "current"}},
+				},
+				ExpectedReply: "本月共X人出勤，总工作日X天...",
+			},
+		},
+	},
+
+	// ==================== 施工日志类技能 ====================
+	"check_construction_logs": {
+		Name:        "查看施工日志",
+		Description: "查询施工日志记录",
+		Tools:       []string{"query_construction_logs"},
+		Priority:    7,
+		Examples: []SkillExample{
+			{
+				UserQuery: "今天的施工日志",
+				ToolSequence: []SkillToolCall{
+					{ToolName: "query_construction_logs", Params: map[string]interface{}{"log_date": "today"}},
+				},
+				ExpectedReply: "今天有X条施工日志...",
+			},
+		},
+	},
+
+	"check_project_logs": {
+		Name:        "查看项目施工日志",
+		Description: "查询特定项目的施工日志",
+		Tools:       []string{"query_construction_logs"},
+		Priority:    6,
+		Examples: []SkillExample{
+			{
+				UserQuery: "某某项目的施工日志",
+				ToolSequence: []SkillToolCall{
+					{ToolName: "query_construction_logs", Params: map[string]interface{}{"project_id": "specified"}},
+				},
+				ExpectedReply: "该项目有X条施工日志...",
+			},
+		},
+	},
 }
 
 // GetSkill 获取技能定义
@@ -282,6 +367,20 @@ func MatchSkill(userMessage string) *Skill {
 		"创建":   "create_task",
 		"新建":   "create_task",
 		"加急":   "create_urgent_task",
+		// 考勤相关关键词
+		"打卡记录":  "check_today_attendance",
+		"考勤记录":  "check_today_attendance",
+		"出勤":   "check_today_attendance",
+		"签到":   "check_today_attendance",
+		"考勤":   "check_today_attendance",
+		"考勤统计": "check_monthly_attendance",
+		"出勤率":  "check_monthly_attendance",
+		"月度考勤": "check_monthly_attendance",
+		// 施工日志相关关键词
+		"施工日志": "check_construction_logs",
+		"施工记录": "check_construction_logs",
+		"工程日志": "check_construction_logs",
+		"施工日记": "check_construction_logs",
 	}
 
 	for keyword, skillName := range keywords {

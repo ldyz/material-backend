@@ -61,7 +61,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		query.Count(&total)
 
 		var notifications []Notification
-		query.Order("created_at DESC").
+		// 先按已读状态排序（未读在前），再按时间倒序
+		query.Order("is_read ASC, created_at DESC").
 			Offset((page-1)*pageSize).
 			Limit(pageSize).
 			Find(&notifications)

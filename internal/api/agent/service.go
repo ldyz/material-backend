@@ -10,12 +10,23 @@ import (
 
 // Service handles agent business logic
 type Service struct {
-	db *gorm.DB
+	db        *gorm.DB
+	aiHandler *AIHandler
 }
 
 // NewService creates a new agent service
 func NewService(db *gorm.DB) *Service {
 	return &Service{db: db}
+}
+
+// SetAIHandler sets the AI handler
+func (s *Service) SetAIHandler(handler *AIHandler) {
+	s.aiHandler = handler
+}
+
+// GetAIHandler returns the AI handler
+func (s *Service) GetAIHandler() *AIHandler {
+	return s.aiHandler
 }
 
 // HandleOperation executes an AI Agent operation

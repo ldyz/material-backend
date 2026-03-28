@@ -74,6 +74,19 @@ func TokenMiddleware() gin.HandlerFunc {
 		var tokenStr string
 		var err error
 
+		// Check for internal call (from AI tool executor)
+		if c.GetHeader("X-Internal-Call") == "true" {
+			userID := c.GetHeader("X-User-ID")
+			userName := c.GetHeader("X-User-Name")
+			if userID != "" {
+				c.Set("current_user_id", parseInt(userID))
+				c.Set("current_username", userName)
+				c.Set("internal_call", true)
+				c.Next()
+				return
+			}
+		}
+
 		// Try Authorization header first
 		authHeader := c.GetHeader("Authorization")
 		tokenStr, err = extractBearer(authHeader)
@@ -106,11 +119,31 @@ func TokenMiddleware() gin.HandlerFunc {
 	}
 }
 
+// parseInt parses a string to int64
+func parseInt(s string) int64 {
+	var result int64
+	fmt.Sscanf(s, "%d", &result)
+	return result
+}
+
 // TokenOnlyMiddleware validates token but does not enforce DB checks; useful for operations that only require a valid token
 func TokenOnlyMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tokenStr string
 		var err error
+
+		// Check for internal call (from AI tool executor)
+		if c.GetHeader("X-Internal-Call") == "true" {
+			userID := c.GetHeader("X-User-ID")
+			userName := c.GetHeader("X-User-Name")
+			if userID != "" {
+				c.Set("current_user_id", parseInt(userID))
+				c.Set("current_username", userName)
+				c.Set("internal_call", true)
+				c.Next()
+				return
+			}
+		}
 
 		// Try Authorization header first
 		authHeader := c.GetHeader("Authorization")

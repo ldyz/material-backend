@@ -30,8 +30,12 @@ export const useNotificationStore = defineStore('notification', {
   actions: {
     /**
      * 获取通知列表
+     * 添加防重复请求逻辑，避免并发调用导致数据覆盖
      */
     async fetchNotifications(params = {}) {
+      // 防止重复请求
+      if (this.loading) return
+
       this.loading = true
       try {
         const response = await getNotifications({
@@ -74,18 +78,27 @@ export const useNotificationStore = defineStore('notification', {
      * 标记为已读
      */
     async markAsRead(id) {
+      // 先更新本地状态（乐观更新）
+      const notification = this.notifications.find(n => n.id === id)
+      const wasUnread = notification && !notification.is_read
+
+      if (notification && !notification.is_read) {
+        notification.is_read = true
+        notification.read_at = new Date().toISOString()
+        this.unreadCount = Math.max(0, this.unreadCount - 1)
+      }
+
       try {
-        const response = await markAsRead(id)
-        if (response.success) {
-          const notification = this.notifications.find(n => n.id === id)
-          if (notification && !notification.is_read) {
-            notification.is_read = true
-            notification.read_at = new Date().toISOString()
-            this.unreadCount = Math.max(0, this.unreadCount - 1)
-          }
-        }
+        await markAsRead(id)
+        // API 调用成功，本地状态已经更新
       } catch (error) {
         console.error('标记已读失败:', error)
+        // 回滚本地状态
+        if (notification && wasUnread) {
+          notification.is_read = false
+          notification.read_at = null
+          this.unreadCount++
+        }
         showToast({ type: 'fail', message: '标记已读失败' })
       }
     },

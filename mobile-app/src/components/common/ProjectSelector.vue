@@ -36,7 +36,7 @@
     :style="{ height: '50%' }"
   >
     <van-picker
-      :model-value="internalValue"
+      :model-value="pickerValue"
       :columns="pickerColumns"
       :loading="loading"
       @confirm="handleConfirm"
@@ -147,12 +147,16 @@ async function fetchProjects() {
   try {
     const params = {
       page: 1,
-      page_size: 1000 // 获取所有项目
+      page_size: 1000, // 获取所有项目
+      show_all: 'true' // 显示所有项目，不受用户关联限制
     }
     if (props.statusFilter) {
       params.status = props.statusFilter
     }
     const response = await getProjects(params)
+    // 后端返回格式：{ success: true, data: [...], pagination: {...} }
+    // axios 拦截器返回 response.data，所以这里的 response 就是上面的对象
+    // response.data 直接就是项目数组
     projects.value = response.data || []
   } catch (error) {
     console.error('获取项目列表失败:', error)
@@ -164,10 +168,21 @@ async function fetchProjects() {
 
 // 选择器列配置
 const pickerColumns = computed(() => {
+  if (!projects.value || projects.value.length === 0) {
+    return []
+  }
   return projects.value.map(p => ({
     text: p.name,
     value: p.id
   }))
+})
+
+// Picker 选中的值（数组格式）
+const pickerValue = computed(() => {
+  if (internalValue.value === null || internalValue.value === undefined || internalValue.value === '') {
+    return []
+  }
+  return [internalValue.value]
 })
 
 // 下拉菜单选项
@@ -203,13 +218,16 @@ function handleClick() {
 }
 
 // 处理确认
-function handleConfirm({ selectedOptions }) {
-  const value = selectedOptions[0]?.value
-  internalValue.value = value
+function handleConfirm({ selectedOptions, selectedValues }) {
+  // 兼容两种参数格式
+  const value = selectedValues?.[0] ?? selectedOptions?.[0]?.value
+  if (value !== undefined) {
+    internalValue.value = value
+    emit('update:modelValue', value)
+    emit('change', value)
+    emit('select', selectedProject.value)
+  }
   showPicker.value = false
-  emit('update:modelValue', value)
-  emit('change', value)
-  emit('select', selectedProject.value)
 }
 
 // 处理下拉菜单变化

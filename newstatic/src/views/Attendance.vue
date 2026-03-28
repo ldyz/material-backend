@@ -343,10 +343,18 @@ function getFirstPhoto(row) {
   if (row.photo_urls) {
     try {
       const urls = typeof row.photo_urls === 'string' ? JSON.parse(row.photo_urls) : row.photo_urls
-      if (urls.length > 0) return getAssetUrl(urls[0])
+      // 找到第一个有效的照片 URL
+      for (const url of urls) {
+        if (url && url !== 'null' && url !== '') {
+          return getAssetUrl(url)
+        }
+      }
     } catch (e) {}
   }
-  if (row.photo_url) return getAssetUrl(row.photo_url)
+  // 兼容单张照片
+  if (row.photo_url && row.photo_url !== 'null' && row.photo_url !== '') {
+    return getAssetUrl(row.photo_url)
+  }
   return ''
 }
 
@@ -356,11 +364,18 @@ function getPhotoList(row) {
   if (row.photo_urls) {
     try {
       const urls = typeof row.photo_urls === 'string' ? JSON.parse(row.photo_urls) : row.photo_urls
-      urls.forEach(url => photos.push(getAssetUrl(url)))
+      urls.forEach(url => {
+        if (url && url !== 'null' && url !== '') {
+          const fullUrl = getAssetUrl(url)
+          if (fullUrl) photos.push(fullUrl)
+        }
+      })
     } catch (e) {}
   }
-  if (photos.length === 0 && row.photo_url) {
-    photos.push(getAssetUrl(row.photo_url))
+  // 兼容单张照片
+  if (photos.length === 0 && row.photo_url && row.photo_url !== 'null' && row.photo_url !== '') {
+    const fullUrl = getAssetUrl(row.photo_url)
+    if (fullUrl) photos.push(fullUrl)
   }
   return photos
 }

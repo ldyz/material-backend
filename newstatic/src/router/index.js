@@ -172,6 +172,16 @@ const routes = [
         }
       },
       {
+        path: 'attendance',
+        name: 'Attendance',
+        component: () => import('@/views/Attendance.vue'),
+        meta: {
+          requiresAuth: true,
+          title: '考勤管理',
+          permissions: ['attendance_view']
+        }
+      },
+      {
         path: 'warehouse',
         name: 'Warehouse',
         component: () => import('@/views/Warehouse.vue'),

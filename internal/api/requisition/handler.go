@@ -245,6 +245,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 				RequisitionID:     requisition.ID,
 				StockID:           itemReq.StockID,
 				MaterialID:        itemReq.MaterialID,
+				PlanItemID:        itemReq.PlanItemID,
 				RequestedQuantity: itemReq.RequestedQuantity,
 				ApprovedQuantity:  0,
 				ActualQuantity:    0,
@@ -1092,6 +1093,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 type RequisitionItemReq struct {
 	StockID           uint    `json:"stock_id"`
 	MaterialID        uint    `json:"material_id" binding:"required_without=StockID"`
+	PlanItemID        *uint   `json:"plan_item_id"`
 	RequestedQuantity float64 `json:"requested_quantity" binding:"required,gt=0"`
 	Remark            string  `json:"remark"`
 }

@@ -58,7 +58,7 @@ export function issueRequisition(id, data) {
 // 获取项目列表
 export function getProjects(params) {
   return request({
-    url: '/projects',
+    url: '/project/projects',
     method: 'GET',
     params
   })
@@ -67,7 +67,7 @@ export function getProjects(params) {
 // 获取库存列表（按项目筛选）
 export function getStock(params) {
   return request({
-    url: '/stock',
+    url: '/stock/stocks',
     method: 'GET',
     params
   })

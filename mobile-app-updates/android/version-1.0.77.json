@@ -1,0 +1,7 @@
+{
+  "version": "1.0.77",
+  "buildTime": "2026-03-27T03:13:33.368Z",
+  "updateMessage": "修复AI助手历史记录保存功能",
+  "forceUpdate": false,
+  "apkUrl": "https://home.mbed.org.cn:9090/api/app/download-apk"
+}

@@ -37,7 +37,7 @@ func (log *ConstructionLog) ToDict() map[string]any {
 		"weather":    log.Weather,
 		"project_id": log.ProjectID,
 		"creator_id": log.CreatorID,
-		"created_at": log.CreatedAt.Format("2006-01-02 15:04:05"),
-		"updated_at": log.UpdatedAt.Format("2006-01-02 15:04:05"),
+		"created_at": log.CreatedAt.Format(time.RFC3339),
+		"updated_at": log.UpdatedAt.Format(time.RFC3339),
 	}
 }

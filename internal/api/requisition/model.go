@@ -32,6 +32,7 @@ type RequisitionItem struct {
 	RequisitionID     uint      `gorm:"index" json:"requisition_id"`
 	StockID           uint      `gorm:"index" json:"stock_id"`
 	MaterialID        uint      `gorm:"index" json:"material_id"`
+	PlanItemID        *uint     `gorm:"index" json:"plan_item_id"`
 	RequestedQuantity float64   `gorm:"type:decimal(15,3)" json:"requested_quantity"`
 	ApprovedQuantity  float64   `gorm:"type:decimal(15,3)" json:"approved_quantity"`
 	ActualQuantity    float64   `gorm:"type:decimal(15,3)" json:"actual_quantity"`
@@ -91,10 +92,10 @@ func (r *Requisition) ToDTOWithEnrichment(db *gorm.DB) map[string]any {
 	// Handle nullable datetime fields
 	var approvedAtStr, issuedAtStr string
 	if r.ApprovedAt != nil {
-		approvedAtStr = r.ApprovedAt.Format("2006-01-02 15:04:05")
+		approvedAtStr = r.ApprovedAt.Format(time.RFC3339)
 	}
 	if r.IssuedAt != nil {
-		issuedAtStr = r.IssuedAt.Format("2006-01-02 15:04:05")
+		issuedAtStr = r.IssuedAt.Format(time.RFC3339)
 	}
 
 	return map[string]any{
@@ -107,7 +108,7 @@ func (r *Requisition) ToDTOWithEnrichment(db *gorm.DB) map[string]any {
 		"applicant_name":     r.Applicant,
 		"department":         r.Department,
 		"status":             r.Status,
-		"created_at":         r.CreatedAt.Format("2006-01-02 15:04:05"),
+		"created_at":         r.CreatedAt.Format(time.RFC3339),
 		"requisition_date":   r.CreatedAt.Format("2006-01-02"),
 		"remark":             r.Remark,
 		"approved_at":        approvedAtStr,
@@ -131,10 +132,10 @@ func (r *Requisition) ToDTO() map[string]any {
 	// Handle nullable datetime fields
 	var approvedAtStr, issuedAtStr string
 	if r.ApprovedAt != nil {
-		approvedAtStr = r.ApprovedAt.Format("2006-01-02 15:04:05")
+		approvedAtStr = r.ApprovedAt.Format(time.RFC3339)
 	}
 	if r.IssuedAt != nil {
-		issuedAtStr = r.IssuedAt.Format("2006-01-02 15:04:05")
+		issuedAtStr = r.IssuedAt.Format(time.RFC3339)
 	}
 
 	return map[string]any{
@@ -147,7 +148,7 @@ func (r *Requisition) ToDTO() map[string]any {
 		"applicant_name":     r.Applicant,
 		"department":         r.Department,
 		"status":             r.Status,
-		"created_at":         r.CreatedAt.Format("2006-01-02 15:04:05"),
+		"created_at":         r.CreatedAt.Format(time.RFC3339),
 		"requisition_date":   r.CreatedAt.Format("2006-01-02"),
 		"remark":             r.Remark,
 		"approved_at":        approvedAtStr,
@@ -167,13 +168,14 @@ func (ri *RequisitionItem) ToDTO() map[string]any {
 		"requisition_id":     ri.RequisitionID,
 		"stock_id":           ri.StockID,
 		"material_id":        ri.MaterialID,
+		"plan_item_id":       ri.PlanItemID,
 		"requested_quantity": ri.RequestedQuantity,
 		"approved_quantity":  ri.ApprovedQuantity,
 		"actual_quantity":    ri.ActualQuantity,
 		"remark":             ri.Remark,
 		"status":             ri.Status,
-		"created_at":         ri.CreatedAt.Format("2006-01-02 15:04:05"),
-		"updated_at":         ri.UpdatedAt.Format("2006-01-02 15:04:05"),
+		"created_at":         ri.CreatedAt.Format(time.RFC3339),
+		"updated_at":         ri.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -203,6 +205,7 @@ type CreateRequisitionRequest struct {
 type CreateRequisitionItemRequest struct {
 	StockID           uint    `json:"stock_id" binding:"required"`
 	MaterialID        uint    `json:"material_id" binding:"required"`
+	PlanItemID        *uint   `json:"plan_item_id"`
 	RequestedQuantity float64 `json:"requested_quantity" binding:"required,gt=0"`
 	Remark            string  `json:"remark"`
 }

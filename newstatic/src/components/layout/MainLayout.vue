@@ -118,6 +118,10 @@
         </router-view>
       </el-main>
     </el-container>
+
+    <!-- AI 助手浮动按钮和弹窗 -->
+    <AiFloatButton @click="showAiChat = true" />
+    <AiChatPopup v-model:show="showAiChat" ref="aiChatRef" />
   </el-container>
 </template>
 
@@ -154,6 +158,8 @@ import {
 import { ElMessageBox, ElMessage } from 'element-plus'
 import NotificationBell from '@/components/Notification/NotificationBell.vue'
 import AvatarCropperDialog from '@/components/common/AvatarCropperDialog.vue'
+import AiFloatButton from '@/components/AiChat/AiFloatButton.vue'
+import AiChatPopup from '@/components/AiChat/AiChatPopup.vue'
 import { authApi } from '@/api'
 
 const route = useRoute()
@@ -256,6 +262,12 @@ const menuConfig = [
     title: '施工预约',
     icon: Calendar,
     permissions: ['appointment_view'] // 预约查看权限
+  },
+  {
+    path: '/attendance',
+    title: '考勤管理',
+    icon: Clock,
+    permissions: ['attendance_view'] // 考勤查看权限
   },
   {
     path: '/workflows',
@@ -369,6 +381,10 @@ const handleCommand = async (command) => {
 const avatarInputRef = ref(null)
 const showCropperDialog = ref(false)
 const selectedAvatarFile = ref(null)
+
+// AI 助手
+const showAiChat = ref(false)
+const aiChatRef = ref(null)
 
 const handleAvatarChange = async (event) => {
   const file = event.target.files?.[0]
@@ -517,7 +533,7 @@ const handleResize = () => {
 .layout-content {
   background: #f5f7fa;
   padding: 20px;
-  overflow: hidden;  /* 改为 hidden，让内部内容处理滚动 */
+  overflow-y: auto;  /* 允许垂直滚动 */
   flex: 1;
   display: flex;
   flex-direction: column;

@@ -20,6 +20,11 @@ func NewCalendarService(db *gorm.DB) *CalendarService {
 
 // CheckAvailability 检查作业人员在指定时间段的可用性
 func (s *CalendarService) CheckAvailability(workerID uint, workDate time.Time, timeSlot string) (bool, string, error) {
+	return s.CheckAvailabilityWithExclude(workerID, workDate, timeSlot, nil)
+}
+
+// CheckAvailabilityWithExclude 检查作业人员在指定时间段的可用性（支持排除特定预约单）
+func (s *CalendarService) CheckAvailabilityWithExclude(workerID uint, workDate time.Time, timeSlot string, excludeAppointmentID *uint) (bool, string, error) {
 	var calendar WorkerCalendar
 	err := s.db.Where("worker_id = ? AND calendar_date = ? AND time_slot = ?",
 		workerID, workDate.Format("2006-01-02"), timeSlot).
@@ -32,6 +37,11 @@ func (s *CalendarService) CheckAvailability(workerID uint, workDate time.Time, t
 
 	if err != nil {
 		return false, "", err
+	}
+
+	// 如果是被当前预约单自己锁定的，视为可用
+	if excludeAppointmentID != nil && calendar.AppointmentID != nil && *calendar.AppointmentID == *excludeAppointmentID {
+		return true, "", nil
 	}
 
 	if !calendar.IsAvailable || calendar.Status != CalendarStatusAvailable {

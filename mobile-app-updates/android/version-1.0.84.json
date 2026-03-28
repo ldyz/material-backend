@@ -1,0 +1,8 @@
+{
+  "version": "1.0.84",
+  "versionCode": 84,
+  "url": "/mobile-updates/android/material-management-1.0.84.apk",
+  "releaseNotes": "修复AI助手功能，解决认证和日期问题",
+  "forceUpdate": false,
+  "publishDate": "2026-03-27"
+}

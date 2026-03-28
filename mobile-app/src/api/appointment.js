@@ -18,6 +18,14 @@ export function getMyAppointments(params) {
   })
 }
 
+// 获取我的历史联系人
+export function getMyContacts() {
+  return request({
+    url: '/appointments/my/contacts',
+    method: 'GET'
+  })
+}
+
 // 获取待审批列表
 export function getPendingApprovals(params) {
   return request({

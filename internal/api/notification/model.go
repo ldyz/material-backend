@@ -30,7 +30,7 @@ const (
 func (n *Notification) ToDTO() map[string]any {
 	var readAtStr string
 	if n.ReadAt != nil {
-		readAtStr = n.ReadAt.Format("2006-01-02 15:04:05")
+		readAtStr = n.ReadAt.Format(time.RFC3339)
 	}
 
 	return map[string]any{
@@ -41,7 +41,7 @@ func (n *Notification) ToDTO() map[string]any {
 		"content":    n.Content,
 		"data":       n.Data,
 		"is_read":    n.IsRead,
-		"created_at": n.CreatedAt.Format("2006-01-02 15:04:05"),
+		"created_at": n.CreatedAt.Format(time.RFC3339),
 		"read_at":    readAtStr,
 	}
 }

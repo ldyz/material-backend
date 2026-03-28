@@ -440,7 +440,14 @@ func (s *WorkflowService) RecallWorkflow(appointmentID uint, userID uint) error 
 	appointment.WorkflowInstanceID = nil
 	appointment.SubmittedAt = nil
 
-	return s.db.Save(&appointment).Error
+	if err := s.db.Save(&appointment).Error; err != nil {
+		return err
+	}
+
+	// 注意：撤回工作流不释放日历，因为预约单回到草稿状态，作业人员仍然被占用
+	// 只有删除或取消预约单才释放日历
+
+	return nil
 }
 
 // TransferApproval 转交审批

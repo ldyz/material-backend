@@ -16,7 +16,19 @@ export const useAuthStore = defineStore('auth', () => {
   // 权限相关
   const permissions = computed(() => {
     if (!user.value) return []
-    // 优先使用 permissions 字段
+    // 优先从 roles 中获取权限（后端返回的格式）
+    if (user.value.roles && Array.isArray(user.value.roles)) {
+      const perms = new Set()
+      user.value.roles.forEach(role => {
+        if (role.permissions && Array.isArray(role.permissions)) {
+          role.permissions.forEach(p => perms.add(p))
+        }
+      })
+      if (perms.size > 0) {
+        return Array.from(perms)
+      }
+    }
+    // 兼容：直接使用 permissions 字段
     if (user.value.permissions && Array.isArray(user.value.permissions)) {
       return user.value.permissions
     }
@@ -138,6 +150,15 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null
     user.value = null
     isAuthenticated.value = false
+
+    // 清除 AI 聊天历史（按用户区分）
+    const keys = Object.keys(localStorage)
+    keys.forEach(key => {
+      if (key.startsWith('ai_chat_history_')) {
+        localStorage.removeItem(key)
+      }
+    })
+
     storage.clear()
     // 断开 WebSocket 连接
     disconnectWebSocket()
@@ -169,13 +190,30 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchCurrentUser() {
     try {
       const response = await getCurrentUserApi()
+      console.log('[Auth] 获取用户信息响应:', response)
       if (response.data) {
         setUser(response.data)
+        console.log('[Auth] 用户角色:', response.data.roles?.map(r => ({ name: r.name, permCount: r.permissions?.length })))
       }
       return response.data
     } catch (error) {
       console.error('获取用户信息失败:', error)
       throw error
+    }
+  }
+
+  /**
+   * 初始化认证状态 - 刷新用户权限信息
+   */
+  async function initAuth() {
+    if (token.value) {
+      try {
+        console.log('[Auth] 开始刷新用户权限...')
+        await fetchCurrentUser()
+        console.log('[Auth] 权限刷新完成，当前权限数量:', permissions.value.length)
+      } catch (error) {
+        console.error('刷新用户信息失败:', error)
+      }
     }
   }
 
@@ -206,6 +244,7 @@ export const useAuthStore = defineStore('auth', () => {
     clearAuth,
     login,
     fetchCurrentUser,
+    initAuth,
     logout
   }
 })

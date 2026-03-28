@@ -1,0 +1,8 @@
+{
+  "version": "1.0.68",
+  "versionCode": 68,
+  "url": "/mobile-updates/android/material-management-1.0.68.apk",
+  "releaseNotes": "修复安卓语音按钮无法保持录音状态",
+  "forceUpdate": false,
+  "publishDate": "2026-03-26"
+}

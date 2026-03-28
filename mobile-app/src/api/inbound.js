@@ -58,3 +58,29 @@ export function getApprovedPlans(params) {
     }
   })
 }
+
+// 获取项目列表
+export function getProjects(params) {
+  return request({
+    url: '/project/projects',
+    method: 'GET',
+    params
+  })
+}
+
+// 获取物资主数据列表（用于物资搜索）
+export function getMaterialMasters(params) {
+  return request({
+    url: '/material-master',
+    method: 'GET',
+    params
+  })
+}
+
+// 获取计划详情（包含物料列表）
+export function getPlanDetail(id) {
+  return request({
+    url: `/material-plan/plans/${id}`,
+    method: 'GET'
+  })
+}

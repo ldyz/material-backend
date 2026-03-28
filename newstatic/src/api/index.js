@@ -4662,3 +4662,144 @@ export const calendarApi = {
   }
 }
 
+// ==================== 考勤打卡 API ====================
+
+/**
+ * 考勤打卡 API 接口
+ *
+ * 提供打卡记录管理、月度汇总、考勤统计等功能
+ *
+ * @namespace attendanceApi
+ */
+export const attendanceApi = {
+  // ==================== 打卡记录管理 ====================
+
+  /**
+   * 获取打卡记录列表
+   *
+   * @param {Object} params - 查询参数
+   * @param {number} params.page - 页码
+   * @param {number} params.page_size - 每页数量
+   * @param {number} params.user_id - 用户ID
+   * @param {string} params.attendance_type - 打卡类型
+   * @param {string} params.status - 状态
+   * @param {string} params.start_date - 开始日期
+   * @param {string} params.end_date - 结束日期
+   * @returns {Promise} 返回打卡记录列表
+   */
+  getRecords(params) {
+    return request({
+      url: '/attendance/records',
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 获取打卡记录详情
+   *
+   * @param {number} id - 记录ID
+   * @returns {Promise} 返回打卡记录详情
+   */
+  getRecord(id) {
+    return request({
+      url: `/attendance/records/${id}`,
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 确认打卡记录
+   *
+   * @param {number} id - 记录ID
+   * @param {Object} data - 确认信息
+   * @param {string} data.remark - 备注
+   * @returns {Promise} 返回确认结果
+   */
+  confirmRecord(id, data = {}) {
+    return request({
+      url: `/attendance/records/${id}/confirm`,
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 驳回打卡记录
+   *
+   * @param {number} id - 记录ID
+   * @param {Object} data - 驳回信息
+   * @param {string} data.reason - 驳回原因
+   * @returns {Promise} 返回驳回结果
+   */
+  rejectRecord(id, data) {
+    return request({
+      url: `/attendance/records/${id}/reject`,
+      method: 'POST',
+      data
+    })
+  },
+
+  // ==================== 月度汇总 ====================
+
+  /**
+   * 获取月度考勤汇总
+   *
+   * @param {Object} params - 查询参数
+   * @param {number} params.year - 年份
+   * @param {number} params.month - 月份
+   * @param {number} params.user_id - 用户ID（可选）
+   * @returns {Promise} 返回月度汇总列表
+   */
+  getMonthlySummary(params) {
+    return request({
+      url: '/attendance/monthly-summary',
+      method: 'GET',
+      params
+    })
+  },
+
+  /**
+   * 生成月度考勤汇总
+   *
+   * @param {Object} data - 生成参数
+   * @param {number} data.year - 年份
+   * @param {number} data.month - 月份
+   * @returns {Promise} 返回生成结果
+   */
+  generateMonthly(data) {
+    return request({
+      url: '/attendance/generate-monthly',
+      method: 'POST',
+      data
+    })
+  },
+
+  /**
+   * 确认月度汇总
+   *
+   * @param {number} id - 汇总ID
+   * @returns {Promise} 返回确认结果
+   */
+  confirmMonthlySummary(id) {
+    return request({
+      url: `/attendance/monthly-summary/${id}/confirm`,
+      method: 'POST'
+    })
+  },
+
+  // ==================== 统计数据 ====================
+
+  /**
+   * 获取考勤统计数据
+   *
+   * @returns {Promise} 返回统计数据
+   */
+  getStatistics() {
+    return request({
+      url: '/attendance/statistics',
+      method: 'GET'
+    })
+  }
+}
+

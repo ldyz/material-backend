@@ -1,0 +1,8 @@
+{
+  "version": "1.0.97",
+  "versionCode": 97,
+  "url": "/mobile-updates/android/material-management-1.0.97.apk",
+  "releaseNotes": "恢复Tabbar AI助手按钮，添加超时机制",
+  "forceUpdate": false,
+  "publishDate": "2026-03-27"
+}

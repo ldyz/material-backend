@@ -3,6 +3,7 @@ package openai
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // ToolBuilder helps build OpenAI function tools
@@ -61,7 +62,7 @@ func GetMaterialManagementTools() []Tool {
 			"properties": map[string]interface{}{
 				"date": map[string]interface{}{
 					"type":        "string",
-					"description": "查询日期，格式 YYYY-MM-DD，如 2026-03-27",
+					"description": "查询日期，格式 YYYY-MM-DD，如 " + time.Now().Format("2006-01-02"),
 				},
 				"start_date": map[string]interface{}{
 					"type":        "string",
@@ -141,7 +142,12 @@ func GetMaterialManagementTools() []Tool {
 - priority: 优先级(1-10，数字越大优先级越高)
 - assigned_worker_id: 主作业人员ID
 - assigned_worker_ids: 作业人员ID数组
-- assigned_worker_names: 作业人员姓名（逗号分隔）`, map[string]interface{}{
+- assigned_worker_names: 作业人员姓名（逗号分隔）
+
+【重要提示】
+- 指定作业人员后，会**立即锁定**该人员的时间段
+- 如果作业人员在指定时间段不可用，会返回错误
+- 锁定后其他人无法再预约该人员同一时间段`, map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"project_id": map[string]interface{}{
@@ -312,7 +318,10 @@ func GetMaterialManagementTools() []Tool {
 
 【参数说明】
 - id: 预约单ID（必填）
-- reason: 取消原因`, map[string]interface{}{
+- reason: 取消原因
+
+【重要提示】
+- 取消预约会**释放**已锁定作业人员的日历，使其可以被其他预约使用`, map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"id": map[string]interface{}{
@@ -359,7 +368,12 @@ func GetMaterialManagementTools() []Tool {
 - "谁可以安排"、"能派谁去"
 
 【返回信息】
-返回所有可用的作业人员信息`, map[string]interface{}{
+返回所有作业人员信息
+
+【重要提示】
+- 此工具返回所有作业人员，不包含日历锁定状态
+- 要查看某人员某天是否有空，请使用 query_worker_calendar 工具
+- 创建预约时指定人员会**立即锁定**其日历`, map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{},
 		}).
@@ -666,6 +680,303 @@ func GetMaterialManagementTools() []Tool {
 					"default":     20,
 				},
 			},
+		}).
+		// ==================== 考勤管理 ====================
+		AddTool("query_attendance", `查询考勤打卡记录。
+
+【使用场景】
+当用户询问以下内容时使用此工具：
+- "打卡记录"、"考勤记录"
+- "今天的考勤"、"某人出勤情况"
+- "出勤记录"、"签到记录"
+
+【参数说明】
+- user_id: 用户ID（可选）
+- date: 日期（可选，格式 YYYY-MM-DD）
+- start_date/end_date: 日期范围查询
+- attendance_type: 打卡类型 (morning上午/afternoon下午/noon_overtime中午加班/night_overtime晚上加班)
+- status: 打卡状态 (pending待确认/confirmed已确认/rejected已驳回)
+
+【返回信息】
+返回打卡记录列表，包含用户名、打卡时间、打卡类型、状态等`, map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"user_id": map[string]interface{}{
+					"type":        "integer",
+					"description": "用户ID，查询特定用户的打卡记录",
+				},
+				"date": map[string]interface{}{
+					"type":        "string",
+					"description": "查询日期，格式 YYYY-MM-DD，如 " + time.Now().Format("2006-01-02"),
+				},
+				"start_date": map[string]interface{}{
+					"type":        "string",
+					"description": "开始日期，用于日期范围查询",
+				},
+				"end_date": map[string]interface{}{
+					"type":        "string",
+					"description": "结束日期，用于日期范围查询",
+				},
+				"attendance_type": map[string]interface{}{
+					"type":        "string",
+					"description": "打卡类型：morning(上午)/afternoon(下午)/noon_overtime(中午加班)/night_overtime(晚上加班)",
+					"enum":        []string{"morning", "afternoon", "noon_overtime", "night_overtime"},
+				},
+				"status": map[string]interface{}{
+					"type":        "string",
+					"description": "打卡状态：pending(待确认)/confirmed(已确认)/rejected(已驳回)",
+					"enum":        []string{"pending", "confirmed", "rejected"},
+				},
+				"page": map[string]interface{}{
+					"type":        "integer",
+					"description": "页码，默认1",
+					"default":     1,
+				},
+				"page_size": map[string]interface{}{
+					"type":        "integer",
+					"description": "每页数量，默认20",
+					"default":     20,
+				},
+			},
+		}).
+		AddTool("query_attendance_stats", `查询考勤统计数据。
+
+【使用场景】
+当用户询问以下内容时使用此工具：
+- "考勤统计"、"出勤率"
+- "本月考勤情况"、"月度考勤"
+- "加班统计"、"加班小时"
+
+【参数说明】
+- user_id: 用户ID（可选，不填则查询全部）
+- year: 年份（必填）
+- month: 月份（必填，1-12）
+
+【返回信息】
+返回月度考勤汇总，包含工作天数、加班时长等`, map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"user_id": map[string]interface{}{
+					"type":        "integer",
+					"description": "用户ID，不填则查询全部用户",
+				},
+				"year": map[string]interface{}{
+					"type":        "integer",
+					"description": "年份，如 2026",
+				},
+				"month": map[string]interface{}{
+					"type":        "integer",
+					"description": "月份，1-12",
+				},
+			},
+			"required": []string{"year", "month"},
+		}).
+		// ==================== 施工日志 ====================
+		AddTool("query_construction_logs", `查询施工日志。
+
+【使用场景】
+当用户询问以下内容时使用此工具：
+- "施工日志"、"施工记录"
+- "今天的日志"、"某项目的日志"
+- "工程日志"、"施工日记"
+
+【参数说明】
+- project_id: 项目ID（可选）
+- log_date: 日志日期（可选，格式 YYYY-MM-DD）
+- start_date/end_date: 日期范围查询
+
+【返回信息】
+返回施工日志列表，包含标题、内容、天气、进度等`, map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"project_id": map[string]interface{}{
+					"type":        "integer",
+					"description": "项目ID，筛选特定项目的日志",
+				},
+				"log_date": map[string]interface{}{
+					"type":        "string",
+					"description": "日志日期，格式 YYYY-MM-DD",
+				},
+				"start_date": map[string]interface{}{
+					"type":        "string",
+					"description": "开始日期，用于日期范围查询",
+				},
+				"end_date": map[string]interface{}{
+					"type":        "string",
+					"description": "结束日期，用于日期范围查询",
+				},
+				"page": map[string]interface{}{
+					"type":        "integer",
+					"description": "页码，默认1",
+					"default":     1,
+				},
+				"page_size": map[string]interface{}{
+					"type":        "integer",
+					"description": "每页数量，默认20",
+					"default":     20,
+				},
+			},
+		}).
+		AddTool("query_construction_log_detail", `查询单条施工日志的详细信息。
+
+【使用场景】
+当用户询问以下内容时使用此工具：
+- "日志详情"、"施工日志详情"
+- "查看这条日志的内容"
+- "展开这个日志"
+
+【参数说明】
+- id: 日志ID（必填）
+
+【返回信息】
+返回日志的完整信息，包括详细内容、图片、问题记录等`, map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"id": map[string]interface{}{
+					"type":        "integer",
+					"description": "日志ID（必填）",
+				},
+			},
+			"required": []string{"id"},
+		}).
+		// ==================== 工作流管理 ====================
+		AddTool("query_pending_workflow_tasks", `查询待办工作流任务列表。
+
+【使用场景】
+当用户询问以下内容时使用此工具：
+- "待办任务"、"我的待办"
+- "需要处理的工作流"
+- "待审批的工作流"
+- "待办事项"
+
+【参数说明】
+- task_type: 任务类型筛选（可选）
+- page/page_size: 分页参数
+
+【返回信息】
+返回当前用户待处理的工作流任务列表`, map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"task_type": map[string]interface{}{
+					"type":        "string",
+					"description": "任务类型筛选，如：appointment_approval(预约审批)/material_plan_approval(物资计划审批)/requisition_approval(领用审批)",
+				},
+				"page": map[string]interface{}{
+					"type":        "integer",
+					"description": "页码，默认1",
+					"default":     1,
+				},
+				"page_size": map[string]interface{}{
+					"type":        "integer",
+					"description": "每页数量，默认20",
+					"default":     20,
+				},
+			},
+		}).
+		AddTool("approve_workflow_task", `审批通过工作流任务。
+
+【使用场景】
+当用户询问以下内容时使用此工具：
+- "审批通过这个任务"
+- "同意这个工作流"
+- "批准待办"
+
+【参数说明】
+- task_id: 任务ID（必填）
+- comment: 审批意见（可选）
+
+【返回信息】
+返回审批结果`, map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"task_id": map[string]interface{}{
+					"type":        "integer",
+					"description": "任务ID（必填）",
+				},
+				"comment": map[string]interface{}{
+					"type":        "string",
+					"description": "审批意见",
+				},
+			},
+			"required": []string{"task_id"},
+		}).
+		AddTool("reject_workflow_task", `驳回工作流任务。
+
+【使用场景】
+当用户询问以下内容时使用此工具：
+- "驳回这个任务"
+- "拒绝这个工作流"
+- "不同意待办"
+
+【参数说明】
+- task_id: 任务ID（必填）
+- reason: 驳回原因（必填）
+
+【返回信息】
+返回驳回结果`, map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"task_id": map[string]interface{}{
+					"type":        "integer",
+					"description": "任务ID（必填）",
+				},
+				"reason": map[string]interface{}{
+					"type":        "string",
+					"description": "驳回原因（必填）",
+				},
+			},
+			"required": []string{"task_id", "reason"},
+		}).
+		// ==================== 通知管理 ====================
+		AddTool("query_notifications", `查询通知消息列表。
+
+【使用场景】
+当用户询问以下内容时使用此工具：
+- "通知列表"、"消息列表"
+- "我的消息"、"通知"
+- "系统通知"
+
+【参数说明】
+- unread_only: 是否只显示未读（可选，默认false）
+- notification_type: 通知类型筛选（可选）
+- page/page_size: 分页参数
+
+【返回信息】
+返回通知列表，包含标题、内容、类型、是否已读等`, map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"unread_only": map[string]interface{}{
+					"type":        "boolean",
+					"description": "是否只显示未读通知",
+					"default":     false,
+				},
+				"notification_type": map[string]interface{}{
+					"type":        "string",
+					"description": "通知类型：system(系统)/approval(审批)/reminder(提醒)/announcement(公告)",
+				},
+				"page": map[string]interface{}{
+					"type":        "integer",
+					"description": "页码，默认1",
+					"default":     1,
+				},
+				"page_size": map[string]interface{}{
+					"type":        "integer",
+					"description": "每页数量，默认20",
+					"default":     20,
+				},
+			},
+		}).
+		AddTool("query_unread_notification_count", `查询未读通知数量。
+
+【使用场景】
+当用户询问以下内容时使用此工具：
+- "未读消息数量"、"有多少未读"
+- "未读通知"、"消息提醒"
+
+【返回信息】
+返回未读通知总数`, map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{},
 		}).
 		// ==================== 通用分析工具 ====================
 		AddTool("generate_report", `生成数据报告。

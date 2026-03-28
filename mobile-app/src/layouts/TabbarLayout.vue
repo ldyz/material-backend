@@ -15,14 +15,42 @@
       />
     </router-view>
 
-    <van-tabbar v-model="activeTab" :safe-area-inset-bottom="true">
-      <!-- 动态渲染的菜单项 -->
-      <template v-for="item in menuItems" :key="item.name">
-        <van-tabbar-item :name="item.name" :icon="item.icon">
-          {{ item.label }}
-        </van-tabbar-item>
-      </template>
-    </van-tabbar>
+    <!-- 自定义底部导航栏 -->
+    <div class="custom-tabbar" :class="{ 'no-voice': !hasAIPermission }">
+      <!-- 首页按钮 -->
+      <div
+        class="tabbar-item"
+        :class="{ active: activeTab === 'dashboard' }"
+        @click="handleTabClick('dashboard')"
+      >
+        <van-icon name="wap-home-o" size="22" />
+        <span class="tabbar-label">首页</span>
+      </div>
+
+      <!-- 中间 AI 助手按钮 - 仅对有AI权限的用户显示 -->
+      <div v-if="hasAIPermission" class="ai-button-wrapper">
+        <div class="ai-button" @click="openAiDialog">
+          <van-icon name="chat-o" size="24" />
+        </div>
+        <span class="ai-label">AI助手</span>
+      </div>
+
+      <!-- 我的按钮 -->
+      <div
+        class="tabbar-item"
+        :class="{ active: activeTab === 'profile' }"
+        @click="handleTabClick('profile')"
+      >
+        <van-icon name="user-o" size="22" />
+        <span class="tabbar-label">我的</span>
+      </div>
+    </div>
+
+    <!-- AI 聊天弹窗 -->
+    <AiChatPopup
+      v-model:show="showAiDialog"
+      context="dashboard"
+    />
 
     <!-- 自动更新对话框 -->
     <AppUpdateDialog v-model:show="showUpdateDialog" />
@@ -35,6 +63,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAutoUpdate } from '@/composables/useAppUpdate'
 import { useAuthStore } from '@/stores/auth'
 import AppUpdateDialog from '@/components/AppUpdateDialog.vue'
+import AiChatPopup from '@/components/AiChatPopup.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -42,98 +71,53 @@ const authStore = useAuthStore()
 
 const activeTab = ref('dashboard')
 const showUpdateDialog = ref(false)
+const showAiDialog = ref(false)
+
+// 检查是否有AI权限
+const hasAIPermission = computed(() => {
+  // 管理员有所有权限
+  if (authStore.isAdmin) return true
+  // 检查是否有AI相关权限
+  const permissions = authStore.permissions
+  return permissions.some(p =>
+    p === 'ai_agent_query' ||
+    p === 'ai_agent_operate' ||
+    p === 'ai_agent_workflow' ||
+    p === 'ai_agent_view'
+  )
+})
 
 // 使用自动更新检测
 const { hasUpdate, forceUpdate, performCheck } = useAutoUpdate({
   autoCheck: true,
   checkOnMount: true,
-  checkInterval: 24 * 60 * 60 * 1000 // 每24小时检查一次
+  checkInterval: 24 * 60 * 60 * 1000
 })
 
-// 根据权限动态生成菜单项
-const menuItems = computed(() => {
-  const items = [
-    // 首页 - 所有人可见
-    { name: 'dashboard', label: '首页', icon: 'wap-home-o', permissions: [] }
-  ]
-
-  // 预约管理 - 需要预约查看权限
-  if (authStore.hasPermission('appointment_view')) {
-    items.push({
-      name: 'appointments',
-      label: '预约',
-      icon: 'calendar-o',
-      permissions: ['appointment_view']
-    })
+// 处理标签点击
+function handleTabClick(name) {
+  if (name === activeTab.value) return
+  activeTab.value = name
+  const targetPath = name === 'dashboard' ? '/' : `/${name}`
+  if (route.path !== targetPath) {
+    router.push(targetPath)
   }
+}
 
-  // 物资计划 - 需要物资计划查看权限
-  if (authStore.hasPermission('material_plan_view')) {
-    items.push({
-      name: 'plans',
-      label: '计划',
-      icon: 'todo-list-o',
-      permissions: ['material_plan_view']
-    })
-  }
-
-  // 入库管理 - 需要入库查看权限
-  if (authStore.hasPermission('inbound_view')) {
-    items.push({
-      name: 'inbound',
-      label: '入库',
-      icon: 'logistics',
-      permissions: ['inbound_view']
-    })
-  }
-
-  // 出库管理 - 需要出库查看权限
-  if (authStore.hasPermission('requisition_view')) {
-    items.push({
-      name: 'requisition',
-      label: '出库',
-      icon: 'send-gift-o',
-      permissions: ['requisition_view']
-    })
-  }
-
-  // 施工日志 - 需要施工日志查看权限
-  if (authStore.hasAnyPermission(['constructionlog_view', 'constructionlog_create'])) {
-    items.push({
-      name: 'construction-log',
-      label: '日志',
-      icon: 'notes-o',
-      permissions: ['constructionlog_view', 'constructionlog_create']
-    })
-  }
-
-  // 进度管理 - 需要进度查看权限
-  if (authStore.hasPermission('progress_view')) {
-    items.push({
-      name: 'progress',
-      label: '进度',
-      icon: 'bar-chart-o',
-      permissions: ['progress_view']
-    })
-  }
-
-  // 我的 - 所有人可见
-  items.push({ name: 'profile', label: '我的', icon: 'user-o', permissions: [] })
-
-  return items
-})
+// 打开 AI 对话框
+function openAiDialog() {
+  showAiDialog.value = true
+}
 
 // 监听是否有更新
 watch([hasUpdate, forceUpdate], ([hasUpdate, forceUpdate]) => {
   if (hasUpdate) {
-    // 如果是强制更新，立即显示
-    // 如果是可选更新，延迟显示
     if (forceUpdate) {
       showUpdateDialog.value = true
     } else {
       setTimeout(() => {
         showUpdateDialog.value = true
-      }, 3000) // 3秒后显示
+      }, 3000)
     }
   }
 })
@@ -143,18 +127,6 @@ watch(
   (path) => {
     if (path === '/' || path.startsWith('/dashboard')) {
       activeTab.value = 'dashboard'
-    } else if (path.startsWith('/plans')) {
-      activeTab.value = 'plans'
-    } else if (path.startsWith('/appointments')) {
-      activeTab.value = 'appointments'
-    } else if (path.startsWith('/inbound')) {
-      activeTab.value = 'inbound'
-    } else if (path.startsWith('/requisition')) {
-      activeTab.value = 'requisition'
-    } else if (path.startsWith('/construction-log')) {
-      activeTab.value = 'construction-log'
-    } else if (path.startsWith('/progress')) {
-      activeTab.value = 'progress'
     } else if (path.startsWith('/profile')) {
       activeTab.value = 'profile'
     }
@@ -162,18 +134,7 @@ watch(
   { immediate: true }
 )
 
-watch(activeTab, (name, oldName) => {
-  if (name === oldName) return
-
-  const targetPath = name === 'dashboard' ? '/' : `/${name}`
-  if (route.path !== targetPath) {
-    router.push(targetPath)
-  }
-})
-
-// 在"我的"页面添加手动检查更新
 onMounted(() => {
-  // 暴露全局方法供其他页面调用
   window.checkAppUpdate = performCheck
 })
 </script>
@@ -182,8 +143,89 @@ onMounted(() => {
 .tabbar-layout {
   min-height: 100vh;
   background-color: #f7f8fa;
-  padding-bottom: 50px;
+  padding-bottom: 70px;
   padding-top: var(--capacitor-status-bar-height, 0px);
+}
+
+/* 自定义底部导航栏 */
+.custom-tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: #fff;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 100;
+}
+
+.tabbar-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+  cursor: pointer;
+  color: #969799;
+  transition: color 0.2s;
+}
+
+.tabbar-item.active {
+  color: #1989fa;
+}
+
+.tabbar-label {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* 无语音按钮时的布局 */
+.custom-tabbar.no-voice {
+  justify-content: center;
+}
+
+.custom-tabbar.no-voice .tabbar-item {
+  flex: none;
+  min-width: 120px;
+}
+
+/* AI 助手按钮 */
+.ai-button-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: -25px;
+}
+
+.ai-button {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1989fa 0%, #0d7ce9 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(25, 137, 250, 0.4);
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 3px solid #fff;
+  color: #fff;
+}
+
+.ai-button:active {
+  transform: scale(0.95);
+}
+
+.ai-label {
+  font-size: 10px;
+  color: #969799;
+  margin-top: 4px;
 }
 
 /* Capacitor 状态栏高度变量 */
@@ -191,7 +233,6 @@ onMounted(() => {
   --capacitor-status-bar-height: 0px;
 }
 
-/* 在 Android 原生环境中添加状态栏高度 */
 @supports (padding: max(0px)) {
   .tabbar-layout {
     padding-top: max(var(--capacitor-status-bar-height), env(safe-area-inset-top));

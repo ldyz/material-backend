@@ -103,11 +103,6 @@ func (h *CommentHandler) CreateComment(c *gin.Context) {
 	// Load relations
 	comment, _ = h.repo.GetByID(comment.ID)
 
-	// Broadcast via WebSocket if available
-	if GlobalHub != nil {
-		BroadcastTaskChange(uint(taskID), "comment:create", comment.ID, comment)
-	}
-
 	c.JSON(http.StatusCreated, gin.H{"data": comment})
 }
 

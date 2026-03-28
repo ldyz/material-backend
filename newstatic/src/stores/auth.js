@@ -300,6 +300,9 @@ export const useAuthStore = defineStore('auth', {
      * 清除所有用户相关的本地存储
      */
     clearAuth() {
+      // 保存当前用户ID用于清除 AI 聊天历史
+      const userId = this.user?.id
+
       this.token = ''
       this.user = null
       this.permissions = []
@@ -311,6 +314,13 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('permissions')
       localStorage.removeItem('isAdmin')
       localStorage.removeItem('loginTime')
+
+      // 清除 AI 聊天历史
+      if (userId) {
+        localStorage.removeItem(`ai_chat_history_${userId}`)
+      } else {
+        localStorage.removeItem('ai_chat_history_default')
+      }
     },
 
     /**

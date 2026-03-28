@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/yourorg/material-backend/backend/internal/api/auth"
 	"github.com/yourorg/material-backend/backend/internal/api/response"
+	openai "github.com/yourorg/material-backend/backend/pkg/openai"
 	"gorm.io/gorm"
 )
 
@@ -275,4 +276,221 @@ func (h *Handler) GetCurrentUser(c *gin.Context) (int, error) {
 	default:
 		return 0, nil
 	}
+}
+
+// HandleChat handles text chat requests
+func (h *Handler) HandleChat(c *gin.Context) {
+	var req ChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	// Get user ID
+	userID, err := h.GetCurrentUser(c)
+	if err != nil || userID == 0 {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	// Get AI handler from service
+	aiHandler := h.service.GetAIHandler()
+	if aiHandler == nil {
+		response.InternalError(c, "AI service not configured")
+		return
+	}
+
+	// Process chat
+	ctx := c.Request.Context()
+	resp, err := aiHandler.HandleAIChat(ctx, &AIChatRequest{
+		Message:             req.Message,
+		ConversationHistory: req.ConversationHistory,
+		UserID:              userID,
+		Context: map[string]interface{}{
+			"user_id": userID,
+		},
+	})
+
+	if err != nil {
+		response.InternalError(c, err.Error())
+		return
+	}
+
+	response.Success(c, resp)
+}
+
+// HandleVoiceChat handles voice chat requests
+func (h *Handler) HandleVoiceChat(c *gin.Context) {
+	// Get user ID
+	userID, err := h.GetCurrentUser(c)
+	if err != nil || userID == 0 {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	// Get audio file from form
+	file, header, err := c.Request.FormFile("audio")
+	if err != nil {
+		response.BadRequest(c, "Audio file is required")
+		return
+	}
+	defer file.Close()
+
+	// Get AI handler from service
+	aiHandler := h.service.GetAIHandler()
+	if aiHandler == nil {
+		response.InternalError(c, "AI service not configured")
+		return
+	}
+
+	// Transcribe audio
+	ctx := c.Request.Context()
+	transcript, err := aiHandler.TranscribeAudio(ctx, file, header.Filename)
+	if err != nil {
+		response.InternalError(c, "Failed to transcribe audio: "+err.Error())
+		return
+	}
+
+	// Process chat with transcribed text
+	resp, err := aiHandler.HandleAIChat(ctx, &AIChatRequest{
+		Message:             transcript,
+		ConversationHistory: []openai.Message{},
+		UserID:              userID,
+		Context: map[string]interface{}{
+			"user_id": userID,
+		},
+	})
+
+	if err != nil {
+		response.InternalError(c, err.Error())
+		return
+	}
+
+	// Return response with transcript
+	response.Success(c, gin.H{
+		"transcript": transcript,
+		"message":    resp.Message,
+		"response":   resp.Message,
+	})
+}
+
+// ChatRequest represents a chat request
+type ChatRequest struct {
+	Message             string          `json:"message"`
+	ConversationHistory []openai.Message `json:"conversation_history,omitempty"`
+}
+
+// HandleGetProviders 获取所有可用的模型提供者
+func (h *Handler) HandleGetProviders(c *gin.Context) {
+	aiHandler := h.service.GetAIHandler()
+	if aiHandler == nil {
+		response.InternalError(c, "AI service not configured")
+		return
+	}
+
+	providers := aiHandler.GetProviders()
+	currentProvider := aiHandler.GetCurrentProvider()
+
+	// 构建响应
+	type ProviderResponse struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Model   string `json:"model"`
+		BaseURL string `json:"base_url"`
+		Current bool   `json:"current"`
+	}
+
+	result := make([]ProviderResponse, 0, len(providers))
+	for id, config := range providers {
+		result = append(result, ProviderResponse{
+			ID:      id,
+			Name:    config.Name,
+			Model:   config.Model,
+			BaseURL: config.BaseURL,
+			Current: id == currentProvider,
+		})
+	}
+
+	response.Success(c, gin.H{
+		"providers":        result,
+		"current_provider": currentProvider,
+	})
+}
+
+// HandleSwitchProvider 切换模型提供者
+func (h *Handler) HandleSwitchProvider(c *gin.Context) {
+	var req struct {
+		Provider string `json:"provider" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	aiHandler := h.service.GetAIHandler()
+	if aiHandler == nil {
+		response.InternalError(c, "AI service not configured")
+		return
+	}
+
+	if err := aiHandler.SwitchProvider(req.Provider); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message":           "模型切换成功",
+		"current_provider":  aiHandler.GetCurrentProvider(),
+	})
+}
+
+// HandleClearConversationHistory 清除用户的对话历史
+func (h *Handler) HandleClearConversationHistory(c *gin.Context) {
+	// Get user ID
+	userID, err := h.GetCurrentUser(c)
+	if err != nil || userID == 0 {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	// Clear conversation history
+	repo := NewConversationRepository(h.db)
+	if err := repo.ClearHistory(int64(userID)); err != nil {
+		response.InternalError(c, "Failed to clear conversation history")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message": "对话历史已清除",
+	})
+}
+
+// HandleGetConversationHistory 获取用户的对话历史
+func (h *Handler) HandleGetConversationHistory(c *gin.Context) {
+	// Get user ID
+	userID, err := h.GetCurrentUser(c)
+	if err != nil || userID == 0 {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	// Get limit from query
+	limit := 20
+	if l := c.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	// Get conversation history
+	repo := NewConversationRepository(h.db)
+	messages, err := repo.GetRecentHistory(int64(userID), limit)
+	if err != nil {
+		response.InternalError(c, "Failed to get conversation history")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"messages": messages,
+	})
 }

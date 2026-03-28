@@ -1,6 +1,6 @@
 {
   "name": "material-mobile",
-  "version": "1.0.28",
+  "version": "1.0.116",
   "type": "module",
   "description": "Material Management Mobile App",
   "scripts": {
@@ -23,6 +23,8 @@
     "@capacitor/local-notifications": "^8.0.0",
     "@capacitor/push-notifications": "^8.0.0",
     "@capacitor/status-bar": "^8.0.0",
+    "@capacitor-community/text-to-speech": "^8.0.0",
+    "@independo/capacitor-voice-recorder": "^8.2.3",
     "axios": "^1.6.0",
     "cropperjs": "^1.6.2",
     "pinia": "^2.1.7",

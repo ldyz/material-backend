@@ -1,0 +1,8 @@
+{
+  "version": "1.0.45",
+  "versionCode": 45,
+  "url": "/android/material-management-1.0.45.apk",
+  "releaseNotes": "版本 1.0.45 更新：\n- 添加麦克风权限（用于语音输入功能）\n- 添加定位权限\n- 添加相机和存储权限",
+  "forceUpdate": false,
+  "publishDate": "2026-03-25"
+}

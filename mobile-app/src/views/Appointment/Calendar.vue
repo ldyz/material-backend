@@ -38,8 +38,8 @@
         </div>
       </div>
 
-      <!-- 新建预约按钮 -->
-      <div class="create-btn-wrapper">
+      <!-- 新建预约按钮 - 只有有权限的人才能看到 -->
+      <div class="create-btn-wrapper" v-if="canCreateAppointment">
         <van-button
           type="primary"
           icon="plus"
@@ -110,14 +110,21 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onActivated, watch } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { getDailyStatistics, getAppointments } from '@/api/appointment'
 import { formatDate } from '@/composables/useDateTime'
+import { useAuthStore } from '@/stores/auth'
 import ListContainer from '@/components/common/ListContainer.vue'
 import ListItemCard from '@/components/common/ListItemCard.vue'
 
 const router = useRouter()
+const authStore = useAuthStore()
+
+// 是否有创建预约权限
+const canCreateAppointment = computed(() => {
+  return authStore.hasPermission('appointment_create')
+})
 
 // 星期标题
 const weekdays = ['日', '一', '二', '三', '四', '五', '六']

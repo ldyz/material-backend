@@ -13,6 +13,7 @@ import { initWebSocket } from '@/utils/websocket'
 // 导入 setRouter 以避免循环依赖
 import { setRouter } from '@/utils/request'
 import { Capacitor } from '@capacitor/core'
+import { useAuthStore } from '@/stores/auth'
 
 // 全局错误处理
 window.addEventListener('error', (event) => {
@@ -38,6 +39,10 @@ app.config.errorHandler = (err, instance, info) => {
 }
 
 app.mount('#app')
+
+// 初始化认证状态（刷新用户权限）
+const authStore = useAuthStore()
+authStore.initAuth()
 
 // 设置状态栏
 async function setupStatusBar() {

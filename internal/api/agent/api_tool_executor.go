@@ -13,19 +13,22 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"github.com/yourorg/material-backend/backend/internal/api/auth"
 )
 
 // ToolDefinition 定义工具的API映射
 type ToolDefinition struct {
-	Name          string            `json:"name"`
-	Description   string            `json:"description"`
-	Method        string            `json:"method"`
-	Path          string            `json:"path"`
-	PathParams    []string          `json:"path_params,omitempty"`
-	QueryParams   map[string]string `json:"query_params,omitempty"`
-	BodyParams    []string          `json:"body_params,omitempty"`
-	RequiresBody  bool              `json:"requires_body,omitempty"`
-	ExampleResult string            `json:"example_result,omitempty"`
+	Name               string            `json:"name"`
+	Description        string            `json:"description"`
+	Method             string            `json:"method"`
+	Path               string            `json:"path"`
+	PathParams         []string          `json:"path_params,omitempty"`
+	QueryParams        map[string]string `json:"query_params,omitempty"`
+	BodyParams         []string          `json:"body_params,omitempty"`
+	RequiresBody       bool              `json:"requires_body,omitempty"`
+	ExampleResult      string            `json:"example_result,omitempty"`
+	RequiredPermission string            `json:"required_permission,omitempty"` // 所需权限
 }
 
 // ToolDefinitions 全局工具定义映射
@@ -58,6 +61,7 @@ var ToolDefinitions = map[string]ToolDefinition{
 			"page":       "page",
 			"page_size":  "page_size",
 		},
+		RequiredPermission: "appointment_view",
 	},
 
 	"query_appointment_detail": {
@@ -68,9 +72,10 @@ var ToolDefinitions = map[string]ToolDefinition{
 - "预约详情"、"任务详情"
 - "编号XXX的预约"
 - "这个任务是什么内容"`,
-		Method:     "GET",
-		Path:       "/api/appointments/:id",
-		PathParams: []string{"id"},
+		Method:            "GET",
+		Path:              "/api/appointments/:id",
+		PathParams:        []string{"id"},
+		RequiredPermission: "appointment_view",
 	},
 
 	"query_stock": {
@@ -91,6 +96,7 @@ var ToolDefinitions = map[string]ToolDefinition{
 			"page":         "page",
 			"page_size":    "page_size",
 		},
+		RequiredPermission: "stock_view",
 	},
 
 	"query_stock_alerts": {
@@ -101,8 +107,9 @@ var ToolDefinitions = map[string]ToolDefinition{
 - "库存预警"、"低库存"
 - "库存不够"、"库存不足"
 - "哪些物资需要补货"`,
-		Method: "GET",
-		Path:   "/api/stock/stocks/alerts",
+		Method:            "GET",
+		Path:              "/api/stock/stocks/alerts",
+		RequiredPermission: "stock_view",
 	},
 
 	"query_materials": {
@@ -121,6 +128,7 @@ var ToolDefinitions = map[string]ToolDefinition{
 			"page":      "page",
 			"page_size": "page_size",
 		},
+		RequiredPermission: "material_view",
 	},
 
 	"query_material_plans": {
@@ -138,6 +146,7 @@ var ToolDefinitions = map[string]ToolDefinition{
 			"page":       "page",
 			"page_size":  "page_size",
 		},
+		RequiredPermission: "material_plan_view",
 	},
 
 	"query_projects": {
@@ -155,6 +164,7 @@ var ToolDefinitions = map[string]ToolDefinition{
 			"page":      "page",
 			"page_size": "page_size",
 		},
+		RequiredPermission: "project_view",
 	},
 
 	"query_requisitions": {
@@ -165,13 +175,14 @@ var ToolDefinitions = map[string]ToolDefinition{
 - "领用单"、"领料单"
 - "出库记录"、"物资领用"`,
 		Method:  "GET",
-		Path:    "/api/requisition",
+		Path:    "/api/requisitions",
 		QueryParams: map[string]string{
 			"project_id": "project_id",
 			"status":     "status",
 			"page":       "page",
 			"page_size":  "page_size",
 		},
+		RequiredPermission: "requisition_view",
 	},
 
 	"query_inbounds": {
@@ -182,13 +193,14 @@ var ToolDefinitions = map[string]ToolDefinition{
 - "入库单"、"入库记录"
 - "物资入库"、"进货记录"`,
 		Method:  "GET",
-		Path:    "/api/inbound",
+		Path:    "/api/inbound/inbound-orders",
 		QueryParams: map[string]string{
 			"project_id": "project_id",
 			"status":     "status",
 			"page":       "page",
 			"page_size":  "page_size",
 		},
+		RequiredPermission: "inbound_view",
 	},
 
 	"query_pending_approvals": {
@@ -204,6 +216,7 @@ var ToolDefinitions = map[string]ToolDefinition{
 			"page":      "page",
 			"page_size": "page_size",
 		},
+		RequiredPermission: "appointment_approve",
 	},
 
 	"query_workers": {
@@ -214,8 +227,9 @@ var ToolDefinitions = map[string]ToolDefinition{
 - "作业人员"、"工人列表"
 - "有哪些工人"、"人员名单"
 - "谁可以安排"、"空闲人员"`,
-		Method: "GET",
-		Path:   "/api/appointments/workers",
+		Method:            "GET",
+		Path:              "/api/appointments/workers",
+		RequiredPermission: "appointment_view",
 	},
 
 	"query_worker_calendar": {
@@ -233,6 +247,7 @@ var ToolDefinitions = map[string]ToolDefinition{
 			"start_date": "start_date",
 			"end_date":   "end_date",
 		},
+		RequiredPermission: "appointment_view",
 	},
 
 	// ==================== 操作类工具 ====================
@@ -266,6 +281,7 @@ var ToolDefinitions = map[string]ToolDefinition{
 			"is_urgent", "priority", "urgent_reason",
 			"assigned_worker_id", "assigned_worker_ids", "assigned_worker_names",
 		},
+		RequiredPermission: "appointment_create",
 	},
 
 	"update_appointment": {
@@ -275,14 +291,15 @@ var ToolDefinitions = map[string]ToolDefinition{
 当用户询问以下内容时使用：
 - "修改预约"、"更新任务"
 - "改一下时间"、"换个地点"`,
-		Method:     "PUT",
-		Path:       "/api/appointments/:id",
-		PathParams: []string{"id"},
-		RequiresBody: true,
+		Method:            "PUT",
+		Path:              "/api/appointments/:id",
+		PathParams:        []string{"id"},
+		RequiresBody:      true,
 		BodyParams: []string{
 			"work_date", "time_slot", "work_content", "work_location",
 			"contact_person", "contact_phone", "is_urgent", "priority",
 		},
+		RequiredPermission: "appointment_edit",
 	},
 
 	"submit_appointment": {
@@ -292,9 +309,10 @@ var ToolDefinitions = map[string]ToolDefinition{
 当用户询问以下内容时使用：
 - "提交审批"、"提交预约"
 - "发送审批"、"申请审批"`,
-		Method:     "POST",
-		Path:       "/api/appointments/:id/submit",
-		PathParams: []string{"id"},
+		Method:            "POST",
+		Path:              "/api/appointments/:id/submit",
+		PathParams:        []string{"id"},
+		RequiredPermission: "appointment_edit",
 	},
 
 	"approve_appointment": {
@@ -305,11 +323,12 @@ var ToolDefinitions = map[string]ToolDefinition{
 - "审批通过"、"同意审批"
 - "驳回"、"拒绝审批"
 - "批准这个预约"`,
-		Method:     "POST",
-		Path:       "/api/appointments/:id/approve",
-		PathParams: []string{"id"},
-		RequiresBody: true,
-		BodyParams: []string{"action", "comment"},
+		Method:            "POST",
+		Path:              "/api/appointments/:id/approve",
+		PathParams:        []string{"id"},
+		RequiresBody:      true,
+		BodyParams:        []string{"action", "comment"},
+		RequiredPermission: "appointment_approve",
 	},
 
 	"cancel_appointment": {
@@ -319,11 +338,12 @@ var ToolDefinitions = map[string]ToolDefinition{
 当用户询问以下内容时使用：
 - "取消预约"、"取消任务"
 - "不要这个了"、"撤回预约"`,
-		Method:     "POST",
-		Path:       "/api/appointments/:id/cancel",
-		PathParams: []string{"id"},
-		RequiresBody: true,
-		BodyParams: []string{"reason"},
+		Method:            "POST",
+		Path:              "/api/appointments/:id/cancel",
+		PathParams:        []string{"id"},
+		RequiresBody:      true,
+		BodyParams:        []string{"reason"},
+		RequiredPermission: "appointment_edit",
 	},
 
 	"stock_in": {
@@ -333,13 +353,14 @@ var ToolDefinitions = map[string]ToolDefinition{
 当用户询问以下内容时使用：
 - "入库"、"物资入库"
 - "添加库存"、"进货"`,
-		Method:       "POST",
-		Path:         "/api/inbound",
-		RequiresBody: true,
+		Method:            "POST",
+		Path:              "/api/inbound",
+		RequiresBody:      true,
 		BodyParams: []string{
 			"project_id", "supplier_id", "items",
 			"warehouse", "remark",
 		},
+		RequiredPermission: "inbound_create",
 	},
 
 	"stock_out": {
@@ -349,13 +370,14 @@ var ToolDefinitions = map[string]ToolDefinition{
 当用户询问以下内容时使用：
 - "出库"、"领料"
 - "物资领用"、"取物资"`,
-		Method:       "POST",
-		Path:         "/api/requisition",
-		RequiresBody: true,
+		Method:            "POST",
+		Path:              "/api/requisition",
+		RequiresBody:      true,
 		BodyParams: []string{
 			"project_id", "items", "applicant_id",
 			"remark",
 		},
+		RequiredPermission: "requisition_create",
 	},
 
 	"create_material_plan": {
@@ -365,12 +387,167 @@ var ToolDefinitions = map[string]ToolDefinition{
 当用户询问以下内容时使用：
 - "创建物资计划"、"新建采购计划"
 - "添加需求计划"`,
-		Method:       "POST",
-		Path:         "/api/material-plan/plans",
-		RequiresBody: true,
+		Method:            "POST",
+		Path:              "/api/material-plan/plans",
+		RequiresBody:      true,
 		BodyParams: []string{
 			"project_id", "items", "remark",
 		},
+		RequiredPermission: "material_plan_create",
+	},
+
+	// ==================== 施工日志 ====================
+	"query_construction_logs": {
+		Name:        "query_construction_logs",
+		Description: `查询施工日志。
+
+当用户询问以下内容时使用：
+- "施工日志"、"施工记录"
+- "今天的日志"、"某项目的日志"`,
+		Method:  "GET",
+		Path:    "/api/construction-logs",
+		QueryParams: map[string]string{
+			"project_id": "project_id",
+			"log_date":   "log_date",
+			"start_date": "start_date",
+			"end_date":   "end_date",
+			"page":       "page",
+			"page_size":  "page_size",
+		},
+		RequiredPermission: "constructionlog_view",
+	},
+
+	"query_construction_log_detail": {
+		Name:        "query_construction_log_detail",
+		Description: `查询单条施工日志的详细信息。
+
+当用户询问以下内容时使用：
+- "日志详情"、"施工日志详情"
+- "查看这条日志的内容"`,
+		Method:            "GET",
+		Path:              "/api/construction-logs/:id",
+		PathParams:        []string{"id"},
+		RequiredPermission: "constructionlog_view",
+	},
+
+	// ==================== 工作流管理 ====================
+	"query_pending_workflow_tasks": {
+		Name:        "query_pending_workflow_tasks",
+		Description: `查询待办工作流任务列表。
+
+当用户询问以下内容时使用：
+- "待办任务"、"我的待办"
+- "需要处理的工作流"
+- "待审批的工作流"`,
+		Method:  "GET",
+		Path:    "/api/workflow/tasks/pending",
+		QueryParams: map[string]string{
+			"task_type": "task_type",
+			"page":      "page",
+			"page_size": "page_size",
+		},
+		RequiredPermission: "appointment_approve",
+	},
+
+	"approve_workflow_task": {
+		Name:        "approve_workflow_task",
+		Description: `审批通过工作流任务。
+
+当用户询问以下内容时使用：
+- "审批通过这个任务"
+- "同意这个工作流"`,
+		Method:            "POST",
+		Path:              "/api/workflow/tasks/:id/approve",
+		PathParams:        []string{"id"},
+		RequiresBody:      true,
+		BodyParams:        []string{"comment"},
+		RequiredPermission: "appointment_approve",
+	},
+
+	"reject_workflow_task": {
+		Name:        "reject_workflow_task",
+		Description: `驳回工作流任务。
+
+当用户询问以下内容时使用：
+- "驳回这个任务"
+- "拒绝这个工作流"`,
+		Method:            "POST",
+		Path:              "/api/workflow/tasks/:id/reject",
+		PathParams:        []string{"id"},
+		RequiresBody:      true,
+		BodyParams:        []string{"reason"},
+		RequiredPermission: "appointment_approve",
+	},
+
+	// ==================== 通知管理 ====================
+	"query_notifications": {
+		Name:        "query_notifications",
+		Description: `查询通知消息列表。
+
+当用户询问以下内容时使用：
+- "通知列表"、"消息列表"
+- "我的消息"、"通知"`,
+		Method:  "GET",
+		Path:    "/api/notifications",
+		QueryParams: map[string]string{
+			"unread_only":       "unread_only",
+			"notification_type": "notification_type",
+			"page":              "page",
+			"page_size":         "page_size",
+		},
+		RequiredPermission: "notification_view",
+	},
+
+	"query_unread_notification_count": {
+		Name:        "query_unread_notification_count",
+		Description: `查询未读通知数量。
+
+当用户询问以下内容时使用：
+- "未读消息数量"、"有多少未读"
+- "未读通知"、"消息提醒"`,
+		Method:            "GET",
+		Path:              "/api/notifications/unread-count",
+		RequiredPermission: "notification_view",
+	},
+
+	// ==================== 考勤管理 ====================
+	"query_attendance": {
+		Name:        "query_attendance",
+		Description: `查询考勤打卡记录。
+
+当用户询问以下内容时使用：
+- "打卡记录"、"考勤记录"
+- "今天的考勤"、"某人出勤情况"`,
+		Method:  "GET",
+		Path:    "/api/attendance/records",
+		QueryParams: map[string]string{
+			"user_id":         "user_id",
+			"date":            "date",
+			"start_date":      "start_date",
+			"end_date":        "end_date",
+			"attendance_type": "attendance_type",
+			"status":          "status",
+			"page":            "page",
+			"page_size":       "page_size",
+		},
+		RequiredPermission: "attendance_view",
+	},
+
+	"query_attendance_stats": {
+		Name:        "query_attendance_stats",
+		Description: `查询考勤统计数据。
+
+当用户询问以下内容时使用：
+- "考勤统计"、"出勤率"
+- "本月考勤情况"、"月度考勤"`,
+		Method:  "GET",
+		Path:    "/api/attendance/statistics",
+		QueryParams: map[string]string{
+			"user_id": "user_id",
+			"year":    "year",
+			"month":   "month",
+		},
+		RequiredPermission: "attendance_view",
 	},
 }
 
@@ -387,7 +564,7 @@ type APIToolExecutor struct {
 func NewAPIToolExecutor(db *gorm.DB, userID uint, userName string) *APIToolExecutor {
 	return &APIToolExecutor{
 		db:       db,
-		baseURL:  "http://127.0.0.1:8080", // 内部调用
+		baseURL:  "http://127.0.0.1:8088", // 内部调用（后端服务端口）
 		userID:   userID,
 		userName: userName,
 		httpClient: &http.Client{
@@ -409,6 +586,17 @@ func (e *APIToolExecutor) ExecuteToolCall(ctx context.Context, name string, args
 	toolDef, ok := ToolDefinitions[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown tool: %s", name)
+	}
+
+	// 检查权限
+	if toolDef.RequiredPermission != "" {
+		if !e.hasPermission(toolDef.RequiredPermission) {
+			log.Printf("[APIToolExecutor] Permission denied: user %d lacks permission %s", e.userID, toolDef.RequiredPermission)
+			return map[string]interface{}{
+				"success": false,
+				"error":   fmt.Sprintf("权限不足: 需要 %s 权限", toolDef.RequiredPermission),
+			}, nil
+		}
 	}
 
 	// 构建请求URL
@@ -456,17 +644,44 @@ func (e *APIToolExecutor) ExecuteToolCall(ctx context.Context, name string, args
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	log.Printf("[APIToolExecutor] Response status: %d, body: %s", resp.StatusCode, string(respBody))
+	log.Printf("[APIToolExecutor] Response status: %d, body length: %d", resp.StatusCode, len(respBody))
+
+	// 检查HTTP状态码
+	if resp.StatusCode >= 500 {
+		// 服务器错误，返回错误信息
+		return map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("服务器错误 (HTTP %d)", resp.StatusCode),
+			"status":  resp.StatusCode,
+		}, nil
+	}
+
+	// 检查Content-Type是否为JSON
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.Contains(contentType, "application/json") {
+		// 非JSON响应，可能是错误页面
+		log.Printf("[APIToolExecutor] Non-JSON response, Content-Type: %s", contentType)
+		return map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("API返回非JSON响应 (Content-Type: %s)", contentType),
+			"status":  resp.StatusCode,
+		}, nil
+	}
 
 	// 解析响应
 	var result map[string]interface{}
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		// JSON解析失败，可能是格式问题
+		log.Printf("[APIToolExecutor] Failed to parse JSON: %v, response: %s", err, string(respBody))
+		return map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("响应解析失败: %v", err),
+		}, nil
 	}
 
 	// 检查API错误
 	if resp.StatusCode >= 400 {
-		errMsg := "API request failed"
+		errMsg := "API请求失败"
 		if msg, ok := result["message"].(string); ok {
 			errMsg = msg
 		} else if msg, ok := result["error"].(string); ok {
@@ -551,4 +766,21 @@ func GetToolDescription(name string) string {
 		return tool.Description
 	}
 	return ""
+}
+
+// hasPermission 检查用户是否有指定权限
+func (e *APIToolExecutor) hasPermission(permission string) bool {
+	var user auth.User
+	if err := e.db.Preload("Roles").First(&user, e.userID).Error; err != nil {
+		log.Printf("[APIToolExecutor] Failed to load user %d: %v", e.userID, err)
+		return false
+	}
+
+	// 管理员拥有所有权限
+	if user.IsAdmin() {
+		return true
+	}
+
+	// 检查用户角色是否包含所需权限
+	return user.HasPermission(permission)
 }

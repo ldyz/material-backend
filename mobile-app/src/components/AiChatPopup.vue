@@ -12,6 +12,20 @@
       <div class="chat-header">
         <span class="title">AI 助手</span>
         <div class="header-actions">
+          <!-- 模型切换 -->
+          <van-popover
+            v-model:show="showModelPicker"
+            placement="bottom-end"
+            :actions="modelActions"
+            @select="onSelectModel"
+          >
+            <template #reference>
+              <div class="model-selector">
+                <span class="model-name">{{ currentModelName }}</span>
+                <van-icon name="arrow-down" size="12" />
+              </div>
+            </template>
+          </van-popover>
           <!-- 语音对话模式切换 -->
           <van-icon
             :name="voiceChatMode ? 'phone-circle' : 'phone-circle-o'"
@@ -179,8 +193,21 @@ const inputMessage = ref('')
 const loading = ref(false)
 const messagesContainer = ref(null)
 
-// 历史记录存储键
-const HISTORY_STORAGE_KEY = 'ai_chat_history'
+// 历史记录存储键 - 按用户区分
+const getHistoryStorageKey = () => {
+  const userStr = localStorage.getItem('user_info')
+  if (userStr) {
+    try {
+      const user = JSON.parse(userStr)
+      if (user.id) {
+        return `ai_chat_history_${user.id}`
+      }
+    } catch (e) {
+      console.error('解析用户信息失败:', e)
+    }
+  }
+  return 'ai_chat_history_default'
+}
 const MAX_HISTORY_MESSAGES = 50 // 最多保存50条消息
 
 // TTS 语音播报相关
@@ -198,6 +225,68 @@ let mediaStream = null
 let silenceTimer = null
 let silenceStartTime = 0
 const SILENCE_THRESHOLD = 1.5 // 静音 1.5 秒自动发送
+
+// 模型切换相关
+const showModelPicker = ref(false)
+const providers = ref([])
+const currentProvider = ref('')
+const currentModelName = computed(() => {
+  const provider = providers.value.find(p => p.id === currentProvider.value)
+  return provider ? provider.name : 'AI'
+})
+const modelActions = computed(() => {
+  return providers.value.map(p => ({
+    name: p.name,
+    value: p.id,
+    className: p.current ? 'active-model' : ''
+  }))
+})
+
+// 获取模型列表
+async function fetchProviders() {
+  try {
+    const res = await fetch('/api/agent/providers', {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    const data = await res.json()
+    if (data.data) {
+      providers.value = data.data.providers || []
+      currentProvider.value = data.data.current_provider || ''
+    }
+  } catch (error) {
+    console.error('获取模型列表失败:', error)
+  }
+}
+
+// 切换模型
+async function onSelectModel(action) {
+  if (action.value === currentProvider.value) {
+    showModelPicker.value = false
+    return
+  }
+
+  try {
+    const res = await fetch('/api/agent/providers/switch', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({ provider: action.value })
+    })
+    const data = await res.json()
+    if (data.data) {
+      currentProvider.value = data.data.current_provider
+      showToast(`已切换到 ${action.name}`)
+    }
+  } catch (error) {
+    console.error('切换模型失败:', error)
+    showToast('切换模型失败')
+  }
+  showModelPicker.value = false
+}
 
 // 录音相关状态
 const isRecording = ref(false)
@@ -235,12 +324,32 @@ const contextHints = {
   dashboard: '您好！我是AI助手。\n• 查询今日/明日任务安排\n• 查看库存预警\n• 查看待审批事项\n• 考勤打卡查询\n\n请问有什么可以帮您的？'
 }
 
+// 默认功能提示（无特定上下文时显示）
+const defaultHint = `您好！我是AI助手，我可以帮您：
+
+📋 任务管理
+• 查询今日/明日任务安排
+• 创建、修改施工预约
+• 查看待审批事项
+
+📦 库存管理
+• 查询物资库存和预警
+• 入库/出库操作
+• 查询物资计划和领用单
+
+📊 其他功能
+• 查询考勤打卡记录
+• 查询项目列表
+• 施工日志查询
+
+请问有什么可以帮您的？`
+
 // 计算当前上下文的提示信息
 const contextHint = computed(() => {
   if (props.context && contextHints[props.context]) {
     return contextHints[props.context]
   }
-  return ''
+  return defaultHint
 })
 
 // 监听显示状态
@@ -259,7 +368,7 @@ watch(visible, (val) => {
 function saveHistory() {
   try {
     const historyToSave = messages.value.slice(-MAX_HISTORY_MESSAGES)
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(historyToSave))
+    localStorage.setItem(getHistoryStorageKey(), JSON.stringify(historyToSave))
   } catch (e) {
     console.error('保存聊天历史失败:', e)
   }
@@ -268,7 +377,7 @@ function saveHistory() {
 // 从本地存储加载历史
 function loadHistory() {
   try {
-    const saved = localStorage.getItem(HISTORY_STORAGE_KEY)
+    const saved = localStorage.getItem(getHistoryStorageKey())
     if (saved) {
       messages.value = JSON.parse(saved)
     }
@@ -437,7 +546,7 @@ function registerAiCallback() {
         // 语音识别结果 - 更新占位消息内容
         console.log('[AiChatPopup] Voice transcript received:', message.text)
         if (message.text) {
-          // 查找最后一条用户消息（可能是占位符）- 使用兼容方式
+          // 查找最后一条用户消息（可能是占位符）
           let lastUserIndex = -1
           for (let i = messages.value.length - 1; i >= 0; i--) {
             if (messages.value[i].role === 'user') {
@@ -451,8 +560,11 @@ function registerAiCallback() {
             const lastMsg = messages.value[lastUserIndex]
             console.log('[AiChatPopup] Last user message content:', lastMsg.content)
             if (lastMsg.content.includes('🎤') || lastMsg.content.includes('语音消息')) {
-              // 更新为识别的文字
-              messages.value[lastUserIndex].content = message.text
+              // 使用 splice 替换确保 Vue 响应式更新
+              messages.value.splice(lastUserIndex, 1, {
+                role: 'user',
+                content: message.text
+              })
               saveHistory()
               nextTick(() => scrollToBottom())
               console.log('[AiChatPopup] Updated placeholder to:', message.text)
@@ -824,7 +936,14 @@ async function sendVoiceViaWebSocket(audioBlob, mimeType) {
 // 清空历史
 function clearHistory() {
   messages.value = []
-  localStorage.removeItem(HISTORY_STORAGE_KEY)
+  localStorage.removeItem(getHistoryStorageKey())
+  // 同时调用后端清除API
+  fetch('/api/agent/conversation-history', {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${localStorage.getItem('token')}`
+    }
+  }).catch(e => console.error('清除服务器历史失败:', e))
   showToast('对话已清空')
 }
 
@@ -1282,6 +1401,7 @@ onMounted(() => {
   loadHistory() // 加载历史记录
   registerAiCallback()
   initTTS() // 初始化 TTS
+  fetchProviders() // 加载模型列表
 })
 
 onUnmounted(() => {
@@ -1350,6 +1470,30 @@ watch(visible, (val) => {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.model-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: #f5f7fa;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.model-selector:hover {
+  background: #e8e8e8;
+}
+
+.model-name {
+  font-size: 12px;
+  color: #323233;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .speak-icon {

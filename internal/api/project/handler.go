@@ -30,6 +30,7 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		startTo := c.Query("start_to")
 		parentID := c.Query("parent_id")
 		sort := c.DefaultQuery("sort", "-id")
+		showAll := c.Query("show_all")
 
 		var total int64
 		query := db.Model(&Project{})
@@ -53,8 +54,9 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		}
 
 		// 获取用户可访问的项目ID列表（数据权限过滤）
+		// 如果 show_all 为 true，则跳过权限过滤（允许查看所有项目）
 		currentUser, err := auth.GetCurrentUser(c, db)
-		if err == nil && currentUser != nil && !currentUser.IsAdmin() {
+		if showAll != "true" && err == nil && currentUser != nil && !currentUser.IsAdmin() {
 			// 非管理员用户，只能看到自己关联的项目
 			query = query.Where("id IN (SELECT project_id FROM user_projects WHERE user_id = ?)", currentUser.ID)
 		}

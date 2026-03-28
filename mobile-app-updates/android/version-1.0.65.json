@@ -1,0 +1,8 @@
+{
+  "version": "1.0.65",
+  "versionCode": 65,
+  "url": "/mobile-updates/android/material-management-1.0.65.apk",
+  "releaseNotes": "修复安卓麦克风权限问题",
+  "forceUpdate": false,
+  "publishDate": "2026-03-26"
+}

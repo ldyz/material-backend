@@ -117,7 +117,7 @@ func (ol *OperationLog) ToDTO() map[string]any {
 		"ip_address":     ol.IPAddress,
 		"status":         ol.Status,
 		"error_message":  ol.ErrorMessage,
-		"created_at":     ol.CreatedAt.Format("2006-01-02 15:04:05"),
+		"created_at":     ol.CreatedAt.Format(time.RFC3339),
 	}
 }
 

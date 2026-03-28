@@ -1,0 +1,8 @@
+{
+  "version": "1.0.47",
+  "versionCode": 47,
+  "url": "/mobile-updates/android/material-management-1.0.47.apk",
+  "releaseNotes": "版本 1.0.47 更新：\n- 修复 WebSocket 心跳机制，解决通知推送连接断开问题",
+  "forceUpdate": false,
+  "publishDate": "2026-03-26"
+}

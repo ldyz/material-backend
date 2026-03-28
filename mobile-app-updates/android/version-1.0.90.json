@@ -1,0 +1,8 @@
+{
+  "version": "1.0.90",
+  "versionCode": 90,
+  "url": "/mobile-updates/android/material-management-1.0.90.apk",
+  "releaseNotes": "添加语音消息调试日志",
+  "forceUpdate": false,
+  "publishDate": "2026-03-27"
+}

@@ -1,0 +1,8 @@
+{
+  "version": "1.0.40",
+  "versionCode": 40,
+  "url": "/android/material-management-1.0.40.apk",
+  "releaseNotes": "1. 修复入库单列表不显示编号问题\n2. 修复预约创建后日历不刷新问题\n3. 修复物资到货进度数据计算问题\n4. 修复修改密码功能",
+  "forceUpdate": false,
+  "publishDate": "2026-03-23"
+}

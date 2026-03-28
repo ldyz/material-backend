@@ -36,8 +36,8 @@ func (m *MaterialMaster) ToDTO() map[string]any {
 		"category":      m.Category,
 		"safety_stock":  m.SafetyStock,
 		"description":   m.Description,
-		"created_at":    m.CreatedAt.Format("2006-01-02 15:04:05"),
-		"updated_at":    m.UpdatedAt.Format("2006-01-02 15:04:05"),
+		"created_at":    m.CreatedAt.Format(time.RFC3339),
+		"updated_at":    m.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -100,8 +100,8 @@ func (m *MaterialMaster) ToQueryDTO() MaterialMasterQueryDTO {
 		Category:     m.Category,
 		SafetyStock:  m.SafetyStock,
 		Description:  m.Description,
-		CreatedAt:    m.CreatedAt.Format("2006-01-02 15:04:05"),
-		UpdatedAt:    m.UpdatedAt.Format("2006-01-02 15:04:05"),
+		CreatedAt:    m.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:    m.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

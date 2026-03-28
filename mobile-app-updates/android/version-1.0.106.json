@@ -1,0 +1,9 @@
+{
+  "version": "1.0.107",
+  "versionCode": 107,
+  "releaseDate": "2026-03-27",
+  "updateMessage": "修复语音消息显示问题",
+  "mandatory": false,
+  "apkUrl": "https://home.mbed.org.cn:9090/updates/android/app-release-1.0.107.apk",
+  "fileSize": 0
+}

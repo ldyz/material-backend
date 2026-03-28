@@ -116,7 +116,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { roleApi } from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -352,6 +352,17 @@ const permissionTree = [
       { id: 'appointment_cancel', label: '取消预约单' },
       { id: 'appointment_export', label: '导出数据' }
     ]
+  },
+  {
+    id: 'attendance',
+    label: '考勤管理',
+    children: [
+      { id: 'attendance_view', label: '查看考勤记录' },
+      { id: 'attendance_confirm', label: '确认打卡记录' },
+      { id: 'attendance_reject', label: '驳回打卡记录' },
+      { id: 'attendance_export', label: '导出考勤数据' },
+      { id: 'attendance_summary', label: '月度汇总管理' }
+    ]
   }
 ]
 
@@ -445,10 +456,21 @@ const handleSubmitRole = async () => {
 }
 
 // 配置权限
-const handleRolePermissions = (row) => {
+const handleRolePermissions = async (row) => {
   currentRole.value = row
-  checkedPermissions.value = row.permissions || []
+  // 只保留叶子节点权限（去除父节点）
+  const leafPermissions = (row.permissions || []).filter(p => {
+    // 检查是否是叶子节点（没有子权限）
+    return !permissionTree.some(group => group.id === p)
+  })
+  checkedPermissions.value = leafPermissions
   permissionDialogVisible.value = true
+
+  // 等待 DOM 更新后设置勾选状态
+  await nextTick()
+  if (permissionTreeRef.value) {
+    permissionTreeRef.value.setCheckedKeys(leafPermissions)
+  }
 }
 
 // 提交权限配置

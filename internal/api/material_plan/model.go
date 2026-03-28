@@ -208,6 +208,7 @@ func (p *MaterialPlan) ToDTOWithEnrichment(db *gorm.DB) map[string]any {
 
 		// Calculate total received quantity from inbound_items (入库)
 		// Only count approved or completed inbound orders
+		// Filter by plan_id to avoid confusion between different plans
 		var totalReceived float64
 		db.Raw(`
 			SELECT COALESCE(SUM(ii.quantity), 0)
@@ -216,7 +217,8 @@ func (p *MaterialPlan) ToDTOWithEnrichment(db *gorm.DB) map[string]any {
 			WHERE ii.material_id = ?
 			AND io.project_id = ?
 			AND io.status IN ('approved', 'completed')
-		`, item.MaterialID, p.ProjectID).Scan(&totalReceived)
+			AND (io.plan_id = ? OR io.plan_id IS NULL)
+		`, item.MaterialID, p.ProjectID, p.ID).Scan(&totalReceived)
 		itemDTO["received_quantity"] = totalReceived
 		itemDTO["receive_progress"] = calculateProgress(totalReceived, item.PlannedQuantity)
 

@@ -73,6 +73,10 @@
       <div class="section-title">
         <van-icon name="apps-o" />
         <span>快捷功能</span>
+        <span style="font-size:12px;color:#999;margin-left:10px;">
+          权限: {{ authStore.permissions.length }} |
+          物资计划: {{ authStore.hasPermission('material_plan_view') ? '是' : '否' }}
+        </span>
       </div>
       <van-grid :column-num="4" :border="false" :gutter="12">
         <van-grid-item
@@ -181,7 +185,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { useAuthStore } from '@/stores/auth'
@@ -235,6 +239,7 @@ const systemNotice = ref('欢迎使用化建仪表移动端！如有问题请联
 
 // 权限控制 - 基于权限系统
 const canAccessApprovals = computed(() => {
+  console.log('[Dashboard] canAccessApprovals 计算, permissions:', authStore.permissions.length)
   return authStore.hasPermission('appointment_approve')
 })
 
@@ -247,11 +252,35 @@ const canAccessInbound = computed(() => {
 })
 
 const canAccessMaterialPlan = computed(() => {
-  return authStore.hasPermission('material_plan_view')
+  const perms = authStore.permissions
+  const hasPerms = perms.includes('material_plan_view')
+  console.log('[Dashboard] canAccessMaterialPlan 计算:', {
+    permissionsCount: perms.length,
+    hasMaterialPlanView: hasPerms,
+    allPerms: perms
+  })
+  return hasPerms
 })
 
 // 页面加载
+const permissionsReady = ref(false)
+
+// 监听权限变化
+watch(
+  () => authStore.permissions,
+  (newPerms) => {
+    console.log('[Dashboard] 权限变化，数量:', newPerms.length)
+    console.log('[Dashboard] 是否包含 material_plan_view:', newPerms.includes('material_plan_view'))
+  },
+  { immediate: true, deep: true }
+)
+
 onMounted(async () => {
+  // 确保用户权限是最新的
+  await authStore.initAuth()
+  permissionsReady.value = true
+  console.log('[Dashboard] initAuth 完成，当前权限:', authStore.permissions.length)
+  console.log('[Dashboard] hasPermission(material_plan_view):', authStore.hasPermission('material_plan_view'))
   await loadStats()
   await loadRecentAppointments()
 })

@@ -16,6 +16,7 @@ import (
 	"github.com/yourorg/material-backend/backend/internal/api/agent"
 	"github.com/yourorg/material-backend/backend/internal/api/app"
 	"github.com/yourorg/material-backend/backend/internal/api/appointment"
+	"github.com/yourorg/material-backend/backend/internal/api/attendance"
 	"github.com/yourorg/material-backend/backend/internal/api/auth"
 	"github.com/yourorg/material-backend/backend/internal/api/construction_log"
 	"github.com/yourorg/material-backend/backend/internal/api/inbound"
@@ -37,6 +38,30 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+// isMobileDevice 检测是否为移动端设备
+func isMobileDevice(userAgent string) bool {
+	userAgent = strings.ToLower(userAgent)
+	mobileKeywords := []string{
+		"mobile", "android", "iphone", "ipad", "ipod",
+		"windows phone", "blackberry", "webos", "opera mini",
+		"opera mobi", "symbian", "meego", "kindle",
+		"capacitor", // Capacitor 应用
+	}
+
+	for _, keyword := range mobileKeywords {
+		if strings.Contains(userAgent, keyword) {
+			return true
+		}
+	}
+
+	// 检查屏幕宽度提示（部分浏览器会发送）
+	if strings.Contains(userAgent, "mobi") {
+		return true
+	}
+
+	return false
+}
 
 // initializeUploadConfig 初始化上传配置
 func initializeUploadConfig(dbConn *gorm.DB) {
@@ -151,6 +176,8 @@ func main() {
 		&notification.DeviceToken{}, // 设备推送令牌表
 		&appointment.ConstructionAppointment{}, // 施工预约单表
 		&appointment.WorkerCalendar{}, // 作业人员日历表
+		&attendance.AttendanceRecord{}, // 打卡记录表
+		&attendance.MonthlyAttendanceSummary{}, // 月度考勤汇总表
 	)
 
 	// create default admin role/user if not exists
@@ -182,6 +209,35 @@ func main() {
 	notification.InitHub()
 	log.Println("WebSocket Hub initialized")
 
+	// 初始化 AI Handler 和 Voice Handler
+	var aiHandler *agent.AIHandler
+	asrURL := ""
+	if cfg.AI.ASREnabled {
+		asrURL = cfg.AI.ASRServiceURL
+	}
+
+	// 初始化多模型 AI Handler
+	aiHandler = agent.NewMultiModelAIHandler(
+		dbConn,
+		cfg.AI.BaiduAPIKey,
+		cfg.AI.BaiduModel,
+		cfg.AI.BaiduBaseURL,
+		cfg.AI.DeepSeekAPIKey,
+		cfg.AI.DeepSeekModel,
+		cfg.AI.DeepSeekBaseURL,
+		cfg.AI.OpenAIAPIKey,
+		asrURL,
+		cfg.AI.DefaultProvider,
+	)
+	log.Println("AI Handler initialized with multi-model support")
+
+	if aiHandler != nil {
+		// 创建并设置 VoiceHandler
+		voiceHandler := notification.NewVoiceHandler(dbConn, aiHandler, asrURL)
+		notification.GetHub().SetVoiceHandler(voiceHandler)
+		log.Println("Voice Handler initialized and set on WebSocket Hub")
+	}
+
 	r := gin.Default()
 
 	// 配置受信任的代理（安全设置）
@@ -203,6 +259,27 @@ func main() {
 
 	// 设置静态文件服务
 	r.Static("/static", "./newstatic/dist")
+	// /assets 路径根据设备类型动态选择（移动端或PC端）
+	r.Use(func(c *gin.Context) {
+		// 只处理 /assets 路径
+		if !strings.HasPrefix(c.Request.URL.Path, "/assets/") {
+			c.Next()
+			return
+		}
+
+		// 检测设备类型
+		userAgent := c.GetHeader("User-Agent")
+		if isMobileDevice(userAgent) {
+			// 移动端设备：从 dist-capacitor/assets 提供资源
+			filePath := "./mobile-app/dist-capacitor" + c.Request.URL.Path
+			c.File(filePath)
+			c.Abort()
+			return
+		}
+
+		// PC端：继续使用默认的静态文件路由
+		c.Next()
+	})
 	r.Static("/assets", "./newstatic/dist/assets")
 	r.Static("/uploads", "./static/uploads")  // 上传文件访问路径（保留在原位置）
 	// 移动端应用（生产模式使用构建后的 dist，开发模式可配置源码目录）
@@ -285,9 +362,10 @@ func main() {
 		notification.RegisterRoutes(api, dbConn)
 		material_plan.RegisterRoutes(api, dbConn)
 		workflow.RegisterRoutes(api, dbConn)
-		agent.RegisterRoutes(api, dbConn)
+		agent.RegisterRoutes(api, dbConn, cfg, aiHandler)
 		audit2.RegisterRoutes(api, dbConn) // 操作日志路由
 		appointment.RegisterRoutes(api, dbConn) // 施工预约路由
+		attendance.RegisterRoutes(api, dbConn) // 打卡考勤路由
 		app.RegisterRoutes(api, dbConn) // 应用版本路由
 	}
 
@@ -295,10 +373,14 @@ func main() {
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		// 排除静态资源路径和API路径
-		if filepath.HasPrefix(path, "/api") ||
-		   filepath.HasPrefix(path, "/static") ||
-		   filepath.HasPrefix(path, "/assets") ||
+		// 排除API路径
+		if filepath.HasPrefix(path, "/api") {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+
+		// 排除明确指定PC端的静态资源路径
+		if filepath.HasPrefix(path, "/static") ||
 		   filepath.HasPrefix(path, "/uploads") ||
 		   filepath.HasPrefix(path, "/mobile-updates") {
 			c.AbortWithStatus(http.StatusNotFound)
@@ -317,6 +399,14 @@ func main() {
 			}
 			// 没有扩展名，返回 index.html（SPA 路由）
 			c.File("./mobile-app/dist/index.html")
+			return
+		}
+
+		// 根路径和其他路径：根据设备类型自动选择前端
+		userAgent := c.GetHeader("User-Agent")
+		if isMobileDevice(userAgent) {
+			// 移动端设备：返回移动端应用（使用相对路径版本）
+			c.File("./mobile-app/dist-capacitor/index.html")
 			return
 		}
 

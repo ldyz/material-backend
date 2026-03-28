@@ -16,6 +16,39 @@ type Config struct {
 	JWT      JWTConfig      `yaml:"jwt"`
 	Upload   UploadConfig   `yaml:"upload"`
 	Log      LogConfig      `yaml:"log"`
+	AI       AIConfig       `yaml:"ai"`
+}
+
+// AIConfig AI 配置
+type AIConfig struct {
+	// DeepSeek 配置
+	DeepSeekAPIKey  string `yaml:"deepseek_api_key"`
+	DeepSeekModel   string `yaml:"deepseek_model"`
+	DeepSeekBaseURL string `yaml:"deepseek_base_url"`
+
+	// 百度千帆配置 (Anthropic 兼容 API)
+	BaiduAPIKey    string `yaml:"baidu_api_key"`     // 百度千帆 Auth Token (bce-v3/...)
+	BaiduSecretKey string `yaml:"baidu_secret_key"`  // 百度千帆 Secret Key (原生 API 用)
+	BaiduModel     string `yaml:"baidu_model"`       // 模型名称: glm-5, coding-plan 等
+	BaiduBaseURL   string `yaml:"baidu_base_url"`    // API 基础 URL
+
+	// OpenAI 配置 (可选，用于语音转文字)
+	OpenAIAPIKey string `yaml:"openai_api_key"`
+
+	// 本地 ASR 服务配置
+	ASRServiceURL string `yaml:"asr_service_url"`
+	ASREnabled    bool   `yaml:"asr_enabled"`
+
+	// 默认使用的模型提供者: "baidu" 或 "deepseek"
+	DefaultProvider string `yaml:"default_provider"`
+}
+
+// AIProviderConfig 单个 AI 提供者的配置
+type AIProviderConfig struct {
+	Name    string `json:"name"`
+	APIKey  string `json:"api_key,omitempty"`  // 不暴露敏感信息
+	Model   string `json:"model"`
+	BaseURL string `json:"base_url"`
 }
 
 // ServerConfig 服务器配置
@@ -229,6 +262,24 @@ func setDefaults() {
 	}
 	if cfg.Log.MaxAge == 0 {
 		cfg.Log.MaxAge = 7 // days
+	}
+
+	// AI 默认配置
+	if cfg.AI.DeepSeekModel == "" {
+		cfg.AI.DeepSeekModel = "deepseek-chat"
+	}
+	if cfg.AI.DeepSeekBaseURL == "" {
+		cfg.AI.DeepSeekBaseURL = "https://api.deepseek.com/v1"
+	}
+	// 百度千帆默认配置
+	if cfg.AI.BaiduModel == "" {
+		cfg.AI.BaiduModel = "coding-plan" // 默认使用 coding-plan 模型
+	}
+	if cfg.AI.BaiduBaseURL == "" {
+		cfg.AI.BaiduBaseURL = "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat"
+	}
+	if cfg.AI.ASRServiceURL == "" {
+		cfg.AI.ASRServiceURL = "http://localhost:8089"
 	}
 }
 

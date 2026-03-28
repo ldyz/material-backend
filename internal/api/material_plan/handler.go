@@ -245,6 +245,7 @@ func listPlans(db *gorm.DB) gin.HandlerFunc {
 				totalPlanned += item.PlannedQuantity
 
 				// Get received quantity from inbound_items (approved or completed orders)
+				// Filter by plan_id to avoid confusion between different plans
 				var receivedQty float64
 				db.Raw(`
 					SELECT COALESCE(SUM(ii.quantity), 0)
@@ -253,7 +254,8 @@ func listPlans(db *gorm.DB) gin.HandlerFunc {
 					WHERE ii.material_id = ?
 					AND io.project_id = ?
 					AND io.status IN ('approved', 'completed')
-				`, item.MaterialID, plan.ProjectID).Scan(&receivedQty)
+					AND (io.plan_id = ? OR io.plan_id IS NULL)
+				`, item.MaterialID, plan.ProjectID, plan.ID).Scan(&receivedQty)
 				totalReceived += receivedQty
 
 				// Get issued quantity from stock_logs (出库/领料)

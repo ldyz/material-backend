@@ -2,47 +2,76 @@
   <div class="notification-list-page">
     <van-nav-bar title="通知中心" left-arrow @click-left="onClickLeft" />
 
-    <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-      <van-list
-        v-model:loading="loading"
-        :finished="finished"
-        finished-text="没有更多了"
-        @load="onLoad"
-      >
-        <van-cell-group inset class="notification-group">
-          <van-cell
-            v-for="notification in notifications"
-            :key="notification.id"
-            class="notification-item"
-            :class="{ 'is-unread': !notification.is_read }"
-            is-link
-            @click="handleClick(notification)"
-          >
-            <template #title>
-              <div class="notification-header">
-                <van-tag :type="getNotificationType(notification.type)" size="small">
-                  {{ getNotificationTypeText(notification.type) }}
-                </van-tag>
-                <span class="notification-time">{{ formatTime(notification.created_at) }}</span>
-              </div>
-            </template>
-            <template #label>
-              <div class="notification-title">{{ notification.title }}</div>
-              <div class="notification-content">{{ notification.content }}</div>
-            </template>
-            <template #icon>
-              <van-icon :name="getNotificationIcon(notification.type)" :color="getNotificationIconColor(notification.type)" size="24" />
-            </template>
-          </van-cell>
-        </van-cell-group>
+    <!-- 标签页切换 -->
+    <van-tabs v-model:active="activeTab" sticky>
+      <van-tab title="未读" :badge="unreadCount > 0 ? unreadCount : ''">
+        <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
+          <van-cell-group inset class="notification-group">
+            <van-cell
+              v-for="notification in unreadNotifications"
+              :key="notification.id"
+              class="notification-item is-unread"
+              is-link
+              @click="handleClick(notification)"
+            >
+              <template #title>
+                <div class="notification-header">
+                  <van-tag :type="getNotificationType(notification.type)" size="small">
+                    {{ getNotificationTypeText(notification.type) }}
+                  </van-tag>
+                  <span class="notification-time">{{ formatTime(notification.created_at) }}</span>
+                </div>
+              </template>
+              <template #label>
+                <div class="notification-title">{{ notification.title }}</div>
+                <div class="notification-content">{{ notification.content }}</div>
+              </template>
+              <template #icon>
+                <van-icon :name="getNotificationIcon(notification.type)" :color="getNotificationIconColor(notification.type)" size="24" />
+              </template>
+            </van-cell>
+          </van-cell-group>
 
-        <van-empty v-if="!loading && notifications.length === 0" description="暂无通知" />
-      </van-list>
-    </van-pull-refresh>
+          <van-empty v-if="!loading && unreadNotifications.length === 0" description="暂无未读通知" />
+        </van-pull-refresh>
+      </van-tab>
+
+      <van-tab title="已读">
+        <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
+          <van-cell-group inset class="notification-group">
+            <van-cell
+              v-for="notification in readNotifications"
+              :key="notification.id"
+              class="notification-item"
+              is-link
+              @click="handleClick(notification)"
+            >
+              <template #title>
+                <div class="notification-header">
+                  <van-tag :type="getNotificationType(notification.type)" size="small">
+                    {{ getNotificationTypeText(notification.type) }}
+                  </van-tag>
+                  <span class="notification-time">{{ formatTime(notification.created_at) }}</span>
+                </div>
+              </template>
+              <template #label>
+                <div class="notification-title">{{ notification.title }}</div>
+                <div class="notification-content">{{ notification.content }}</div>
+              </template>
+              <template #icon>
+                <van-icon :name="getNotificationIcon(notification.type)" :color="getNotificationIconColor(notification.type)" size="24" />
+              </template>
+            </van-cell>
+          </van-cell-group>
+
+          <van-empty v-if="!loading && readNotifications.length === 0" description="暂无已读通知" />
+        </van-pull-refresh>
+      </van-tab>
+    </van-tabs>
 
     <div class="action-bar">
       <van-button
-        v-if="unreadCount > 0"
+        v-if="activeTab === 0 && unreadCount > 0"
         type="primary"
         size="small"
         @click="handleMarkAllRead"
@@ -72,11 +101,19 @@ const router = useRouter()
 const notificationStore = useNotificationStore()
 const { notifications, unreadCount } = storeToRefs(notificationStore)
 
+const activeTab = ref(0)
 const loading = ref(false)
-const finished = ref(false)
 const refreshing = ref(false)
-const page = ref(1)
-const pageSize = 20
+
+// 未读通知列表
+const unreadNotifications = computed(() => {
+  return notifications.value.filter(n => !n.is_read)
+})
+
+// 已读通知列表
+const readNotifications = computed(() => {
+  return notifications.value.filter(n => n.is_read)
+})
 
 // 返回
 const onClickLeft = () => {
@@ -84,25 +121,12 @@ const onClickLeft = () => {
 }
 
 // 加载通知列表
-const onLoad = async () => {
-  if (refreshing.value) {
-    notifications.value = []
-    page.value = 1
-    finished.value = false
-  }
+const loadData = async () => {
+  if (loading.value) return
 
   loading.value = true
   try {
-    await notificationStore.fetchNotifications({
-      page: page.value,
-      page_size: pageSize
-    })
-
-    if (notifications.value.length < pageSize) {
-      finished.value = true
-    } else {
-      page.value++
-    }
+    await notificationStore.fetchNotifications()
   } finally {
     loading.value = false
     refreshing.value = false
@@ -110,9 +134,8 @@ const onLoad = async () => {
 }
 
 // 刷新
-const onRefresh = () => {
-  finished.value = false
-  onLoad()
+const onRefresh = async () => {
+  await loadData()
 }
 
 // 获取通知图标
@@ -175,6 +198,48 @@ const handleClick = async (notification) => {
   // 解析数据并跳转
   try {
     const data = JSON.parse(notification.data || '{}')
+    console.log('通知数据:', data, '通知类型:', notification.type)
+
+    // 根据通知类型或数据中的业务类型跳转
+    const notificationType = notification.type || ''
+
+    // 预约任务相关通知
+    if (notificationType.includes('appointment') || data.appointment_id) {
+      const id = data.business_id || data.appointment_id
+      if (id) {
+        router.push(`/appointment/${id}`)
+        return
+      }
+    }
+
+    // 入库单相关通知
+    if (notificationType.includes('inbound') || data.inbound_id || data.business_type === 'inbound_order') {
+      const id = data.business_id || data.inbound_id
+      if (id) {
+        router.push(`/inbound/${id}`)
+        return
+      }
+    }
+
+    // 领料单相关通知
+    if (notificationType.includes('requisition') || data.requisition_id || data.business_type === 'requisition') {
+      const id = data.business_id || data.requisition_id
+      if (id) {
+        router.push(`/requisition/${id}`)
+        return
+      }
+    }
+
+    // 材料计划相关通知
+    if (notificationType.includes('material_plan') || data.plan_id || data.business_type === 'material_plan') {
+      const id = data.business_id || data.plan_id
+      if (id) {
+        router.push(`/plans/${id}`)
+        return
+      }
+    }
+
+    // 兼容旧格式：business_type + business_id
     if (data.business_type && data.business_id) {
       switch (data.business_type) {
         case 'inbound_order':
@@ -184,8 +249,14 @@ const handleClick = async (notification) => {
           router.push(`/requisition/${data.business_id}`)
           break
         case 'material_plan':
-          router.push(`/plan/${data.business_id}`)
+          router.push(`/plans/${data.business_id}`)
           break
+        case 'construction_appointment':
+        case 'appointment':
+          router.push(`/appointment/${data.business_id}`)
+          break
+        default:
+          console.log('未知的业务类型:', data.business_type)
       }
     }
   } catch (e) {
@@ -214,16 +285,14 @@ const handleClearAll = async () => {
       message: '确定要清空所有通知吗？'
     })
     await notificationStore.clearAll()
-    notifications.value = []
-    finished.value = true
   } catch (e) {
     // 用户取消
   }
 }
 
 onMounted(() => {
-  onLoad()
-  notificationStore.fetchUnreadCount()
+  // 加载通知数据
+  loadData()
 })
 </script>
 
@@ -231,6 +300,7 @@ onMounted(() => {
 .notification-list-page {
   min-height: 100vh;
   background-color: #f7f8fa;
+  padding-bottom: 70px;
 }
 
 .notification-group {

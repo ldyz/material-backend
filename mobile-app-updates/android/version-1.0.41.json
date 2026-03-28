@@ -1,0 +1,8 @@
+{
+  "version": "1.0.41",
+  "versionCode": 41,
+  "url": "/android/material-management-1.0.41.apk",
+  "releaseNotes": "1. 优化预约日历全天任务显示\n2. 新增日历日视图模式\n3. 其他功能优化和bug修复",
+  "forceUpdate": false,
+  "publishDate": "2026-03-25"
+}

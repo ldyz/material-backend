@@ -1,6 +1,8 @@
 package notification
 
 import (
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -8,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -27,15 +30,25 @@ type Hub struct {
 
 	// Mutex for thread-safe operations
 	mu sync.RWMutex
+
+	// Voice handler for processing voice messages
+	voiceHandler *VoiceHandler
 }
 
 // Client is a middleman between the websocket connection and the hub
 type Client struct {
-	hub  *Hub
-	conn *websocket.Conn
-	send chan []byte
-	// User ID for this client
-	userID uint
+	hub         *Hub
+	conn        *websocket.Conn
+	send        chan []byte
+	userID      uint
+	clientID    string    // 唯一客户端ID (UUID)
+	deviceType  string    // 设备类型: web, android, ios
+	connectedAt time.Time // 连接时间
+}
+
+// generateClientID 生成唯一客户端ID
+func generateClientID() string {
+	return uuid.New().String()
 }
 
 // NotificationMessage represents a notification message sent over WebSocket
@@ -54,6 +67,11 @@ func NewHub() *Hub {
 	}
 }
 
+// SetVoiceHandler sets the voice handler for processing voice messages
+func (h *Hub) SetVoiceHandler(handler *VoiceHandler) {
+	h.voiceHandler = handler
+}
+
 // Run starts the hub's main loop
 func (h *Hub) Run() {
 	for {
@@ -61,8 +79,10 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client.userID] = append(h.clients[client.userID], client)
+			totalClients := h.countTotalClients()
 			h.mu.Unlock()
-			log.Printf("Client registered for user %d (total clients: %d)", client.userID, len(h.clients))
+			log.Printf("[WebSocket] Client registered: user=%d, clientID=%s, device=%s (users=%d, clients=%d)",
+				client.userID, client.clientID, client.deviceType, len(h.clients), totalClients)
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -79,9 +99,11 @@ func (h *Hub) Run() {
 					delete(h.clients, client.userID)
 				}
 			}
+			totalClients := h.countTotalClients()
 			h.mu.Unlock()
 			close(client.send)
-			log.Printf("Client unregistered for user %d (total clients: %d)", client.userID, len(h.clients))
+			log.Printf("[WebSocket] Client unregistered: user=%d, clientID=%s, device=%s (users=%d, clients=%d)",
+				client.userID, client.clientID, client.deviceType, len(h.clients), totalClients)
 
 		case message := <-h.broadcast:
 			h.mu.RLock()
@@ -89,14 +111,26 @@ func (h *Hub) Run() {
 				for _, client := range clients {
 					select {
 					case client.send <- message:
+						// 发送成功
 					default:
-						close(client.send)
+						// 缓冲区满，跳过但不要关闭channel
+						log.Printf("[WebSocket] Client buffer full for user %d device %s, skipping broadcast",
+							client.userID, client.deviceType)
 					}
 				}
 			}
 			h.mu.RUnlock()
 		}
 	}
+}
+
+// countTotalClients 统计总客户端数量（调用时需持有锁）
+func (h *Hub) countTotalClients() int {
+	total := 0
+	for _, clients := range h.clients {
+		total += len(clients)
+	}
+	return total
 }
 
 // BroadcastToUser sends a message to all clients for a specific user
@@ -108,9 +142,11 @@ func (h *Hub) BroadcastToUser(userID uint, message []byte) {
 		for _, client := range clients {
 			select {
 			case client.send <- message:
+				// Message sent successfully
 			default:
-				// Client is stuck, close it
-				close(client.send)
+				// Client buffer is full, log but don't close the channel
+				// The writePump will handle the stuck client
+				log.Printf("[WebSocket] Client buffer full for user %d, skipping message", userID)
 			}
 		}
 	}
@@ -194,28 +230,244 @@ func (c *Client) readPump() {
 			break
 		}
 
-		// Handle client ping messages
+		// Handle client messages
 		if len(message) > 0 {
 			log.Printf("Received message: %s", string(message))
 			var msg map[string]interface{}
 			if err := json.Unmarshal(message, &msg); err == nil {
 				log.Printf("Parsed message: %+v", msg)
-				if msgType, ok := msg["type"].(string); ok && msgType == "ping" {
-					log.Printf("Ping received, sending pong")
-					// Respond with pong
-					pongMsg := map[string]interface{}{"type": "pong"}
-					if data, err := json.Marshal(pongMsg); err == nil {
-						c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-						if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
-							log.Printf("Failed to send pong: %v", err)
-							return
-						}
-						log.Printf("Pong sent successfully")
-					}
+				if msgType, ok := msg["type"].(string); ok {
+					c.handleClientMessage(msgType, msg)
 				}
 			} else {
 				log.Printf("Failed to parse message: %v", err)
 			}
+		}
+	}
+}
+
+// handleClientMessage routes client messages to appropriate handlers
+func (c *Client) handleClientMessage(msgType string, msg map[string]interface{}) {
+	log.Printf("[WebSocket] handleClientMessage: type=%s, userID=%d", msgType, c.userID)
+	switch msgType {
+	case "ping":
+		c.sendPong()
+	case "voice":
+		log.Printf("[WebSocket] Routing to voice handler")
+		go c.handleVoiceMessage(msg)
+	case "voice_stream_chunk":
+		// 流式语音片段
+		go c.handleVoiceStreamChunk(msg)
+	case "voice_stream_end":
+		// 结束流式语音
+		go c.handleVoiceStreamEnd(msg)
+	case "chat":
+		log.Printf("[WebSocket] Routing to chat handler")
+		go c.handleChatMessage(msg)
+	default:
+		log.Printf("Unknown message type: %s", msgType)
+	}
+}
+
+// sendPong sends a pong response
+func (c *Client) sendPong() {
+	pongMsg := map[string]interface{}{"type": "pong"}
+	if data, err := json.Marshal(pongMsg); err == nil {
+		c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Printf("Failed to send pong: %v", err)
+		}
+	}
+}
+
+// handleVoiceMessage handles voice messages from the client
+func (c *Client) handleVoiceMessage(msg map[string]interface{}) {
+	if c.hub.voiceHandler == nil {
+		c.sendError("语音处理服务未配置")
+		return
+	}
+
+	log.Printf("[WebSocket] handleVoiceMessage: user=%d, starting processing", c.userID)
+
+	// Get audio data
+	audioDataBase64, ok := msg["data"].(string)
+	if !ok {
+		c.sendError("音频数据格式错误")
+		return
+	}
+
+	mimeType, _ := msg["mimeType"].(string)
+	if mimeType == "" {
+		mimeType = "audio/webm"
+	}
+
+	// Get conversation history if provided
+	var history []map[string]interface{}
+	if h, ok := msg["history"].([]interface{}); ok {
+		history = make([]map[string]interface{}, 0, len(h))
+		for _, item := range h {
+			if m, ok := item.(map[string]interface{}); ok {
+				history = append(history, m)
+			}
+		}
+	}
+
+	// Decode base64 audio data
+	audioData, err := base64.StdEncoding.DecodeString(audioDataBase64)
+	if err != nil {
+		c.sendError("音频数据解码失败: " + err.Error())
+		return
+	}
+
+	log.Printf("[WebSocket] handleVoiceMessage: user=%d, audio size=%d bytes, history=%d", c.userID, len(audioData), len(history))
+
+	// Process voice message in a separate goroutine with panic recovery
+	// Context is created inside goroutine to prevent premature cancellation
+	go func() {
+		// Create context for this operation with longer timeout for ASR processing
+		// ASR service may take up to 120 seconds for long audio
+		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		defer cancel()
+
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[WebSocket] Panic in voice handler: %v", r)
+				c.sendError("语音处理发生错误")
+			}
+		}()
+		c.hub.voiceHandler.HandleVoiceMessageWithHistory(ctx, c, audioData, mimeType, int(c.userID), history)
+	}()
+}
+
+// handleChatMessage handles chat messages from the client
+func (c *Client) handleChatMessage(msg map[string]interface{}) {
+	if c.hub.voiceHandler == nil {
+		c.sendError("AI 服务未配置")
+		return
+	}
+
+	log.Printf("[WebSocket] handleChatMessage: user=%d, starting processing", c.userID)
+
+	// Get message
+	message, ok := msg["message"].(string)
+	if !ok || message == "" {
+		c.sendError("消息内容不能为空")
+		return
+	}
+
+	// Get conversation history if provided
+	var history []map[string]interface{}
+	if h, ok := msg["history"].([]interface{}); ok {
+		history = make([]map[string]interface{}, 0, len(h))
+		for _, item := range h {
+			if m, ok := item.(map[string]interface{}); ok {
+				history = append(history, m)
+			}
+		}
+	}
+
+	// Process chat message in a separate goroutine with panic recovery
+	// Context is created inside goroutine to prevent premature cancellation
+	go func() {
+		// Create context for this operation
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[WebSocket] Panic in chat handler: %v", r)
+				c.sendError("聊天处理发生错误")
+			}
+		}()
+		c.hub.voiceHandler.HandleChatMessage(ctx, c, message, history, int(c.userID))
+	}()
+}
+
+// handleVoiceStreamChunk handles streaming voice chunk from the client
+func (c *Client) handleVoiceStreamChunk(msg map[string]interface{}) {
+	if c.hub.voiceHandler == nil {
+		c.sendError("语音处理服务未配置")
+		return
+	}
+
+	// Get audio data
+	audioDataBase64, ok := msg["data"].(string)
+	if !ok {
+		return // 忽略无效数据
+	}
+
+	mimeType, _ := msg["mimeType"].(string)
+	if mimeType == "" {
+		mimeType = "audio/webm"
+	}
+
+	// Decode base64 audio data
+	audioData, err := base64.StdEncoding.DecodeString(audioDataBase64)
+	if err != nil {
+		return // 忽略解码错误
+	}
+
+	// Process in goroutine
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		c.hub.voiceHandler.HandleVoiceStreamChunk(ctx, c, audioData, mimeType, int(c.userID))
+	}()
+}
+
+// handleVoiceStreamEnd handles end of streaming voice from the client
+func (c *Client) handleVoiceStreamEnd(msg map[string]interface{}) {
+	if c.hub.voiceHandler == nil {
+		c.sendError("语音处理服务未配置")
+		return
+	}
+
+	// Process in goroutine
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		c.hub.voiceHandler.HandleVoiceStreamEnd(ctx, c, int(c.userID))
+	}()
+}
+
+// sendError sends an error message to the client
+func (c *Client) sendError(message string) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[WebSocket] Recovered from panic when sending error to user %d: %v", c.userID, r)
+		}
+	}()
+
+	errMsg := map[string]interface{}{
+		"type":    "error",
+		"message": message,
+	}
+	if data, err := json.Marshal(errMsg); err == nil {
+		select {
+		case c.send <- data:
+		default:
+			log.Printf("Client send buffer full, cannot send error")
+		}
+	}
+}
+
+// Send sends a message to the client
+func (c *Client) Send(msg map[string]interface{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[WebSocket] Recovered from panic when sending to user %d: %v", c.userID, r)
+		}
+	}()
+
+	if data, err := json.Marshal(msg); err == nil {
+		log.Printf("[WebSocket] Sending to user %d: type=%s", c.userID, msg["type"])
+		select {
+		case c.send <- data:
+			log.Printf("[WebSocket] Message sent to channel for user %d", c.userID)
+		default:
+			log.Printf("[WebSocket] Client send buffer full for user %d, cannot send message type=%s", c.userID, msg["type"])
 		}
 	}
 }
@@ -246,6 +498,15 @@ func ServeWS(hub *Hub) gin.HandlerFunc {
 			return
 		}
 
+		// 获取设备类型（优先从 Query 参数，其次从 Header）
+		deviceType := c.Query("device_type")
+		if deviceType == "" {
+			deviceType = c.GetHeader("X-Device-Type")
+		}
+		if deviceType == "" {
+			deviceType = "web" // 默认
+		}
+
 		// Upgrade HTTP connection to WebSocket
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
@@ -255,10 +516,13 @@ func ServeWS(hub *Hub) gin.HandlerFunc {
 
 		// Create client and register
 		client := &Client{
-			hub:    hub,
-			conn:   conn,
-			send:   make(chan []byte, 256),
-			userID: userID,
+			hub:         hub,
+			conn:        conn,
+			send:        make(chan []byte, 1024), // Increased buffer for streaming responses
+			userID:      userID,
+			clientID:    generateClientID(),
+			deviceType:  deviceType,
+			connectedAt: time.Now(),
 		}
 		client.hub.register <- client
 
@@ -266,7 +530,7 @@ func ServeWS(hub *Hub) gin.HandlerFunc {
 		go client.writePump()
 		go client.readPump()
 
-		log.Printf("WebSocket connection established for user %d", userID)
+		log.Printf("[WebSocket] Connection established: user=%d, clientID=%s, device=%s", userID, client.clientID, deviceType)
 	}
 }
 
@@ -396,14 +660,19 @@ func (h *Hub) GetStats() map[string]interface{} {
 	defer h.mu.RUnlock()
 
 	totalClients := 0
+	deviceStats := make(map[string]int)
 	for _, clients := range h.clients {
 		totalClients += len(clients)
+		for _, c := range clients {
+			deviceStats[c.deviceType]++
+		}
 	}
 
 	return map[string]interface{}{
-		"total_users":  len(h.clients),
+		"total_users":   len(h.clients),
 		"total_clients": totalClients,
-		"online_users": h.GetOnlineUsers(),
+		"by_device":     deviceStats,
+		"online_users":  h.GetOnlineUsers(),
 	}
 }
 

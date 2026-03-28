@@ -1,0 +1,8 @@
+{
+  "version": "1.0.44",
+  "versionCode": 44,
+  "url": "/android/material-management-1.0.44.apk",
+  "releaseNotes": "版本 1.0.44 更新：\n- 入库单和出库单创建时必须关联物资计划",
+  "forceUpdate": false,
+  "publishDate": "2026-03-25"
+}

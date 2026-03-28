@@ -1,0 +1,9 @@
+{
+  "appId": "com.material.management",
+  "appName": "化建仪表",
+  "webDir": "dist-capacitor",
+  "server": {
+    "cleartext": true,
+    "androidScheme": "https"
+  }
+}

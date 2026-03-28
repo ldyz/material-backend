@@ -1,7 +1,11 @@
 package upload
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +18,14 @@ import (
 	"github.com/yourorg/material-backend/backend/internal/api/system"
 	jwtpkg "github.com/yourorg/material-backend/backend/pkg/jwt"
 	"gorm.io/gorm"
+)
+
+// 压缩配置
+const (
+	maxWidth       = 1920  // 最大宽度
+	maxHeight      = 1080  // 最大高度
+	jpegQuality    = 80    // JPEG 压缩质量 (1-100)
+	compressThreshold = 500 * 1024 // 超过 500KB 才压缩
 )
 
 // UploadConfig 上传配置
@@ -79,6 +91,129 @@ func GetUploadConfig(db *gorm.DB) *UploadConfig {
 	return config
 }
 
+// compressImage 压缩图片
+// 返回压缩后的数据和文件扩展名
+func compressImage(data []byte, ext string, originalSize int64) ([]byte, string, error) {
+	// 小于阈值不压缩
+	if originalSize < compressThreshold {
+		return data, ext, nil
+	}
+
+	ext = strings.ToLower(strings.TrimPrefix(ext, "."))
+
+	// SVG 不压缩
+	if ext == "svg" {
+		return data, ext, nil
+	}
+
+	// 解码图片
+	var img image.Image
+	var err error
+	reader := bytes.NewReader(data)
+
+	switch ext {
+	case "jpg", "jpeg":
+		img, err = jpeg.Decode(reader)
+	case "png":
+		img, err = png.Decode(reader)
+	default:
+		// 其他格式尝试用通用解码器
+		img, _, err = image.Decode(reader)
+	}
+
+	if err != nil {
+		// 解码失败，返回原始数据
+		fmt.Printf("图片解码失败，保留原文件: %v\n", err)
+		return data, ext, nil
+	}
+
+	// 检查尺寸，如果太大则缩放
+	bounds := img.Bounds()
+	imgWidth := bounds.Dx()
+	imgHeight := bounds.Dy()
+
+	// 计算缩放比例
+	scale := 1.0
+	if imgWidth > maxWidth {
+		scale = float64(maxWidth) / float64(imgWidth)
+	}
+	if imgHeight > maxHeight {
+		hScale := float64(maxHeight) / float64(imgHeight)
+		if hScale < scale {
+			scale = hScale
+		}
+	}
+
+	// 如果需要缩放
+	if scale < 1.0 {
+		newWidth := int(float64(imgWidth) * scale)
+		newHeight := int(float64(imgHeight) * scale)
+		img = resizeImage(img, newWidth, newHeight)
+		fmt.Printf("图片缩放: %dx%d -> %dx%d\n", imgWidth, imgHeight, newWidth, newHeight)
+	}
+
+	// 编码为 JPEG（压缩效果最好）
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: jpegQuality}); err != nil {
+		fmt.Printf("JPEG 编码失败: %v\n", err)
+		return data, ext, nil
+	}
+
+	// 如果压缩后反而更大，返回原始数据
+	if buf.Len() >= len(data) {
+		fmt.Printf("压缩后大小(%d) >= 原始大小(%d)，保留原文件\n", buf.Len(), len(data))
+		return data, ext, nil
+	}
+
+	fmt.Printf("图片压缩成功: %d -> %d 字节 (压缩率: %.1f%%)\n",
+		originalSize, buf.Len(), float64(buf.Len())/float64(originalSize)*100)
+
+	return buf.Bytes(), "jpg", nil
+}
+
+// resizeImage 简单的图片缩放（使用最近邻插值）
+func resizeImage(img image.Image, newWidth, newHeight int) image.Image {
+	bounds := img.Bounds()
+	srcWidth := bounds.Dx()
+	srcHeight := bounds.Dy()
+
+	// 创建新图片
+	dst := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
+
+	// 简单的最近邻插值
+	for y := 0; y < newHeight; y++ {
+		for x := 0; x < newWidth; x++ {
+			srcX := x * srcWidth / newWidth
+			srcY := y * srcHeight / newHeight
+			dst.Set(x, y, img.At(srcX+bounds.Min.X, srcY+bounds.Min.Y))
+		}
+	}
+
+	return dst
+}
+
+// processAndSaveImage 处理并保存图片（压缩）
+func processAndSaveImage(fileData []byte, ext string, uploadFolder string, originalSize int64) (string, int64, error) {
+	// 压缩图片
+	compressedData, newExt, err := compressImage(fileData, ext, originalSize)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// 生成唯一文件名
+	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
+	randomNum := timestamp % 10000
+	filename := fmt.Sprintf("%d_%d.%s", timestamp, randomNum, newExt)
+	filePath := filepath.Join(uploadFolder, filename)
+
+	// 保存文件
+	if err := os.WriteFile(filePath, compressedData, 0644); err != nil {
+		return "", 0, err
+	}
+
+	return filename, int64(len(compressedData)), nil
+}
+
 // RegisterRoutes 注册上传模块路由
 func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	// 创建路由组
@@ -131,42 +266,39 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 			return
 		}
 
-		// 生成唯一文件名（使用当前时间戳+随机数+文件扩展名）
-		timestamp := time.Now().UnixNano() / int64(time.Millisecond)
-		randomNum := timestamp % 10000
-		ext := strings.ToLower(filepath.Ext(header.Filename))
-		filename := fmt.Sprintf("%d_%d%s", timestamp, randomNum, ext)
-		filePath := filepath.Join(uploadFolder, filename)
-
 		// 确保上传目录存在（每次上传前都检查）
 		if err := os.MkdirAll(uploadFolder, 0755); err != nil {
 			response.InternalError(c, "创建上传目录失败")
 			return
 		}
 
-		// 创建目标文件
-		dst, err := os.Create(filePath)
+		// 读取文件内容
+		fileData, err := io.ReadAll(file)
 		if err != nil {
-			response.InternalError(c, "创建文件失败")
+			response.InternalError(c, "读取文件失败")
 			return
 		}
-		defer dst.Close()
 
-		// 复制文件内容
-		written, err := io.Copy(dst, file)
+		ext := strings.ToLower(filepath.Ext(header.Filename))
+
+		// 处理并保存图片（压缩）
+		filename, compressedSize, err := processAndSaveImage(fileData, ext, uploadFolder, header.Size)
 		if err != nil {
 			response.InternalError(c, "保存文件失败")
 			return
 		}
-		fmt.Printf("文件上传成功 [路径: %s, 大小: %d 字节]\n", filePath, written)
+
+		fmt.Printf("文件上传成功 [文件: %s, 原始: %d 字节, 压缩后: %d 字节]\n",
+			filename, header.Size, compressedSize)
 
 		// 生成文件URL（相对路径）
-		url := fmt.Sprintf("/static/uploads/%s", filename)
+		url := fmt.Sprintf("/uploads/%s", filename)
 
 		response.SuccessWithMeta(c, map[string]interface{}{
-			"url":      url,
-			"filename": filename,
-			"size":     header.Size,
+			"url":           url,
+			"filename":      filename,
+			"original_size": header.Size,
+			"compressed_size": compressedSize,
 		}, map[string]interface{}{
 			"message": "上传成功",
 		})
@@ -213,45 +345,34 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 				continue
 			}
 
-			// 生成唯一文件名
-			timestamp := time.Now().UnixNano() / int64(time.Millisecond)
-			randomNum := timestamp % 10000
-			ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
-			filename := fmt.Sprintf("%d_%d%s", timestamp, randomNum, ext)
-			filePath := filepath.Join(uploadFolder, filename)
-
-			// 确保上传目录存在（每次上传前都检查）
-			if err := os.MkdirAll(uploadFolder, 0755); err != nil {
-				failedFiles = append(failedFiles, fmt.Sprintf("%s（创建上传目录失败）", fileHeader.Filename))
-				file.Close()
-				continue
-			}
-
-			// 创建目标文件
-			dst, err := os.Create(filePath)
-			if err != nil {
-				file.Close()
-				failedFiles = append(failedFiles, fmt.Sprintf("%s（创建文件失败）", fileHeader.Filename))
-				continue
-			}
-
-			// 复制文件内容
-			_, err = io.Copy(dst, file)
-			dst.Close()
+			// 读取文件内容
+			fileData, err := io.ReadAll(file)
 			file.Close()
+			if err != nil {
+				failedFiles = append(failedFiles, fmt.Sprintf("%s（读取文件失败）", fileHeader.Filename))
+				continue
+			}
 
+			ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+
+			// 处理并保存图片（压缩）
+			filename, compressedSize, err := processAndSaveImage(fileData, ext, uploadFolder, fileHeader.Size)
 			if err != nil {
 				failedFiles = append(failedFiles, fmt.Sprintf("%s（保存失败）", fileHeader.Filename))
 				continue
 			}
 
 			// 生成文件URL
-			url := fmt.Sprintf("/static/uploads/%s", filename)
+			url := fmt.Sprintf("/uploads/%s", filename)
 			uploadedFiles = append(uploadedFiles, map[string]interface{}{
-				"url":      url,
-				"filename": filename,
-				"size":     fileHeader.Size,
+				"url":             url,
+				"filename":        filename,
+				"original_size":   fileHeader.Size,
+				"compressed_size": compressedSize,
 			})
+
+			fmt.Printf("批量上传成功 [文件: %s, 原始: %d 字节, 压缩后: %d 字节]\n",
+				filename, fileHeader.Size, compressedSize)
 		}
 
 		response.SuccessWithMessage(c, map[string]interface{}{

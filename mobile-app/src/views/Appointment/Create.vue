@@ -98,12 +98,34 @@
 
       <!-- 联系信息 -->
       <van-cell-group title="联系信息" inset>
-        <van-field
-          v-model="form.contact_person"
-          name="contact_person"
-          label="联系人"
-          placeholder="请输入联系人"
-        />
+        <div class="contact-input-wrapper">
+          <van-field
+            v-model="form.contact_person"
+            name="contact_person"
+            label="联系人"
+            placeholder="请输入或选择联系人"
+            @focus="onContactFocus"
+            @update:model-value="onContactPersonInput"
+            @blur="onContactBlur"
+          >
+            <template #button v-if="contactList.length > 0">
+              <van-icon name="arrow-down" @click="toggleContactPicker" />
+            </template>
+          </van-field>
+          <!-- 联系人自动补全下拉列表 -->
+          <div v-if="showContactSuggestions && filteredContactList.length > 0" class="contact-suggestions">
+            <div
+              v-for="contact in filteredContactList"
+              :key="contact.contact_person + contact.contact_phone"
+              class="contact-suggestion-item"
+              @mousedown.prevent="selectContact(contact)"
+            >
+              <span class="contact-name">{{ contact.contact_person }}</span>
+              <span class="contact-phone">{{ contact.contact_phone }}</span>
+              <van-tag type="primary" plain size="small">使用{{ contact.count }}次</van-tag>
+            </div>
+          </div>
+        </div>
         <van-field
           v-model="form.contact_phone"
           name="contact_phone"
@@ -112,6 +134,38 @@
           placeholder="请输入联系电话"
         />
       </van-cell-group>
+
+      <!-- 联系人选择器（完整列表） -->
+      <van-popup v-model:show="showContactPicker" position="bottom" :style="{ height: '50%' }" round>
+        <div class="contact-picker">
+          <van-nav-bar
+            title="选择历史联系人"
+            left-text="取消"
+            @click-left="showContactPicker = false"
+          />
+          <van-search
+            v-model="contactSearchKeyword"
+            placeholder="搜索联系人"
+            shape="round"
+          />
+          <van-loading v-if="loadingContacts" type="spinner" size="24" vertical>加载中...</van-loading>
+          <van-cell-group v-else-if="filteredContactListForPopup.length > 0" inset>
+            <van-cell
+              v-for="contact in filteredContactListForPopup"
+              :key="contact.contact_person + contact.contact_phone"
+              :title="contact.contact_person"
+              :label="contact.contact_phone"
+              is-link
+              @click="selectContact(contact)"
+            >
+              <template #right-icon>
+                <van-tag type="primary" plain>使用{{ contact.count }}次</van-tag>
+              </template>
+            </van-cell>
+          </van-cell-group>
+          <van-empty v-else description="暂无匹配的联系人" />
+        </div>
+      </van-popup>
 
       <!-- 优先级 -->
       <van-cell-group title="优先级" inset>
@@ -324,7 +378,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showSuccessToast, showFailToast, showConfirmDialog } from 'vant'
-import { createAppointment, updateAppointment, getAppointmentDetail, submitAppointment, getTimeSlotOptions, getDailyStatistics, getWorkersList, getTimeSlotStatistics, getAvailableWorkers } from '@/api/appointment'
+import { createAppointment, updateAppointment, getAppointmentDetail, submitAppointment, getTimeSlotOptions, getDailyStatistics, getWorkersList, getTimeSlotStatistics, getAvailableWorkers, getMyContacts } from '@/api/appointment'
 import { getAssetUrl } from '@/utils/request'
 import ProjectSelector from '@/components/common/ProjectSelector.vue'
 
@@ -353,7 +407,34 @@ const showDatePicker = ref(false)
 const showTimeSlotPicker = ref(false)
 const showWorkerPicker = ref(false)
 const showWorkTypePicker = ref(false)
+const showContactPicker = ref(false)
 const currentDate = ref([new Date().getFullYear(), new Date().getMonth() + 1, new Date().getDate()])
+
+// 历史联系人列表
+const contactList = ref([])
+const loadingContacts = ref(false)
+const showContactSuggestions = ref(false)
+const contactSearchKeyword = ref('')
+
+// 过滤后的联系人列表（用于输入时的自动补全）
+const filteredContactList = computed(() => {
+  if (!form.value.contact_person) return []
+  const keyword = form.value.contact_person.toLowerCase()
+  return contactList.value.filter(contact =>
+    contact.contact_person?.toLowerCase().includes(keyword) ||
+    contact.contact_phone?.includes(keyword)
+  ).slice(0, 5) // 最多显示5个
+})
+
+// 过滤后的联系人列表（用于弹窗中的搜索）
+const filteredContactListForPopup = computed(() => {
+  if (!contactSearchKeyword.value) return contactList.value
+  const keyword = contactSearchKeyword.value.toLowerCase()
+  return contactList.value.filter(contact =>
+    contact.contact_person?.toLowerCase().includes(keyword) ||
+    contact.contact_phone?.includes(keyword)
+  )
+})
 
 // 计算最小可选日期（明天）
 const minDate = computed(() => {
@@ -411,6 +492,59 @@ async function fetchWorkers() {
   } catch (error) {
     console.error('获取作业人员列表失败:', error)
   }
+}
+
+// 获取历史联系人列表
+async function fetchContacts() {
+  loadingContacts.value = true
+  try {
+    const response = await getMyContacts()
+    contactList.value = response.data || []
+  } catch (error) {
+    console.error('获取历史联系人失败:', error)
+    contactList.value = []
+  } finally {
+    loadingContacts.value = false
+  }
+}
+
+// 选择联系人
+function selectContact(contact) {
+  form.value.contact_person = contact.contact_person
+  form.value.contact_phone = contact.contact_phone
+  showContactPicker.value = false
+  showContactSuggestions.value = false
+}
+
+// 联系人输入时的处理
+function onContactPersonInput(value) {
+  // 输入时显示自动补全建议
+  if (value && filteredContactList.value.length > 0) {
+    showContactSuggestions.value = true
+  } else {
+    showContactSuggestions.value = false
+  }
+}
+
+// 联系人输入框获得焦点
+function onContactFocus() {
+  if (form.value.contact_person && filteredContactList.value.length > 0) {
+    showContactSuggestions.value = true
+  }
+}
+
+// 联系人输入框失去焦点
+function onContactBlur() {
+  // 延迟隐藏，让用户有时间点击建议项
+  setTimeout(() => {
+    showContactSuggestions.value = false
+  }, 200)
+}
+
+// 切换联系人选择器弹窗
+function toggleContactPicker() {
+  contactSearchKeyword.value = ''
+  showContactPicker.value = !showContactPicker.value
 }
 
 // 获取时间段统计数据
@@ -504,6 +638,7 @@ function removeWorker(workerId) {
 // 组件挂载时获取作业人员列表
 onMounted(() => {
   fetchWorkers()
+  fetchContacts() // 加载历史联系人
 
   // 处理编辑模式
   if (isEditMode.value) {
@@ -1125,5 +1260,76 @@ function onDatePickerClose() {
 
 .time-slot-available {
   background-color: #f0f9ff;
+}
+
+/* 联系人选择器样式 */
+.contact-picker {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.contact-picker .van-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.contact-picker .van-cell-group {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.contact-picker .van-empty {
+  padding: 40px 0;
+}
+
+/* 联系人输入框包装器 */
+.contact-input-wrapper {
+  position: relative;
+}
+
+/* 联系人自动补全下拉列表样式 */
+.contact-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  max-height: 240px;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+
+.contact-suggestion-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  gap: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.contact-suggestion-item:hover,
+.contact-suggestion-item:active {
+  background-color: #f5f5f5;
+}
+
+.contact-suggestion-item .contact-name {
+  font-size: 14px;
+  color: #323233;
+  font-weight: 500;
+  min-width: 60px;
+}
+
+.contact-suggestion-item .contact-phone {
+  font-size: 13px;
+  color: #969799;
+  flex: 1;
 }
 </style>

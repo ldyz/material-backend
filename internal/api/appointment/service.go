@@ -50,6 +50,29 @@ func (s *AppointmentService) Create(req CreateAppointmentRequest, applicantID ui
 		return nil, errors.New("高优先级加急预约必须提供加急原因")
 	}
 
+	// 解析作业人员ID列表
+	var workerIDs []uint
+	if req.AssignedWorkerIDs != "" {
+		if err := json.Unmarshal([]byte(req.AssignedWorkerIDs), &workerIDs); err != nil {
+			log.Printf("Warning: failed to parse assigned_worker_ids: %v", err)
+		}
+	}
+	// 兼容单选模式
+	if req.AssignedWorkerID != nil && len(workerIDs) == 0 {
+		workerIDs = []uint{*req.AssignedWorkerID}
+	}
+
+	// 检查所有作业人员可用性
+	for _, workerID := range workerIDs {
+		available, reason, err := s.calendarService.CheckAvailability(workerID, workDate, req.TimeSlot)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check availability: %w", err)
+		}
+		if !available {
+			return nil, fmt.Errorf("作业人员在指定时间段不可用: %s", reason)
+		}
+	}
+
 	// 创建预约单
 	appointment := &ConstructionAppointment{
 		ProjectID:           req.ProjectID, // 直接使用指针，可能为 nil
@@ -79,20 +102,22 @@ func (s *AppointmentService) Create(req CreateAppointmentRequest, applicantID ui
 		}
 	}
 
-	// 如果指定了作业人员，检查可用性
-	if req.AssignedWorkerID != nil {
-		available, reason, err := s.calendarService.CheckAvailability(*req.AssignedWorkerID, workDate, req.TimeSlot)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check availability: %w", err)
-		}
-		if !available {
-			return nil, fmt.Errorf("作业人员在指定时间段不可用: %s", reason)
-		}
-	}
-
 	// 保存到数据库
 	if err := s.db.Create(appointment).Error; err != nil {
 		return nil, fmt.Errorf("failed to create appointment: %w", err)
+	}
+
+	// 立即锁定作业人员日历（只要指定了作业人员就锁定）
+	for _, workerID := range workerIDs {
+		if err := s.calendarService.BlockCalendar(
+			workerID,
+			appointment.WorkDate,
+			appointment.TimeSlot,
+			fmt.Sprintf("预约单: %s - %s", appointment.AppointmentNo, appointment.WorkContent),
+			&appointment.ID,
+		); err != nil {
+			log.Printf("Warning: failed to block calendar for worker %d: %v", workerID, err)
+		}
 	}
 
 	return appointment, nil
@@ -287,6 +312,11 @@ func (s *AppointmentService) Delete(id uint) error {
 		return errors.New("只有草稿状态的预约单可以删除")
 	}
 
+	// 释放作业人员日历
+	if err := s.releaseAppointmentCalendar(&appointment); err != nil {
+		log.Printf("Warning: failed to release calendar on delete: %v", err)
+	}
+
 	return s.db.Delete(&appointment).Error
 }
 
@@ -319,20 +349,18 @@ func (s *AppointmentService) AssignWorker(id uint, workerID uint, workerName str
 		return nil, err
 	}
 
-	// 检查作业人员可用性
-	available, reason, err := s.calendarService.CheckAvailability(workerID, appointment.WorkDate, appointment.TimeSlot)
+	// 先释放旧的作业人员日历
+	if err := s.releaseAppointmentCalendar(&appointment); err != nil {
+		log.Printf("Warning: failed to release old calendar: %v", err)
+	}
+
+	// 检查作业人员可用性（排除当前预约单自己的锁定）
+	available, reason, err := s.calendarService.CheckAvailabilityWithExclude(workerID, appointment.WorkDate, appointment.TimeSlot, &appointment.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check availability: %w", err)
 	}
 	if !available {
 		return nil, fmt.Errorf("作业人员在指定时间段不可用: %s", reason)
-	}
-
-	// 如果已有作业人员，先释放其日历
-	if appointment.AssignedWorkerID != nil {
-		if err := s.calendarService.CancelAppointmentForWorker(&appointment); err != nil {
-			return nil, fmt.Errorf("failed to release previous worker: %w", err)
-		}
 	}
 
 	// 分配新作业人员
@@ -344,7 +372,13 @@ func (s *AppointmentService) AssignWorker(id uint, workerID uint, workerName str
 	}
 
 	// 预约日历
-	if err := s.calendarService.BookAppointmentForWorker(&appointment); err != nil {
+	if err := s.calendarService.BlockCalendar(
+		workerID,
+		appointment.WorkDate,
+		appointment.TimeSlot,
+		fmt.Sprintf("预约单: %s - %s", appointment.AppointmentNo, appointment.WorkContent),
+		&appointment.ID,
+	); err != nil {
 		return nil, fmt.Errorf("failed to book calendar: %w", err)
 	}
 
@@ -361,21 +395,19 @@ func (s *AppointmentService) AssignWorkers(id uint, workerIDs []uint, workerName
 		return nil, err
 	}
 
-	// 检查所有作业人员可用性
+	// 先释放旧的作业人员日历
+	if err := s.releaseAppointmentCalendar(&appointment); err != nil {
+		log.Printf("Warning: failed to release old calendar: %v", err)
+	}
+
+	// 检查所有作业人员可用性（排除当前预约单自己的锁定）
 	for _, workerID := range workerIDs {
-		available, reason, err := s.calendarService.CheckAvailability(workerID, appointment.WorkDate, appointment.TimeSlot)
+		available, reason, err := s.calendarService.CheckAvailabilityWithExclude(workerID, appointment.WorkDate, appointment.TimeSlot, &appointment.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check availability: %w", err)
 		}
 		if !available {
 			return nil, fmt.Errorf("作业人员在指定时间段不可用: %s", reason)
-		}
-	}
-
-	// 如果已有作业人员，先释放其日历
-	if appointment.AssignedWorkerID != nil {
-		if err := s.calendarService.CancelAppointmentForWorker(&appointment); err != nil {
-			return nil, fmt.Errorf("failed to release previous worker: %w", err)
 		}
 	}
 
@@ -415,10 +447,13 @@ func (s *AppointmentService) AssignWorkers(id uint, workerIDs []uint, workerName
 
 	// 为每个作业人员预约日历
 	for _, workerID := range workerIDs {
-		tempAppointment := appointment
-		tempAppointment.AssignedWorkerID = &workerID
-		if err := s.calendarService.BookAppointmentForWorker(&tempAppointment); err != nil {
-			// 记录错误但继续
+		if err := s.calendarService.BlockCalendar(
+			workerID,
+			appointment.WorkDate,
+			appointment.TimeSlot,
+			fmt.Sprintf("预约单: %s - %s", appointment.AppointmentNo, appointment.WorkContent),
+			&appointment.ID,
+		); err != nil {
 			log.Printf("Warning: failed to book calendar for worker %d: %v", workerID, err)
 		}
 	}
@@ -429,34 +464,40 @@ func (s *AppointmentService) AssignWorkers(id uint, workerIDs []uint, workerName
 	return &appointment, nil
 }
 
-// StartWork 开始作业
-func (s *AppointmentService) StartWork(id uint) (*ConstructionAppointment, error) {
-	var appointment ConstructionAppointment
-	if err := s.db.First(&appointment, id).Error; err != nil {
-		return nil, err
-	}
-
-	if appointment.Status != StatusScheduled {
-		return nil, errors.New("只有已排期状态的预约单可以开始作业")
-	}
-
-	appointment.Status = StatusInProgress
-	if err := s.db.Save(&appointment).Error; err != nil {
-		return nil, err
-	}
-
-	return &appointment, nil
-}
-
 // Complete 完成预约单
-func (s *AppointmentService) Complete(id uint, req CompleteAppointmentRequest) (*ConstructionAppointment, error) {
+func (s *AppointmentService) Complete(id uint, userID uint, req CompleteAppointmentRequest) (*ConstructionAppointment, error) {
 	var appointment ConstructionAppointment
 	if err := s.db.First(&appointment, id).Error; err != nil {
 		return nil, err
 	}
 
-	if !appointment.CanComplete() {
-		return nil, errors.New("当前状态不允许完成")
+	// 权限验证：只有申请人或被分配的作业人员可以完成
+	isApplicant := appointment.ApplicantID == userID
+	isAssignedWorker := false
+
+	// 检查是否是被分配的作业人员
+	if appointment.AssignedWorkerID != nil && *appointment.AssignedWorkerID == userID {
+		isAssignedWorker = true
+	}
+	if appointment.AssignedWorkerIDs != "" {
+		var workerIDs []uint
+		if err := json.Unmarshal([]byte(appointment.AssignedWorkerIDs), &workerIDs); err == nil {
+			for _, wid := range workerIDs {
+				if wid == userID {
+					isAssignedWorker = true
+					break
+				}
+			}
+		}
+	}
+
+	if !isApplicant && !isAssignedWorker {
+		return nil, errors.New("只有申请人或被分配的作业人员可以完成预约")
+	}
+
+	// 状态验证：已排期或进行中状态可以完成
+	if appointment.Status != StatusScheduled && appointment.Status != StatusInProgress {
+		return nil, errors.New("只有已排期或进行中状态的预约可以完成")
 	}
 
 	now := time.Now()
@@ -467,38 +508,38 @@ func (s *AppointmentService) Complete(id uint, req CompleteAppointmentRequest) (
 		return nil, err
 	}
 
-	// 释放日历
-	if err := s.calendarService.CancelAppointmentForWorker(&appointment); err != nil {
-		// 日历释放失败不影响完成操作
-		fmt.Printf("Warning: failed to release calendar: %v\n", err)
+	// 释放作业人员日历
+	if err := s.releaseAppointmentCalendar(&appointment); err != nil {
+		log.Printf("Warning: failed to release calendar on complete: %v", err)
 	}
 
 	return &appointment, nil
 }
 
-// Cancel 取消预约单
-func (s *AppointmentService) Cancel(id uint, reason string) (*ConstructionAppointment, error) {
+// Cancel 取消预约单（直接删除记录，仅限申请人）
+func (s *AppointmentService) Cancel(id uint, userID uint) error {
 	var appointment ConstructionAppointment
 	if err := s.db.First(&appointment, id).Error; err != nil {
-		return nil, err
+		return err
 	}
 
-	if !appointment.IsCancellable() && !appointment.IsEditable() {
-		return nil, errors.New("当前状态不允许取消")
+	// 权限验证：只有申请人可以取消
+	if appointment.ApplicantID != userID {
+		return errors.New("只有申请人可以取消预约")
 	}
 
-	appointment.Status = StatusCancelled
-
-	if err := s.db.Save(&appointment).Error; err != nil {
-		return nil, err
+	// 状态验证：只有草稿和待审批状态可以取消
+	if appointment.Status != StatusDraft && appointment.Status != StatusPending {
+		return errors.New("只有草稿或待审批状态的预约可以取消")
 	}
 
-	// 释放日历
-	if err := s.calendarService.CancelAppointmentForWorker(&appointment); err != nil {
-		fmt.Printf("Warning: failed to release calendar: %v\n", err)
+	// 释放作业人员日历
+	if err := s.releaseAppointmentCalendar(&appointment); err != nil {
+		log.Printf("Warning: failed to release calendar on cancel: %v", err)
 	}
 
-	return &appointment, nil
+	// 直接删除记录
+	return s.db.Delete(&appointment).Error
 }
 
 // GetStats 获取统计数据
@@ -946,4 +987,69 @@ func (s *AppointmentService) GetPendingApprovalCount() (int, error) {
 	var count int64
 	s.db.Model(&ConstructionAppointment{}).Where("status = ?", StatusPending).Count(&count)
 	return int(count), nil
+}
+
+// GetUserContacts 获取用户历史联系人列表
+func (s *AppointmentService) GetUserContacts(userID uint) ([]ContactInfo, error) {
+	type ContactRecord struct {
+		ContactPerson string
+		ContactPhone  string
+		Count         int
+	}
+
+	var contacts []ContactRecord
+
+	// 查询用户历史预约单中的联系人信息，按使用频率排序
+	// PostgreSQL 要求 ORDER BY 中的字段必须在 GROUP BY 中或使用聚合函数
+	err := s.db.Model(&ConstructionAppointment{}).
+		Select("contact_person, contact_phone, COUNT(*) as count").
+		Where("applicant_id = ? AND contact_person != '' AND contact_phone != ''", userID).
+		Group("contact_person, contact_phone").
+		Order("count DESC").
+		Limit(10).
+		Scan(&contacts).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user contacts: %w", err)
+	}
+
+	// 转换为ContactInfo列表
+	result := make([]ContactInfo, len(contacts))
+	for i, c := range contacts {
+		result[i] = ContactInfo{
+			ContactPerson: c.ContactPerson,
+			ContactPhone:  c.ContactPhone,
+			Count:         c.Count,
+		}
+	}
+
+	return result, nil
+}
+
+// releaseAppointmentCalendar 释放预约单关联的所有作业人员日历
+func (s *AppointmentService) releaseAppointmentCalendar(appointment *ConstructionAppointment) error {
+	// 解析作业人员ID列表
+	var workerIDs []uint
+	if appointment.AssignedWorkerIDs != "" {
+		if err := json.Unmarshal([]byte(appointment.AssignedWorkerIDs), &workerIDs); err != nil {
+			log.Printf("Warning: failed to parse assigned_worker_ids: %v", err)
+		}
+	}
+	// 兼容单选模式
+	if appointment.AssignedWorkerID != nil && len(workerIDs) == 0 {
+		workerIDs = []uint{*appointment.AssignedWorkerID}
+	}
+
+	// 释放所有作业人员的日历
+	for _, workerID := range workerIDs {
+		if err := s.calendarService.ReleaseCalendar(
+			workerID,
+			appointment.WorkDate,
+			appointment.TimeSlot,
+		); err != nil {
+			log.Printf("Warning: failed to release calendar for worker %d: %v", workerID, err)
+		}
+	}
+
+	return nil
 }

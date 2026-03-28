@@ -1,0 +1,8 @@
+{
+  "version": "1.0.63",
+  "versionCode": 63,
+  "url": "/mobile-updates/android/material-management-1.0.63.apk",
+  "releaseNotes": "修复通知中心\"一闪消失\"问题",
+  "forceUpdate": false,
+  "publishDate": "2026-03-26"
+}

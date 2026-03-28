@@ -9,7 +9,9 @@
  * @returns {string} 完整的资源 URL
  */
 export function getAssetUrl(path) {
-  if (!path) return ''
+  // 处理空值情况
+  if (!path || path === 'null' || path === '') return ''
+  // 已经是完整 URL
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return path
   }

@@ -14,9 +14,9 @@
       </el-radio-group>
 
       <div class="date-navigator">
-        <el-button :icon="ArrowLeft" @click="previousPeriod">上一段</el-button>
+        <el-button :icon="ArrowLeft" @click="previousPeriod">上一个</el-button>
         <span class="current-date">{{ currentDateRange }}</span>
-        <el-button @click="nextPeriod">下一段 <el-icon><ArrowRight /></el-icon></el-button>
+        <el-button @click="nextPeriod">下一个 <el-icon><ArrowRight /></el-icon></el-button>
         <el-button style="margin-left: 8px" @click="goToToday">今天</el-button>
       </div>
 
@@ -299,9 +299,9 @@ const currentDateRange = computed(() => {
 const dayTimeSlots = computed(() => {
   const dateStr = formatDateToLocal(new Date(currentDate.value))
   const timeSlots = [
-    { time_slot: 'morning', label: '上午 (8:00-11:30)' },
-    { time_slot: 'noon', label: '中午 (12:00-13:30)' },
-    { time_slot: 'afternoon', label: '下午 (13:30-16:30)' }
+    { time_slot: 'morning', label: '上午' },
+    { time_slot: 'noon', label: '中午' },
+    { time_slot: 'afternoon', label: '下午' }
   ]
 
   return timeSlots.map(slot => {
@@ -450,9 +450,9 @@ function buildWeekData() {
   const days = []
   const dayNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
   const timeSlots = [
-    { time_slot: 'morning', label: '上午 (8:00-11:30)' },
-    { time_slot: 'noon', label: '中午 (12:00-13:30)' },
-    { time_slot: 'afternoon', label: '下午 (13:30-16:30)' }
+    { time_slot: 'morning', label: '上午' },
+    { time_slot: 'noon', label: '中午' },
+    { time_slot: 'afternoon', label: '下午' }
   ]
 
   for (let i = 0; i < 7; i++) {

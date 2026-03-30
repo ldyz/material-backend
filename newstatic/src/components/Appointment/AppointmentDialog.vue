@@ -241,9 +241,9 @@ const workTypeOptions = [
 
 // 时间段选项
 const timeSlotOptions = [
-  { value: 'morning', label: '上午 (8:00-11:30)' },
-  { value: 'noon', label: '中午 (12:00-13:30)' },
-  { value: 'afternoon', label: '下午 (13:30-16:30)' },
+  { value: 'morning', label: '上午' },
+  { value: 'noon', label: '中午' },
+  { value: 'afternoon', label: '下午' },
   { value: 'full_day', label: '全天' }
 ]
 

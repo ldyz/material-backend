@@ -589,7 +589,7 @@ function formatDateTime(dateStr, timeSlot) {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
   const dateStr2 = date.toLocaleDateString('zh-CN')
-  const slots = { morning: '上午', afternoon: '下午', evening: '晚上', full_day: '全天' }
+  const slots = { morning: '上午', noon: '中午', afternoon: '下午', evening: '晚上', full_day: '全天' }
   return `${dateStr2} ${slots[timeSlot] || timeSlot}`
 }
 </script>

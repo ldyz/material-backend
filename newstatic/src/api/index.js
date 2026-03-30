@@ -4382,6 +4382,7 @@ export const appointmentApi = {
   getTimeSlotLabel(timeSlot) {
     const labels = {
       morning: '上午',
+      noon: '中午',
       afternoon: '下午',
       evening: '晚上',
       full_day: '全天'

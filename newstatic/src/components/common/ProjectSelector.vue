@@ -146,23 +146,17 @@ const treeProps = {
  * 将扁平列表转换为树形结构
  */
 const projectTreeData = computed(() => {
-  console.log('[ProjectSelector] projects prop 变化:', props.projects)
-
   if (!props.projects || props.projects.length === 0) {
-    console.log('[ProjectSelector] 项目列表为空')
     return []
   }
 
   // 如果已经是树形结构（有children属性），直接返回
   if (props.projects[0] && props.projects[0].children) {
-    console.log('[ProjectSelector] 已经是树形结构，直接返回')
     return props.projects
   }
 
   // 构建树形结构
-  const tree = buildProjectTree(props.projects)
-  console.log('[ProjectSelector] 构建后的树形结构:', tree)
-  return tree
+  return buildProjectTree(props.projects)
 })
 
 /**

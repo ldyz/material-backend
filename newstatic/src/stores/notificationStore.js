@@ -253,7 +253,6 @@ export const useNotificationStore = defineStore('notification', {
     initWebSocket() {
       const token = localStorage.getItem('token')
       if (!token) {
-        console.warn('No token found, skipping WebSocket connection')
         return
       }
 
@@ -264,20 +263,19 @@ export const useNotificationStore = defineStore('notification', {
 
       const { connect, disconnect, isConnected } = useWebSocket(wsUrl, {
         token,
+        debug: false,  // 关闭调试日志
+        maxReconnectAttempts: 5,  // 最多重连5次
         onMessage: (data) => {
           this.handleWebSocketMessage(data)
         },
         onOpen: () => {
           this.wsConnected = true
-          console.log('通知 WebSocket 连接成功')
         },
         onClose: () => {
           this.wsConnected = false
-          console.log('通知 WebSocket 连接关闭')
         },
-        onError: (error) => {
+        onError: () => {
           this.wsConnected = false
-          console.error('通知 WebSocket 错误:', error)
         }
       })
 

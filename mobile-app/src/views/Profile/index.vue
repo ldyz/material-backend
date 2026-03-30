@@ -169,6 +169,7 @@ import AvatarCropperDialog from '@/components/AvatarCropperDialog.vue'
 import UserAvatarPreview from '@/components/common/UserAvatarPreview.vue'
 import { useAppUpdate } from '@/composables/useAppUpdate'
 import { getAssetUrl } from '@/utils/request'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -268,7 +269,7 @@ function showAvatarPreview() {
 }
 
 function handleImageError() {
-  console.warn('[Profile] 头像加载失败，使用默认头像')
+  logger.warn('[Profile] 头像加载失败，使用默认头像')
   imageError.value = true
 }
 
@@ -358,7 +359,7 @@ async function handleCheckUpdate() {
       showSuccessToast('当前已是最新版本')
     }
   } catch (error) {
-    console.error('检查更新失败:', error)
+    logger.error('检查更新失败:', error)
     updateStatus.value = { type: 'danger', text: '检查失败' }
     showFailToast('检查更新失败，请稍后重试')
   }

@@ -8,6 +8,7 @@
 import { storage } from './storage'
 import { useNotificationStore } from '@/stores/notification'
 import { Capacitor } from '@capacitor/core'
+import { logger } from './logger'
 
 class WebSocketService {
   constructor() {
@@ -45,18 +46,18 @@ class WebSocketService {
     const token = storage.getToken()
 
     if (!token) {
-      console.log('No token available, skipping WebSocket connection')
+      logger.log('No token available, skipping WebSocket connection')
       return
     }
 
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log('WebSocket already connected')
+      logger.log('WebSocket already connected')
       return
     }
 
     try {
       const wsUrl = this.getWebSocketUrl()
-      console.log('Connecting to WebSocket:', wsUrl)
+      logger.log('Connecting to WebSocket:', wsUrl)
 
       // Add token to URL as query parameter
       const urlWithToken = `${wsUrl}?token=${encodeURIComponent(token)}`
@@ -64,7 +65,7 @@ class WebSocketService {
       this.ws = new WebSocket(urlWithToken)
 
       this.ws.onopen = () => {
-        console.log('WebSocket connected')
+        logger.log('WebSocket connected')
         this.reconnectAttempts = 0
         this.isManualClose = false
         this.startHeartbeat()
@@ -79,11 +80,11 @@ class WebSocketService {
       }
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
+        logger.error('WebSocket error:', error)
       }
 
       this.ws.onclose = (event) => {
-        console.log('WebSocket closed:', event.code, event.reason)
+        logger.log('WebSocket closed:', event.code, event.reason)
 
         // Stop heartbeat
         this.stopHeartbeat()
@@ -96,12 +97,12 @@ class WebSocketService {
         if (!this.isManualClose && this.reconnectAttempts < this.maxReconnectAttempts) {
           this.reconnectAttempts++
           const delay = this.reconnectDelay * this.reconnectAttempts
-          console.log(`Reconnecting in ${delay}ms... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
+          logger.log(`Reconnecting in ${delay}ms... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
           setTimeout(() => this.connect(), delay)
         }
       }
     } catch (error) {
-      console.error('Failed to create WebSocket connection:', error)
+      logger.error('Failed to create WebSocket connection:', error)
     }
   }
 
@@ -116,7 +117,7 @@ class WebSocketService {
     for (const line of lines) {
       try {
         const message = JSON.parse(line)
-        console.log('WebSocket message received:', message)
+        logger.log('WebSocket message received:', message)
 
         switch (message.type) {
           case 'notification':
@@ -127,7 +128,7 @@ class WebSocketService {
             break
           case 'pong':
             // 收到心跳响应，连接正常
-            console.log('WebSocket heartbeat: pong received')
+            logger.log('WebSocket heartbeat: pong received')
             break
           // AI 相关消息类型
           case 'voice_processing':
@@ -140,10 +141,10 @@ class WebSocketService {
             this.handleAIMessage(message)
             break
           default:
-            console.log('Unknown message type:', message.type)
+            logger.log('Unknown message type:', message.type)
         }
       } catch (error) {
-        console.error('Failed to parse WebSocket message:', error, 'line:', line)
+        logger.error('Failed to parse WebSocket message:', error, 'line:', line)
       }
     }
   }
@@ -175,15 +176,15 @@ class WebSocketService {
    * Handle AI-related messages
    */
   handleAIMessage(message) {
-    console.log('[WebSocket] handleAIMessage received:', JSON.stringify(message))
+    logger.log('[WebSocket] handleAIMessage received:', JSON.stringify(message))
     // Notify all registered callbacks
     const callbackCount = this.aiCallbacks.size
-    console.log('[WebSocket] AI callbacks count:', callbackCount)
+    logger.log('[WebSocket] AI callbacks count:', callbackCount)
     this.aiCallbacks.forEach(callback => {
       try {
         callback(message)
       } catch (error) {
-        console.error('AI callback error:', error)
+        logger.error('AI callback error:', error)
       }
     })
   }
@@ -195,7 +196,7 @@ class WebSocketService {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data))
     } else {
-      console.warn('WebSocket not connected, cannot send message')
+      logger.warn('WebSocket not connected, cannot send message')
     }
   }
 

@@ -173,6 +173,7 @@ import { VoiceRecorder } from '@independo/capacitor-voice-recorder'
 import { Capacitor } from '@capacitor/core'
 import { TextToSpeech } from '@capacitor-community/text-to-speech'
 import { storage } from '@/utils/storage'
+import { logger } from '@/utils/logger'
 
 // 获取 API 基础 URL
 const getApiBaseURL = () => {
@@ -210,7 +211,7 @@ const getHistoryStorageKey = () => {
         return `ai_chat_history_${user.id}`
       }
     } catch (e) {
-      console.error('解析用户信息失败:', e)
+      logger.error('解析用户信息失败:', e)
     }
   }
   return 'ai_chat_history_default'
@@ -260,14 +261,14 @@ async function fetchProviders() {
       }
     })
     const data = await res.json()
-    console.log('[AiChatPopup] fetchProviders response:', data)
+    logger.log('[AiChatPopup] fetchProviders response:', data)
     if (data.data) {
       providers.value = data.data.providers || []
       currentProvider.value = data.data.current_provider || ''
-      console.log('[AiChatPopup] providers loaded:', providers.value.length, 'current:', currentProvider.value)
+      logger.log('[AiChatPopup] providers loaded:', providers.value.length, 'current:', currentProvider.value)
     }
   } catch (error) {
-    console.error('获取模型列表失败:', error)
+    logger.error('获取模型列表失败:', error)
   }
 }
 
@@ -295,7 +296,7 @@ async function onSelectModel(action) {
       showToast(`已切换到 ${action.name}`)
     }
   } catch (error) {
-    console.error('切换模型失败:', error)
+    logger.error('切换模型失败:', error)
     showToast('切换模型失败')
   }
   showModelPicker.value = false
@@ -383,7 +384,7 @@ function saveHistory() {
     const historyToSave = messages.value.slice(-MAX_HISTORY_MESSAGES)
     localStorage.setItem(getHistoryStorageKey(), JSON.stringify(historyToSave))
   } catch (e) {
-    console.error('保存聊天历史失败:', e)
+    logger.error('保存聊天历史失败:', e)
   }
 }
 
@@ -395,7 +396,7 @@ function loadHistory() {
       messages.value = JSON.parse(saved)
     }
   } catch (e) {
-    console.error('加载聊天历史失败:', e)
+    logger.error('加载聊天历史失败:', e)
   }
 }
 
@@ -432,7 +433,7 @@ function startResponseTimeout() {
     clearTimeout(responseTimeoutTimer)
   }
   responseTimeoutTimer = setTimeout(() => {
-    console.log('[AiChatPopup] Response timeout, resetting state')
+    logger.log('[AiChatPopup] Response timeout, resetting state')
     resetProcessingState()
     showToast('响应超时，请重试')
     // 添加超时提示消息
@@ -477,10 +478,10 @@ async function sendMessage() {
 
     // 发送消息（带上历史记录）
     const history = getHistoryForAPI().slice(0, -1) // 排除刚添加的用户消息
-    console.log('[AiChatPopup] Sending chat message, sessionId:', currentSessionId.value)
+    logger.log('[AiChatPopup] Sending chat message, sessionId:', currentSessionId.value)
     webSocketService.sendChat(message, history)
   } catch (error) {
-    console.error('Chat error:', error)
+    logger.error('Chat error:', error)
     showToast('发送失败: ' + (error.message || '请稍后重试'))
     addMessage('assistant', '抱歉，我遇到了一些问题，请稍后再试。')
     resetProcessingState()
@@ -541,23 +542,23 @@ function registerAiCallback() {
 
   // 注册新的回调
   removeAiCallback = webSocketService.onAiResponse((message) => {
-    console.log('[AiChatPopup] AI message received:', message)
+    logger.log('[AiChatPopup] AI message received:', message)
 
     // 检查会话ID匹配（如果有）
     if (message.session_id && message.session_id !== sessionId) {
-      console.log('[AiChatPopup] Ignoring message from different session:', message.session_id, 'current:', sessionId)
+      logger.log('[AiChatPopup] Ignoring message from different session:', message.session_id, 'current:', sessionId)
       return
     }
 
     switch (message.type) {
       case 'voice_processing':
         // 语音正在处理
-        console.log('[AiChatPopup] Voice processing...')
+        logger.log('[AiChatPopup] Voice processing...')
         break
 
       case 'voice_transcript':
         // 语音识别结果 - 更新占位消息内容
-        console.log('[AiChatPopup] Voice transcript received:', message.text)
+        logger.log('[AiChatPopup] Voice transcript received:', message.text)
         if (message.text) {
           // 查找最后一条用户消息（可能是占位符）
           let lastUserIndex = -1
@@ -567,11 +568,11 @@ function registerAiCallback() {
               break
             }
           }
-          console.log('[AiChatPopup] lastUserIndex:', lastUserIndex, 'messages count:', messages.value.length)
+          logger.log('[AiChatPopup] lastUserIndex:', lastUserIndex, 'messages count:', messages.value.length)
           if (lastUserIndex >= 0) {
             // 检查是否是占位符消息（包含 🎤 或是刚添加的）
             const lastMsg = messages.value[lastUserIndex]
-            console.log('[AiChatPopup] Last user message content:', lastMsg.content)
+            logger.log('[AiChatPopup] Last user message content:', lastMsg.content)
             if (lastMsg.content.includes('🎤') || lastMsg.content.includes('语音消息')) {
               // 使用 splice 替换确保 Vue 响应式更新
               messages.value.splice(lastUserIndex, 1, {
@@ -580,15 +581,15 @@ function registerAiCallback() {
               })
               saveHistory()
               nextTick(() => scrollToBottom())
-              console.log('[AiChatPopup] Updated placeholder to:', message.text)
+              logger.log('[AiChatPopup] Updated placeholder to:', message.text)
             } else {
               // 最后一条用户消息不是占位符，添加新消息
-              console.log('[AiChatPopup] Last user message is not a placeholder, adding new message')
+              logger.log('[AiChatPopup] Last user message is not a placeholder, adding new message')
               addMessage('user', message.text)
             }
           } else {
             // 没有用户消息，添加新消息
-            console.log('[AiChatPopup] No user message found, adding new message')
+            logger.log('[AiChatPopup] No user message found, adding new message')
             addMessage('user', message.text)
           }
         }
@@ -621,7 +622,7 @@ function registerAiCallback() {
 
       case 'ai_response_done':
         // AI 回复完成
-        console.log('[AiChatPopup] ai_response_done received, message:', message.message?.substring(0, 50))
+        logger.log('[AiChatPopup] ai_response_done received, message:', message.message?.substring(0, 50))
         // 清除超时定时器
         if (responseTimeoutTimer) {
           clearTimeout(responseTimeoutTimer)
@@ -648,7 +649,7 @@ function registerAiCallback() {
 
       case 'error':
         // 错误
-        console.log('[AiChatPopup] error received:', message.message)
+        logger.log('[AiChatPopup] error received:', message.message)
         // 清除超时定时器
         if (responseTimeoutTimer) {
           clearTimeout(responseTimeoutTimer)
@@ -682,7 +683,7 @@ async function checkRecordPermission() {
       return true
     }
   } catch (error) {
-    console.error('权限请求失败:', error)
+    logger.error('权限请求失败:', error)
     showToast('请授予麦克风权限')
     return false
   }
@@ -738,7 +739,7 @@ async function startRecording(event) {
       }
 
       mediaRecorder.value.onerror = (event) => {
-        console.error('MediaRecorder error:', event.error)
+        logger.error('MediaRecorder error:', event.error)
         showToast('录音出错: ' + event.error.message)
         stopRecordingInternal()
       }
@@ -749,7 +750,7 @@ async function startRecording(event) {
       recordingStartTime.value = Date.now()
     }
   } catch (error) {
-    console.error('录音启动失败:', error)
+    logger.error('录音启动失败:', error)
     showToast('录音启动失败: ' + (error.message || '请检查麦克风权限'))
   } finally {
     isStarting.value = false
@@ -828,7 +829,7 @@ async function stopRecording(event) {
       })
     }
   } catch (error) {
-    console.error('停止录音失败:', error)
+    logger.error('停止录音失败:', error)
     isRecording.value = false
   }
 }
@@ -901,7 +902,7 @@ async function sendVoiceViaWebSocket(audioBlob, mimeType) {
       return
     }
 
-    console.log('[AiChatPopup] Sending voice message, size:', audioBlob.size, 'mimeType:', mimeType)
+    logger.log('[AiChatPopup] Sending voice message, size:', audioBlob.size, 'mimeType:', mimeType)
     isProcessing.value = true
     loading.value = true
 
@@ -925,17 +926,17 @@ async function sendVoiceViaWebSocket(audioBlob, mimeType) {
     currentSessionId.value = 'session_' + Date.now()
 
     // 立即添加用户消息占位符
-    console.log('[AiChatPopup] Adding placeholder message')
+    logger.log('[AiChatPopup] Adding placeholder message')
     addMessage('user', '🎤 语音消息...')
 
     registerAiCallback()
 
     // 发送语音时带上历史记录（排除刚添加的占位消息）
     const history = getHistoryForAPI().slice(0, -1)
-    console.log('[AiChatPopup] Sending voice via WebSocket, history length:', history.length)
+    logger.log('[AiChatPopup] Sending voice via WebSocket, history length:', history.length)
     webSocketService.sendVoice(base64Audio, mimeType || 'audio/webm', history)
   } catch (error) {
-    console.error('[AiChatPopup] 语音处理失败:', error)
+    logger.error('[AiChatPopup] 语音处理失败:', error)
     showToast('处理失败: ' + (error.message || '请稍后重试'))
     resetProcessingState()
     // 出错时移除占位消息
@@ -958,7 +959,7 @@ function clearHistory() {
     headers: {
       'Authorization': `Bearer ${token}`
     }
-  }).catch(e => console.error('清除服务器历史失败:', e))
+  }).catch(e => logger.error('清除服务器历史失败:', e))
   showToast('对话已清空')
 }
 
@@ -989,17 +990,17 @@ async function initTTS() {
   try {
     if (Capacitor.isNativePlatform()) {
       // 原生平台使用 Capacitor TTS
-      console.log('[TTS] Using native Capacitor TTS')
+      logger.log('[TTS] Using native Capacitor TTS')
     } else if ('speechSynthesis' in window) {
       // Web 平台使用 Web Speech API
-      console.log('[TTS] Using Web Speech API')
+      logger.log('[TTS] Using Web Speech API')
       // 预加载语音列表
       window.speechSynthesis.getVoices()
     } else {
-      console.log('[TTS] TTS not available')
+      logger.log('[TTS] TTS not available')
     }
   } catch (error) {
-    console.error('[TTS] Init error:', error)
+    logger.error('[TTS] Init error:', error)
   }
 }
 
@@ -1026,11 +1027,11 @@ async function speakText(text) {
     await stopSpeaking()
 
     const isNative = Capacitor.isNativePlatform()
-    console.log('[TTS] isNativePlatform:', isNative)
+    logger.log('[TTS] isNativePlatform:', isNative)
 
     if (isNative) {
       // 使用 Capacitor 原生 TTS
-      console.log('[TTS] Speaking with native TTS:', plainText.substring(0, 50) + '...')
+      logger.log('[TTS] Speaking with native TTS:', plainText.substring(0, 50) + '...')
 
       try {
         await TextToSpeech.speak({
@@ -1042,13 +1043,13 @@ async function speakText(text) {
           category: 'ambient',
         })
         isSpeaking.value = true
-        console.log('[TTS] Native TTS started successfully')
+        logger.log('[TTS] Native TTS started successfully')
         return true
       } catch (nativeError) {
-        console.error('[TTS] Native TTS error:', nativeError)
+        logger.error('[TTS] Native TTS error:', nativeError)
         // 如果原生 TTS 失败，尝试 Web Speech API 作为后备
         if ('speechSynthesis' in window) {
-          console.log('[TTS] Falling back to Web Speech API')
+          logger.log('[TTS] Falling back to Web Speech API')
           return speakWithWebAPI(plainText)
         }
         showToast('语音播报失败: ' + (nativeError.message || 'TTS不可用'))
@@ -1058,12 +1059,12 @@ async function speakText(text) {
       // 使用 Web Speech API（浏览器环境）
       return speakWithWebAPI(plainText)
     } else {
-      console.log('[TTS] No TTS available, isNative:', isNative)
+      logger.log('[TTS] No TTS available, isNative:', isNative)
       showToast('您的设备不支持语音播报')
       return false
     }
   } catch (error) {
-    console.error('[TTS] Speak error:', error)
+    logger.error('[TTS] Speak error:', error)
     showToast('语音播报失败: ' + (error.message || '未知错误'))
     isSpeaking.value = false
     return false
@@ -1072,7 +1073,7 @@ async function speakText(text) {
 
 // 使用 Web Speech API 播放语音
 function speakWithWebAPI(plainText) {
-  console.log('[TTS] Speaking with Web Speech API:', plainText.substring(0, 50) + '...')
+  logger.log('[TTS] Speaking with Web Speech API:', plainText.substring(0, 50) + '...')
 
   const utterance = new SpeechSynthesisUtterance(plainText)
   utterance.lang = 'zh-CN'
@@ -1089,17 +1090,17 @@ function speakWithWebAPI(plainText) {
 
   utterance.onstart = () => {
     isSpeaking.value = true
-    console.log('[TTS] Web TTS started')
+    logger.log('[TTS] Web TTS started')
   }
 
   utterance.onend = () => {
     isSpeaking.value = false
     currentSpeakingIndex.value = -1
-    console.log('[TTS] Web TTS ended')
+    logger.log('[TTS] Web TTS ended')
   }
 
   utterance.onerror = (event) => {
-    console.error('[TTS] Web TTS Error:', event.error)
+    logger.error('[TTS] Web TTS Error:', event.error)
     if (event.error !== 'interrupted' && event.error !== 'canceled') {
       showToast('语音播报失败: ' + event.error)
     }
@@ -1126,7 +1127,7 @@ async function stopSpeaking() {
       window.speechSynthesis.cancel()
     }
   } catch (error) {
-    console.error('[TTS] Stop error:', error)
+    logger.error('[TTS] Stop error:', error)
   }
   isSpeaking.value = false
   currentSpeakingIndex.value = -1
@@ -1205,7 +1206,7 @@ async function startListening() {
     startSilenceDetection()
 
   } catch (error) {
-    console.error('启动语音监听失败:', error)
+    logger.error('启动语音监听失败:', error)
     showToast('启动失败: ' + (error.message || '请检查麦克风权限'))
     stopListening()
   }
@@ -1256,7 +1257,7 @@ async function sendPartialVoice(audioBlob, mimeType) {
       mimeType: mimeType
     })
   } catch (error) {
-    console.error('发送语音片段失败:', error)
+    logger.error('发送语音片段失败:', error)
   }
 }
 
@@ -1374,7 +1375,7 @@ async function stopListeningAndSend() {
     await sendVoiceViaWebSocket(audioBlob, mimeType)
 
   } catch (error) {
-    console.error('停止录音失败:', error)
+    logger.error('停止录音失败:', error)
     showToast('处理失败')
   }
 

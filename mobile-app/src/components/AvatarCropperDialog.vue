@@ -83,6 +83,7 @@ import Cropper from 'cropperjs'
 import 'cropperjs/dist/cropper.css'
 import { showToast } from 'vant'
 import * as authApi from '@/api/auth'
+import { logger } from '@/utils/logger'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -245,14 +246,14 @@ async function handleConfirm() {
         emit('success')
         handleClose()
       }).catch((error) => {
-        console.error('头像上传失败:', error)
+        logger.error('头像上传失败:', error)
         showToast({ type: 'fail', message: error?.message || '头像上传失败' })
       }).finally(() => {
         uploading.value = false
       })
     }, 'image/jpeg', 0.9)
   } catch (error) {
-    console.error('裁剪失败:', error)
+    logger.error('裁剪失败:', error)
     showToast({ type: 'fail', message: '裁剪失败，请重试' })
     uploading.value = false
   }

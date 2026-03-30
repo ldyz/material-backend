@@ -267,6 +267,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showLoadingToast, closeToast } from 'vant'
 import { createInbound, getProjects, getApprovedPlans, getMaterialMasters, getPlanDetail } from '@/api/inbound'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 
@@ -643,7 +644,7 @@ function loadDraft() {
     hasDraft.value = true
     return true
   } catch (e) {
-    console.error('加载草稿失败:', e)
+    logger.error('加载草稿失败:', e)
     return false
   }
 }

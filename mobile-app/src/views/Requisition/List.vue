@@ -31,6 +31,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { getRequisitions } from '@/api/requisition'
 import ListContainer from '@/components/common/ListContainer.vue'
 import ListItemCard from '@/components/common/ListItemCard.vue'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const route = useRoute()
@@ -97,7 +98,7 @@ async function loadData() {
     finished.value = requisitions.value.length >= total
     currentPage.value++
   } catch (error) {
-    console.error('加载失败:', error)
+    logger.error('加载失败:', error)
   } finally {
     loading.value = false
     refreshing.value = false

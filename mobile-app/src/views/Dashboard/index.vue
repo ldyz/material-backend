@@ -159,6 +159,7 @@ import { useNotificationStore } from '@/stores/notification'
 import { getAppointmentStats } from '@/api/appointment'
 import { getCalendarStatistics } from '@/api/attendance'
 import NotificationBadge from '@/components/NotificationBadge.vue'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -265,7 +266,7 @@ async function loadStats() {
       stats.value.monthClockIns = monthRes.data.reduce((sum, item) => sum + (item.total_count || 0), 0)
     }
   } catch (error) {
-    console.error('加载统计数据失败:', error)
+    logger.error('加载统计数据失败:', error)
   }
 }
 

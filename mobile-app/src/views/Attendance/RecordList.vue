@@ -153,6 +153,7 @@ import {
 } from '@/api/attendance'
 import { getAssetUrl } from '@/utils/request'
 import ListContainer from '@/components/common/ListContainer.vue'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 
@@ -288,7 +289,7 @@ async function loadStatistics() {
 
     statistics.value = response.data || []
   } catch (error) {
-    console.error('加载统计数据失败:', error)
+    logger.error('加载统计数据失败:', error)
     statistics.value = []
   }
 }
@@ -307,7 +308,7 @@ async function loadRecords() {
 
     records.value = response.data || []
   } catch (error) {
-    console.error('加载打卡记录失败:', error)
+    logger.error('加载打卡记录失败:', error)
     records.value = []
   } finally {
     loading.value = false

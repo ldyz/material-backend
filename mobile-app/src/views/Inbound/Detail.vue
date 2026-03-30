@@ -53,6 +53,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { getInboundDetail, resubmitInbound } from '@/api/inbound'
 import DetailInfoGroup from '@/components/common/DetailInfoGroup.vue'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const route = useRoute()
@@ -75,7 +76,7 @@ async function loadData() {
     const response = await getInboundDetail(route.params.id)
     order.value = response.data
   } catch (error) {
-    console.error('加载失败:', error)
+    logger.error('加载失败:', error)
   } finally {
     loading.value = false
   }
@@ -107,7 +108,7 @@ async function handleResubmit() {
     }
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('重新提交失败:', error)
+      logger.error('重新提交失败:', error)
     }
   }
 }

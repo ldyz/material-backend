@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { storage } from '@/utils/storage'
 import { login as loginApi, logout as logoutApi, getCurrentUser as getCurrentUserApi } from '@/api/auth'
 import { initWebSocket, disconnectWebSocket } from '@/utils/websocket'
+import { logger } from '@/utils/logger'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(storage.getToken())
@@ -190,14 +191,14 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchCurrentUser() {
     try {
       const response = await getCurrentUserApi()
-      console.log('[Auth] 获取用户信息响应:', response)
+      logger.log('[Auth] 获取用户信息响应:', response)
       if (response.data) {
         setUser(response.data)
-        console.log('[Auth] 用户角色:', response.data.roles?.map(r => ({ name: r.name, permCount: r.permissions?.length })))
+        logger.log('[Auth] 用户角色:', response.data.roles?.map(r => ({ name: r.name, permCount: r.permissions?.length })))
       }
       return response.data
     } catch (error) {
-      console.error('获取用户信息失败:', error)
+      logger.error('获取用户信息失败:', error)
       throw error
     }
   }
@@ -208,11 +209,11 @@ export const useAuthStore = defineStore('auth', () => {
   async function initAuth() {
     if (token.value) {
       try {
-        console.log('[Auth] 开始刷新用户权限...')
+        logger.log('[Auth] 开始刷新用户权限...')
         await fetchCurrentUser()
-        console.log('[Auth] 权限刷新完成，当前权限数量:', permissions.value.length)
+        logger.log('[Auth] 权限刷新完成，当前权限数量:', permissions.value.length)
       } catch (error) {
-        console.error('刷新用户信息失败:', error)
+        logger.error('刷新用户信息失败:', error)
       }
     }
   }

@@ -340,6 +340,7 @@ import WorkerPicker from '@/components/common/WorkerPicker.vue'
 import DetailInfoGroup from '@/components/common/DetailInfoGroup.vue'
 import { formatAppointmentDate, formatDateTime } from '@/composables/useDateTime'
 import webSocketService from '@/utils/websocket'
+import { logger } from '@/utils/logger'
 import {
   getAppointmentDetail,
   submitAppointment,
@@ -529,16 +530,16 @@ onMounted(async () => {
 
 // WebSocket 消息处理函数
 function handleWebSocketMessage(data) {
-  console.log('[WebSocket] 收到消息:', data)
+  logger.log('[WebSocket] 收到消息:', data)
 
   // 处理审批更新消息
   if (data.type === 'appointment_approval_update') {
     const updateData = data.data
-    console.log('[WebSocket] 审批更新消息:', updateData)
+    logger.log('[WebSocket] 审批更新消息:', updateData)
 
     // 检查是否是当前预约单的更新
     if (updateData.appointment_id === parseInt(route.params.id)) {
-      console.log('[WebSocket] 当前预约单有更新，正在刷新审批历史...')
+      logger.log('[WebSocket] 当前预约单有更新，正在刷新审批历史...')
 
       // 播放提示音（可选）
       playNotificationSound()
@@ -585,12 +586,12 @@ function playNotificationSound() {
         audioCtx.close()
       }, 200)
 
-      console.log('[提示音] 播放成功')
+      logger.log('[提示音] 播放成功')
     } else {
-      console.log('[提示音] 浏览器不支持 Web Audio API')
+      logger.log('[提示音] 浏览器不支持 Web Audio API')
     }
   } catch (error) {
-    console.log('[提示音] 播放失败:', error)
+    logger.log('[提示音] 播放失败:', error)
   }
 }
 
@@ -612,7 +613,7 @@ function setupWebSocketListener() {
         const data = JSON.parse(event.data)
         handleWebSocketMessage(data)
       } catch (error) {
-        console.error('[WebSocket] 解析消息失败:', error)
+        logger.error('[WebSocket] 解析消息失败:', error)
       }
     }
 
@@ -622,14 +623,14 @@ function setupWebSocketListener() {
       if (originalOnOpen) {
         originalOnOpen.call(webSocketService.ws, event)
       }
-      console.log('[WebSocket] 连接已建立（包括重连），刷新数据...')
+      logger.log('[WebSocket] 连接已建立（包括重连），刷新数据...')
       // 连接建立后刷新数据
       refreshDataIfNeeded()
     }
 
-    console.log('[WebSocket] 已注册审批更新监听')
+    logger.log('[WebSocket] 已注册审批更新监听')
   } else {
-    console.warn('[WebSocket] 未连接，无法注册监听')
+    logger.warn('[WebSocket] 未连接，无法注册监听')
   }
 }
 
@@ -645,14 +646,14 @@ function setupVisibilityListener() {
 // 处理页面可见性变化
 function handleVisibilityChange() {
   if (!document.hidden && appointment.value) {
-    console.log('[页面可见] 页面重新可见，刷新数据...')
+    logger.log('[页面可见] 页面重新可见，刷新数据...')
     refreshDataIfNeeded()
   }
 }
 
 // 处理页面获得焦点
 function handlePageFocus() {
-  console.log('[页面焦点] 页面获得焦点，刷新数据...')
+  logger.log('[页面焦点] 页面获得焦点，刷新数据...')
   refreshDataIfNeeded()
 }
 
@@ -671,16 +672,16 @@ onUnmounted(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   window.removeEventListener('focus', handlePageFocus)
 
-  console.log('[清理] 已移除所有监听器')
+  logger.log('[清理] 已移除所有监听器')
 })
 
 async function loadDetail() {
   try {
     const response = await getAppointmentDetail(route.params.id)
-    console.log('Appointment detail response:', response)
+    logger.log('Appointment detail response:', response)
     appointment.value = response.data
   } catch (error) {
-    console.error('加载预约单详情失败:', error)
+    logger.error('加载预约单详情失败:', error)
     showFailToast('加载预约单详情失败')
   } finally {
     loading.value = false
@@ -690,23 +691,23 @@ async function loadDetail() {
 async function loadApprovalHistory() {
   try {
     const response = await getApprovalHistory(route.params.id)
-    console.log('[审批历史] 原始响应:', response)
+    logger.log('[审批历史] 原始响应:', response)
 
     // 处理不同的响应格式
     if (response && response.data) {
       approvalLogs.value = Array.isArray(response.data) ? response.data : []
-      console.log('[审批历史] 更新后的记录数:', approvalLogs.value.length)
-      console.log('[审批历史] 记录详情:', approvalLogs.value)
+      logger.log('[审批历史] 更新后的记录数:', approvalLogs.value.length)
+      logger.log('[审批历史] 记录详情:', approvalLogs.value)
     } else if (Array.isArray(response)) {
       // 如果直接返回数组
       approvalLogs.value = response
-      console.log('[审批历史] 直接数组格式，记录数:', approvalLogs.value.length)
+      logger.log('[审批历史] 直接数组格式，记录数:', approvalLogs.value.length)
     } else {
       approvalLogs.value = []
-      console.warn('[审批历史] 未知响应格式:', response)
+      logger.warn('[审批历史] 未知响应格式:', response)
     }
   } catch (error) {
-    console.error('[审批历史] 加载失败:', error)
+    logger.error('[审批历史] 加载失败:', error)
     showFailToast('加载审批历史失败')
   }
 }
@@ -791,7 +792,7 @@ async function loadAvailableWorkersForNewTime() {
     })
     availableWorkersCount.value = (response.data || []).length
   } catch (error) {
-    console.error('获取可用作业人员数量失败:', error)
+    logger.error('获取可用作业人员数量失败:', error)
   }
 }
 
@@ -829,7 +830,7 @@ async function handleApproveSubmit() {
   }
 
   try {
-    console.log('[审批] 开始审批通过流程')
+    logger.log('[审批] 开始审批通过流程')
     const payload = {
       action: 'approve',
       comment: approveComment.value,
@@ -840,7 +841,7 @@ async function handleApproveSubmit() {
       new_time_slot: approveForm.value.newTimeSlot
     }
     const result = await approveAppointment(route.params.id, payload)
-    console.log('[审批] 审批响应:', result)
+    logger.log('[审批] 审批响应:', result)
 
     showSuccessToast('审批通过')
     showApproveDialog.value = false
@@ -860,7 +861,7 @@ async function handleApproveSubmit() {
     await loadDetail()
     await loadApprovalHistory()
   } catch (error) {
-    console.error('[审批] 审批失败:', error)
+    logger.error('[审批] 审批失败:', error)
     showFailToast(error.message || '审批失败')
   }
 }
@@ -885,7 +886,7 @@ async function handleReject() {
     await loadDetail()
     await loadApprovalHistory()
   } catch (error) {
-    console.error('[审批] 拒绝失败:', error)
+    logger.error('[审批] 拒绝失败:', error)
     showFailToast(error.message || '拒绝失败')
   }
 }

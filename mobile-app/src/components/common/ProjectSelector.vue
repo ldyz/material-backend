@@ -52,6 +52,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { getProjects } from '@/api/project'
+import { logger } from '@/utils/logger'
 
 const props = defineProps({
   /**
@@ -159,7 +160,7 @@ async function fetchProjects() {
     // response.data 直接就是项目数组
     projects.value = response.data || []
   } catch (error) {
-    console.error('获取项目列表失败:', error)
+    logger.error('获取项目列表失败:', error)
     projects.value = []
   } finally {
     loading.value = false

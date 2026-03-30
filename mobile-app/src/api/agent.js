@@ -5,6 +5,41 @@ import request from '@/utils/request'
  */
 export const agentApi = {
   /**
+   * 获取可用的 AI 模型列表
+   * @returns {Promise} 返回 { providers: [], current_provider: string }
+   */
+  getProviders() {
+    return request({
+      url: '/agent/providers',
+      method: 'GET'
+    })
+  },
+
+  /**
+   * 切换 AI 模型
+   * @param {string} provider - 模型标识
+   * @returns {Promise}
+   */
+  switchProvider(provider) {
+    return request({
+      url: '/agent/providers/switch',
+      method: 'POST',
+      data: { provider }
+    })
+  },
+
+  /**
+   * 清除对话历史
+   * @returns {Promise}
+   */
+  clearHistory() {
+    return request({
+      url: '/agent/conversation-history',
+      method: 'DELETE'
+    })
+  },
+
+  /**
    * 语音对话接口
    * 发送语音文件，返回语音识别结果和 AI 回复
    *

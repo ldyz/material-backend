@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { showToast } from 'vant'
 import { storage } from './storage'
+import { logger } from './logger'
 
 // 检测是否在 Capacitor 原生环境中
 const isCapacitor = typeof window !== 'undefined' && window.Capacitor
@@ -10,7 +11,7 @@ const baseURL = isCapacitor ? 'https://home.mbed.org.cn:9090/api' : '/api'
 export function getAssetUrl(path) {
   // 如果路径为空，返回默认头像
   if (!path || path === '' || path === 'null') {
-    console.log('[getAssetUrl] 路径为空，返回默认头像')
+    logger.log('[getAssetUrl] 路径为空，返回默认头像')
     return getDefaultAvatar()
   }
 
@@ -90,7 +91,7 @@ request.interceptors.response.use(
       storage.clear()
       if (router) {
         router.push('/login').catch(err => {
-          console.error('Router navigation error:', err)
+          logger.error('Router navigation error:', err)
         })
       } else {
         // Fallback: reload page to go to login

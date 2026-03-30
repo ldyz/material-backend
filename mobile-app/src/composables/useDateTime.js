@@ -3,6 +3,8 @@
  * 提供统一的日期时间格式化函数
  */
 
+import { logger } from '@/utils/logger'
+
 /**
  * 格式化日期
  * @param {string|Date} date - 日期字符串或Date对象
@@ -27,7 +29,7 @@ export function formatDate(date, options = {}) {
   try {
     return dateObj.toLocaleDateString('zh-CN', defaultOptions)
   } catch (error) {
-    console.error('日期格式化失败:', error)
+    logger.error('日期格式化失败:', error)
     return '-'
   }
 }
@@ -57,7 +59,7 @@ export function formatDateTime(date, options = {}) {
   try {
     return dateObj.toLocaleString('zh-CN', defaultOptions)
   } catch (error) {
-    console.error('日期时间格式化失败:', error)
+    logger.error('日期时间格式化失败:', error)
     return '-'
   }
 }
@@ -80,7 +82,7 @@ export function formatTime(date) {
       minute: '2-digit'
     })
   } catch (error) {
-    console.error('时间格式化失败:', error)
+    logger.error('时间格式化失败:', error)
     return '-'
   }
 }

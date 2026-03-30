@@ -381,6 +381,7 @@ import { showSuccessToast, showFailToast, showConfirmDialog } from 'vant'
 import { createAppointment, updateAppointment, getAppointmentDetail, submitAppointment, getTimeSlotOptions, getDailyStatistics, getWorkersList, getTimeSlotStatistics, getAvailableWorkers, getMyContacts } from '@/api/appointment'
 import { getAssetUrl } from '@/utils/request'
 import ProjectSelector from '@/components/common/ProjectSelector.vue'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const route = useRoute()
@@ -479,7 +480,7 @@ async function checkAvailabilityForDate(date) {
       showFailToast('该日期所有人员已被安排，请选择其他日期或创建加急预约单')
     }
   } catch (error) {
-    console.error('检查可用人员失败:', error)
+    logger.error('检查可用人员失败:', error)
     hasAvailableWorkers.value = true
   }
 }
@@ -490,7 +491,7 @@ async function fetchWorkers() {
     const response = await getWorkersList()
     workerList.value = response.data || []
   } catch (error) {
-    console.error('获取作业人员列表失败:', error)
+    logger.error('获取作业人员列表失败:', error)
   }
 }
 
@@ -501,7 +502,7 @@ async function fetchContacts() {
     const response = await getMyContacts()
     contactList.value = response.data || []
   } catch (error) {
-    console.error('获取历史联系人失败:', error)
+    logger.error('获取历史联系人失败:', error)
     contactList.value = []
   } finally {
     loadingContacts.value = false
@@ -557,7 +558,7 @@ async function fetchTimeSlotStatistics() {
     timeSlotStatistics.value = response.data.statistics || []
     totalWorkers.value = response.data.total_workers || 0
   } catch (error) {
-    console.error('获取时间段统计数据失败:', error)
+    logger.error('获取时间段统计数据失败:', error)
     timeSlotStatistics.value = []
   } finally {
     loadingTimeSlots.value = false
@@ -692,7 +693,7 @@ async function loadAppointmentData() {
       fetchTimeSlotStatistics()
     }
   } catch (error) {
-    console.error('加载预约单数据失败:', error)
+    logger.error('加载预约单数据失败:', error)
     showFailToast('加载预约单数据失败')
     router.back()
   }
@@ -773,15 +774,15 @@ async function handleSubmit() {
     let result
     if (isEditMode.value) {
       // 编辑模式：更新预约单
-      console.log('Updating appointment with data:', submitData)
+      logger.log('Updating appointment with data:', submitData)
       result = await updateAppointment(route.params.id, submitData)
-      console.log('Update appointment result:', result)
+      logger.log('Update appointment result:', result)
       showSuccessToast('修改成功')
     } else {
       // 创建模式
-      console.log('Creating appointment with data:', submitData)
+      logger.log('Creating appointment with data:', submitData)
       result = await createAppointment(submitData)
-      console.log('Create appointment result:', result)
+      logger.log('Create appointment result:', result)
 
       // 创建成功后提交
       const appointmentId = result.data?.id || result.id
@@ -803,7 +804,7 @@ async function handleSubmit() {
       }
     }
   } catch (error) {
-    console.error('Submit appointment error:', error)
+    logger.error('Submit appointment error:', error)
     showFailToast(error.message || error.error?.message || '提交失败')
   } finally {
     submitting.value = false
@@ -958,7 +959,7 @@ async function fetchDailyAppointments() {
 
     dailyAppointments.value = stats
   } catch (error) {
-    console.error('获取每日预约数据失败:', error)
+    logger.error('获取每日预约数据失败:', error)
   }
 }
 

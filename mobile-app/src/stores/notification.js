@@ -8,6 +8,7 @@ import {
   deleteNotification,
   clearAllNotifications
 } from '@/api/notification'
+import { logger } from '@/utils/logger'
 
 export const useNotificationStore = defineStore('notification', {
   state: () => ({
@@ -53,7 +54,7 @@ export const useNotificationStore = defineStore('notification', {
           }
         }
       } catch (error) {
-        console.error('获取通知列表失败:', error)
+        logger.error('获取通知列表失败:', error)
         showToast({ type: 'fail', message: '获取通知列表失败' })
       } finally {
         this.loading = false
@@ -70,7 +71,7 @@ export const useNotificationStore = defineStore('notification', {
           this.unreadCount = response.data?.unread_count || 0
         }
       } catch (error) {
-        console.error('获取未读数量失败:', error)
+        logger.error('获取未读数量失败:', error)
       }
     },
 
@@ -92,7 +93,7 @@ export const useNotificationStore = defineStore('notification', {
         await markAsRead(id)
         // API 调用成功，本地状态已经更新
       } catch (error) {
-        console.error('标记已读失败:', error)
+        logger.error('标记已读失败:', error)
         // 回滚本地状态
         if (notification && wasUnread) {
           notification.is_read = false
@@ -120,7 +121,7 @@ export const useNotificationStore = defineStore('notification', {
           showToast({ type: 'success', message: '已全部标记为已读' })
         }
       } catch (error) {
-        console.error('标记全部已读失败:', error)
+        logger.error('标记全部已读失败:', error)
         showToast({ type: 'fail', message: '标记全部已读失败' })
       }
     },
@@ -143,7 +144,7 @@ export const useNotificationStore = defineStore('notification', {
           showToast({ type: 'success', message: '通知已删除' })
         }
       } catch (error) {
-        console.error('删除通知失败:', error)
+        logger.error('删除通知失败:', error)
         showToast({ type: 'fail', message: '删除通知失败' })
       }
     },
@@ -160,7 +161,7 @@ export const useNotificationStore = defineStore('notification', {
           showToast({ type: 'success', message: '通知已清空' })
         }
       } catch (error) {
-        console.error('清空通知失败:', error)
+        logger.error('清空通知失败:', error)
         showToast({ type: 'fail', message: '清空通知失败' })
       }
     },

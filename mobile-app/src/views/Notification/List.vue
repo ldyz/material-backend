@@ -96,6 +96,7 @@ import { useRouter } from 'vue-router'
 import { useNotificationStore } from '@/stores/notification'
 import { showToast, showConfirmDialog } from 'vant'
 import { storeToRefs } from 'pinia'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const notificationStore = useNotificationStore()
@@ -198,7 +199,7 @@ const handleClick = async (notification) => {
   // 解析数据并跳转
   try {
     const data = JSON.parse(notification.data || '{}')
-    console.log('通知数据:', data, '通知类型:', notification.type)
+    logger.log('通知数据:', data, '通知类型:', notification.type)
 
     // 根据通知类型或数据中的业务类型跳转
     const notificationType = notification.type || ''
@@ -256,11 +257,11 @@ const handleClick = async (notification) => {
           router.push(`/appointment/${data.business_id}`)
           break
         default:
-          console.log('未知的业务类型:', data.business_type)
+          logger.log('未知的业务类型:', data.business_type)
       }
     }
   } catch (e) {
-    console.error('解析通知数据失败:', e)
+    logger.error('解析通知数据失败:', e)
   }
 }
 

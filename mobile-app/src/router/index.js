@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { logger } from '@/utils/logger'
 
 const routes = [
   {
@@ -173,7 +174,7 @@ router.beforeEach((to, from, next) => {
 
     next()
   } catch (error) {
-    console.error('Router guard error:', error)
+    logger.error('Router guard error:', error)
     next()
   }
 })

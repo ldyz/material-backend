@@ -117,6 +117,7 @@ import { formatDate } from '@/composables/useDateTime'
 import { useAuthStore } from '@/stores/auth'
 import ListContainer from '@/components/common/ListContainer.vue'
 import ListItemCard from '@/components/common/ListItemCard.vue'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -258,7 +259,7 @@ async function loadStatistics() {
 
     statistics.value = response.data?.statistics || response.statistics || []
   } catch (error) {
-    console.error('加载统计数据失败:', error)
+    logger.error('加载统计数据失败:', error)
     statistics.value = []
   }
 }
@@ -277,7 +278,7 @@ async function loadTasks() {
 
     tasks.value = response.data || []
   } catch (error) {
-    console.error('加载任务列表失败:', error)
+    logger.error('加载任务列表失败:', error)
     tasks.value = []
   } finally {
     loading.value = false

@@ -211,6 +211,7 @@ import { useRouter } from 'vue-router'
 import { showToast, showLoadingToast, closeToast } from 'vant'
 import { createRequisition, getProjects } from '@/api/requisition'
 import { getApprovedPlans, getPlanDetail } from '@/api/material_plan'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 
@@ -540,7 +541,7 @@ function loadDraft() {
     hasDraft.value = true
     return true
   } catch (e) {
-    console.error('加载草稿失败:', e)
+    logger.error('加载草稿失败:', e)
     return false
   }
 }

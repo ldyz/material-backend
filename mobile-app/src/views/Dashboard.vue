@@ -192,6 +192,7 @@ import { useAuthStore } from '@/stores/auth'
 import { getPendingApprovalCount } from '@/api/appointment'
 import StatusTag from '@/components/common/StatusTag.vue'
 import { formatAppointmentDate } from '@/composables/useDateTime'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -239,7 +240,7 @@ const systemNotice = ref('欢迎使用化建仪表移动端！如有问题请联
 
 // 权限控制 - 基于权限系统
 const canAccessApprovals = computed(() => {
-  console.log('[Dashboard] canAccessApprovals 计算, permissions:', authStore.permissions.length)
+  logger.log('[Dashboard] canAccessApprovals 计算, permissions:', authStore.permissions.length)
   return authStore.hasPermission('appointment_approve')
 })
 
@@ -254,7 +255,7 @@ const canAccessInbound = computed(() => {
 const canAccessMaterialPlan = computed(() => {
   const perms = authStore.permissions
   const hasPerms = perms.includes('material_plan_view')
-  console.log('[Dashboard] canAccessMaterialPlan 计算:', {
+  logger.log('[Dashboard] canAccessMaterialPlan 计算:', {
     permissionsCount: perms.length,
     hasMaterialPlanView: hasPerms,
     allPerms: perms
@@ -269,8 +270,8 @@ const permissionsReady = ref(false)
 watch(
   () => authStore.permissions,
   (newPerms) => {
-    console.log('[Dashboard] 权限变化，数量:', newPerms.length)
-    console.log('[Dashboard] 是否包含 material_plan_view:', newPerms.includes('material_plan_view'))
+    logger.log('[Dashboard] 权限变化，数量:', newPerms.length)
+    logger.log('[Dashboard] 是否包含 material_plan_view:', newPerms.includes('material_plan_view'))
   },
   { immediate: true, deep: true }
 )
@@ -279,8 +280,8 @@ onMounted(async () => {
   // 确保用户权限是最新的
   await authStore.initAuth()
   permissionsReady.value = true
-  console.log('[Dashboard] initAuth 完成，当前权限:', authStore.permissions.length)
-  console.log('[Dashboard] hasPermission(material_plan_view):', authStore.hasPermission('material_plan_view'))
+  logger.log('[Dashboard] initAuth 完成，当前权限:', authStore.permissions.length)
+  logger.log('[Dashboard] hasPermission(material_plan_view):', authStore.hasPermission('material_plan_view'))
   await loadStats()
   await loadRecentAppointments()
 })
@@ -305,7 +306,7 @@ async function loadStats() {
     // 完成数量（模拟数据）
     stats.value.completedCount = Math.floor(Math.random() * 20)
   } catch (error) {
-    console.error('加载统计数据失败:', error)
+    logger.error('加载统计数据失败:', error)
   }
 }
 
@@ -333,7 +334,7 @@ async function loadRecentAppointments() {
       }
     ]
   } catch (error) {
-    console.error('加载最近预约失败:', error)
+    logger.error('加载最近预约失败:', error)
   }
 }
 

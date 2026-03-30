@@ -12,6 +12,7 @@ import { LocalNotifications } from '@capacitor/local-notifications'
 import { Capacitor } from '@capacitor/core'
 import { registerPushToken, unregisterPushToken } from '@/api/notification'
 import { storage } from './storage'
+import { logger } from './logger'
 
 /**
  * Push notification service
@@ -27,25 +28,25 @@ class PushNotificationService {
    */
   async init() {
     try {
-      console.log('Initializing push notifications...')
+      logger.log('Initializing push notifications...')
 
       // Check if running in Capacitor
       const isCapacitor = typeof window !== 'undefined' && window.Capacitor
       if (!isCapacitor) {
-        console.log('Not running in Capacitor, skipping push notifications')
+        logger.log('Not running in Capacitor, skipping push notifications')
         return
       }
 
       // Check if PushNotifications plugin is available
       if (!PushNotifications) {
-        console.log('PushNotifications plugin not available, skipping')
+        logger.log('PushNotifications plugin not available, skipping')
         return
       }
 
       // Request permissions
       const result = await PushNotifications.requestPermissions()
       if (result.receive === 'granted') {
-        console.log('Push notification permissions granted')
+        logger.log('Push notification permissions granted')
 
         // Register for push notifications
         await this.register()
@@ -53,7 +54,7 @@ class PushNotificationService {
         // Set up listeners
         this.setupListeners()
       } else {
-        console.warn('Push notification permissions denied')
+        logger.warn('Push notification permissions denied')
       }
 
       // Configure local notifications
@@ -70,7 +71,7 @@ class PushNotificationService {
       })
     } catch (error) {
       // Don't throw - just log the error and continue
-      console.error('Failed to initialize push notifications:', error)
+      logger.error('Failed to initialize push notifications:', error)
       // Silently fail - app should work without push notifications
     }
   }
@@ -85,7 +86,7 @@ class PushNotificationService {
 
       // Listen for registration
       PushNotifications.addListener('registration', async (token) => {
-        console.log('Push notification registration successful:', token)
+        logger.log('Push notification registration successful:', token)
         this.token = token.value
         this.isRegistered = true
 
@@ -95,11 +96,11 @@ class PushNotificationService {
 
       // Listen for registration error
       PushNotifications.addListener('registrationError', (error) => {
-        console.error('Push notification registration error:', error)
+        logger.error('Push notification registration error:', error)
       })
 
     } catch (error) {
-      console.error('Failed to register for push notifications:', error)
+      logger.error('Failed to register for push notifications:', error)
       // Don't throw - allow app to continue without push notifications
     }
   }
@@ -110,12 +111,12 @@ class PushNotificationService {
   setupListeners() {
     // Handle incoming push notifications
     PushNotifications.addListener('pushNotificationReceived', (notification) => {
-      console.log('Push notification received:', notification)
+      logger.log('Push notification received:', notification)
     })
 
     // Handle push notification action performed
     PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
-      console.log('Push notification action performed:', notification)
+      logger.log('Push notification action performed:', notification)
 
       // Navigate based on notification data
       this.handleNotificationAction(notification)
@@ -123,7 +124,7 @@ class PushNotificationService {
 
     // Handle local notification action performed
     LocalNotifications.addListener('localNotificationActionPerformed', (notification) => {
-      console.log('Local notification action performed:', notification)
+      logger.log('Local notification action performed:', notification)
 
       // Navigate based on notification data
       this.handleNotificationAction(notification)
@@ -155,9 +156,9 @@ class PushNotificationService {
 
       // Store token locally
       storage.setPushToken(token)
-      console.log('Push token registered with server')
+      logger.log('Push token registered with server')
     } catch (error) {
-      console.error('Failed to register push token with server:', error)
+      logger.error('Failed to register push token with server:', error)
     }
   }
 
@@ -170,10 +171,10 @@ class PushNotificationService {
       if (token) {
         await unregisterPushToken({ token })
         storage.removePushToken()
-        console.log('Push token unregistered from server')
+        logger.log('Push token unregistered from server')
       }
     } catch (error) {
-      console.error('Failed to unregister push token:', error)
+      logger.error('Failed to unregister push token:', error)
     }
   }
 
@@ -204,7 +205,7 @@ class PushNotificationService {
       }
       return deviceId
     } catch (error) {
-      console.error('Failed to get device ID:', error)
+      logger.error('Failed to get device ID:', error)
       return null
     }
   }
@@ -224,7 +225,7 @@ class PushNotificationService {
         this.navigateToNotification(notificationData)
       }
     } catch (error) {
-      console.error('Failed to handle notification action:', error)
+      logger.error('Failed to handle notification action:', error)
     }
   }
 
@@ -273,7 +274,7 @@ class PushNotificationService {
         ]
       })
     } catch (error) {
-      console.error('Failed to schedule local notification:', error)
+      logger.error('Failed to schedule local notification:', error)
     }
   }
 
@@ -295,7 +296,7 @@ class PushNotificationService {
         ]
       })
     } catch (error) {
-      console.error('Failed to show local notification:', error)
+      logger.error('Failed to show local notification:', error)
     }
   }
 
@@ -305,9 +306,9 @@ class PushNotificationService {
   async checkPendingNotifications() {
     try {
       const pending = await LocalNotifications.getPending()
-      console.log('Pending notifications:', pending)
+      logger.log('Pending notifications:', pending)
     } catch (error) {
-      console.error('Failed to check pending notifications:', error)
+      logger.error('Failed to check pending notifications:', error)
     }
   }
 
@@ -319,7 +320,7 @@ class PushNotificationService {
       await LocalNotifications.cancel()
       await LocalNotifications.removeAllDeliveredNotifications()
     } catch (error) {
-      console.error('Failed to clear notifications:', error)
+      logger.error('Failed to clear notifications:', error)
     }
   }
 

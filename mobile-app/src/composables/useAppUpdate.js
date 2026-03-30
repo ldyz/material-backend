@@ -4,6 +4,7 @@ import { Device } from '@capacitor/device'
 import { Filesystem } from '@capacitor/filesystem'
 import { showToast } from 'vant'
 import request from '@/utils/request'
+import { logger } from '@/utils/logger'
 
 const isChecking = ref(false)
 const hasUpdate = ref(false)
@@ -25,39 +26,39 @@ const isWeb = ref(
 
 // 获取当前应用版本
 async function getCurrentVersion() {
-  console.log('[更新检测] 开始获取当前版本...')
-  console.log('[更新检测] window.Capacitor:', window.Capacitor)
-  console.log('[更新检测] isWeb.value:', isWeb.value)
-  console.log('[更新检测] protocol:', window.location?.protocol)
+  logger.log('[更新检测] 开始获取当前版本...')
+  logger.log('[更新检测] window.Capacitor:', window.Capacitor)
+  logger.log('[更新检测] isWeb.value:', isWeb.value)
+  logger.log('[更新检测] protocol:', window.location?.protocol)
 
   // 在 Web 环境中，从专门的版本文件读取
   if (isWeb.value) {
-    console.log('[更新检测] 使用 Web 环境，从 version.json 读取')
+    logger.log('[更新检测] 使用 Web 环境，从 version.json 读取')
     try {
       // 尝试从版本文件读取
       const response = await fetch('/version.json', { cache: 'no-store' })
       const versionData = await response.json()
       const version = versionData.version || '1.0.3'
       currentVersion.value = version
-      console.log('[更新检测] 从 version.json 读取到版本:', version)
+      logger.log('[更新检测] 从 version.json 读取到版本:', version)
       return version
     } catch (error) {
-      console.error('[更新检测] 无法读取版本文件，使用默认版本 1.0.3:', error)
+      logger.error('[更新检测] 无法读取版本文件，使用默认版本 1.0.3:', error)
       currentVersion.value = '1.0.3'
       return '1.0.3'
     }
   }
 
   // 原生环境，使用 Capacitor App API
-  console.log('[更新检测] 使用原生环境，调用 App.getInfo()')
+  logger.log('[更新检测] 使用原生环境，调用 App.getInfo()')
   try {
     const info = await App.getInfo()
-    console.log('[更新检测] App.getInfo() 返回:', info)
+    logger.log('[更新检测] App.getInfo() 返回:', info)
     currentVersion.value = info.version
-    console.log('[更新检测] 获取到版本号:', info.version)
+    logger.log('[更新检测] 获取到版本号:', info.version)
     return info.version
   } catch (error) {
-    console.error('[更新检测] 获取应用版本失败:', error)
+    logger.error('[更新检测] 获取应用版本失败:', error)
     return '1.0.3'
   }
 }
@@ -67,12 +68,12 @@ async function checkUpdate() {
   if (isChecking.value) return
 
   isChecking.value = true
-  console.log('[更新检测] ========== 开始检查更新 ==========')
+  logger.log('[更新检测] ========== 开始检查更新 ==========')
 
   try {
     // 获取当前版本
     await getCurrentVersion()
-    console.log('[更新检测] 当前版本:', currentVersion.value)
+    logger.log('[更新检测] 当前版本:', currentVersion.value)
 
     // 确定平台类型
     let platform = 'android' // 默认为 android
@@ -80,14 +81,14 @@ async function checkUpdate() {
       try {
         const deviceInfo = await Device.getInfo()
         platform = deviceInfo.platform === 'android' ? 'android' : 'ios'
-        console.log('[更新检测] 设备平台:', deviceInfo.platform)
+        logger.log('[更新检测] 设备平台:', deviceInfo.platform)
       } catch (error) {
-        console.warn('[更新检测] 无法获取设备信息，使用默认平台:', error)
+        logger.warn('[更新检测] 无法获取设备信息，使用默认平台:', error)
       }
     }
 
     // 从后端获取最新版本信息
-    console.log('[更新检测] 请求参数:', { platform, current_version: currentVersion.value })
+    logger.log('[更新检测] 请求参数:', { platform, current_version: currentVersion.value })
     const response = await request.get('/app/version', {
       params: {
         platform: platform,
@@ -95,11 +96,11 @@ async function checkUpdate() {
       }
     })
 
-    console.log('[更新检测] API 响应:', response)
+    logger.log('[更新检测] API 响应:', response)
     const data = response.data
 
     if (data.has_update) {
-      console.log('[更新检测] ✓ 发现新版本:', data.latest_version)
+      logger.log('[更新检测] ✓ 发现新版本:', data.latest_version)
       latestVersion.value = data.latest_version
       downloadUrl.value = data.download_url
       forceUpdate.value = data.force_update || false
@@ -114,11 +115,11 @@ async function checkUpdate() {
       }
     }
 
-    console.log('[更新检测] × 已是最新版本')
+    logger.log('[更新检测] × 已是最新版本')
     hasUpdate.value = false
     return { hasUpdate: false }
   } catch (error) {
-    console.error('检查更新失败:', error)
+    logger.error('检查更新失败:', error)
     hasUpdate.value = false
     return { hasUpdate: false }
   } finally {
@@ -128,12 +129,12 @@ async function checkUpdate() {
 
 // 下载并安装更新（仅 Android）
 async function downloadAndInstall() {
-  console.log('[更新检测] ========== 开始下载 APK ==========')
+  logger.log('[更新检测] ========== 开始下载 APK ==========')
 
   try {
     // 在 Web 环境中，直接打开下载链接
     if (isWeb.value) {
-      console.log('[更新检测] Web 环境，打开下载链接')
+      logger.log('[更新检测] Web 环境，打开下载链接')
       if (downloadUrl.value) {
         window.open(downloadUrl.value, '_blank')
       }
@@ -141,10 +142,10 @@ async function downloadAndInstall() {
     }
 
     const deviceInfo = await Device.getInfo()
-    console.log('[更新检测] 设备平台:', deviceInfo.platform)
+    logger.log('[更新检测] 设备平台:', deviceInfo.platform)
 
     if (deviceInfo.platform !== 'android') {
-      console.log('[更新检测] 非 Android 设备，打开浏览器')
+      logger.log('[更新检测] 非 Android 设备，打开浏览器')
       if (downloadUrl.value) {
         window.open(downloadUrl.value, '_blank')
       }
@@ -153,11 +154,11 @@ async function downloadAndInstall() {
 
     // Android 使用系统下载管理器（通过浏览器）
     if (!downloadUrl.value) {
-      console.error('[更新检测] 下载链接为空')
+      logger.error('[更新检测] 下载链接为空')
       return
     }
 
-    console.log('[更新检测] 使用系统下载器:', downloadUrl.value)
+    logger.log('[更新检测] 使用系统下载器:', downloadUrl.value)
 
     // 显示提示
     showToast({
@@ -183,7 +184,7 @@ async function downloadAndInstall() {
         document.body.removeChild(link)
       }, 100)
 
-      console.log('[更新检测] 已触发浏览器下载')
+      logger.log('[更新检测] 已触发浏览器下载')
 
       // 提示用户查看下载进度
       setTimeout(() => {
@@ -196,8 +197,8 @@ async function downloadAndInstall() {
     }, 500)
 
   } catch (error) {
-    console.error('[更新检测] 下载失败:', error)
-    console.error('[更新检测] 错误详情:', {
+    logger.error('[更新检测] 下载失败:', error)
+    logger.error('[更新检测] 错误详情:', {
       message: error.message,
       stack: error.stack,
       name: error.name
@@ -288,8 +289,8 @@ export function useAutoUpdate(options = {}) {
 
   // 执行更新检查
   async function performCheck() {
-    console.log('[自动更新] ========== 执行更新检查 ==========')
-    console.log('[自动更新] isChecking:', isChecking.value)
+    logger.log('[自动更新] ========== 执行更新检查 ==========')
+    logger.log('[自动更新] isChecking:', isChecking.value)
 
     // 执行检查
     const result = await checkUpdate()
@@ -297,7 +298,7 @@ export function useAutoUpdate(options = {}) {
     // 如果已跳过此版本且不是强制更新，则隐藏更新提示
     if (result && result.hasUpdate && !result.forceUpdate) {
       if (hasSkippedVersion()) {
-        console.log('[自动更新] 用户已跳过此版本，不显示提示')
+        logger.log('[自动更新] 用户已跳过此版本，不显示提示')
         hasUpdate.value = false
       }
     }
@@ -312,13 +313,13 @@ export function useAutoUpdate(options = {}) {
     }
 
     if (!autoCheck) {
-      console.log('[自动更新] 自动检查已禁用')
+      logger.log('[自动更新] 自动检查已禁用')
       return
     }
 
-    console.log('[自动更新] 启动定时检查，间隔:', checkInterval / 1000 / 60 / 60, '小时')
+    logger.log('[自动更新] 启动定时检查，间隔:', checkInterval / 1000 / 60 / 60, '小时')
     checkTimer = setInterval(() => {
-      console.log('[自动更新] 定时检查触发')
+      logger.log('[自动更新] 定时检查触发')
       performCheck()
     }, checkInterval)
   }
@@ -328,7 +329,7 @@ export function useAutoUpdate(options = {}) {
     if (checkTimer) {
       clearInterval(checkTimer)
       checkTimer = null
-      console.log('[自动更新] 定时检查已停止')
+      logger.log('[自动更新] 定时检查已停止')
     }
   }
 
@@ -338,7 +339,7 @@ export function useAutoUpdate(options = {}) {
     if (window.Capacitor && window.Capacitor.App) {
       window.Capacitor.App.addListener('appStateChange', (state) => {
         if (state.isActive) {
-          console.log('[自动更新] 应用恢复活动状态，检查更新')
+          logger.log('[自动更新] 应用恢复活动状态，检查更新')
           // 延迟 3 秒检查，避免频繁检查
           setTimeout(() => {
             performCheck()
@@ -349,14 +350,14 @@ export function useAutoUpdate(options = {}) {
   }
 
   onMounted(() => {
-    console.log('[自动更新] ========== 组件已挂载 ==========')
-    console.log('[自动更新] autoCheck:', autoCheck)
-    console.log('[自动更新] checkOnMount:', checkOnMount)
+    logger.log('[自动更新] ========== 组件已挂载 ==========')
+    logger.log('[自动更新] autoCheck:', autoCheck)
+    logger.log('[自动更新] checkOnMount:', checkOnMount)
 
     if (checkOnMount) {
       // 延迟 2 秒执行首次检查，等待应用完全加载
       setTimeout(() => {
-        console.log('[自动更新] 执行首次检查')
+        logger.log('[自动更新] 执行首次检查')
         performCheck()
       }, 2000)
     }

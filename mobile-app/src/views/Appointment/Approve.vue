@@ -124,6 +124,7 @@ import {
   getAvailableWorkers,
   getTimeSlotLabel
 } from '@/api/appointment'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const route = useRoute()
@@ -152,10 +153,10 @@ onMounted(async () => {
 async function loadDetail() {
   try {
     const response = await getAppointmentDetail(route.params.id)
-    console.log('Appointment detail response:', response)
+    logger.log('Appointment detail response:', response)
     appointment.value = response.data
   } catch (error) {
-    console.error('加载预约单详情失败:', error)
+    logger.error('加载预约单详情失败:', error)
     showFailToast('加载预约单详情失败')
   } finally {
     loading.value = false
@@ -165,20 +166,20 @@ async function loadDetail() {
 async function loadApprovalHistory() {
   try {
     const response = await getApprovalHistory(route.params.id)
-    console.log('Approval history response:', response)
+    logger.log('Approval history response:', response)
     approvalLogs.value = response.data || []
   } catch (error) {
-    console.error('加载审批历史失败:', error)
+    logger.error('加载审批历史失败:', error)
   }
 }
 
 async function loadCurrentApproval() {
   try {
     const response = await getCurrentApproval(route.params.id)
-    console.log('Current approval response:', response)
+    logger.log('Current approval response:', response)
     currentApproval.value = response.data
   } catch (error) {
-    console.error('加载当前审批节点失败:', error)
+    logger.error('加载当前审批节点失败:', error)
   }
 }
 

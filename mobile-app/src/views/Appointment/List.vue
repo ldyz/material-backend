@@ -37,6 +37,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { getAppointments } from '@/api/appointment'
 import ListContainer from '@/components/common/ListContainer.vue'
 import ListItemCard from '@/components/common/ListItemCard.vue'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const route = useRoute()
@@ -75,7 +76,7 @@ onMounted(() => {
 // 页面激活时刷新数据（从创建页返回时）
 onActivated(() => {
   // 从其他页面返回时，总是刷新列表
-  console.log('List activated, refreshing data...')
+  logger.log('List activated, refreshing data...')
   onFilterChange()
 })
 
@@ -128,16 +129,16 @@ async function loadData() {
       params.is_urgent = false
     }
 
-    console.log('Loading appointments with params:', params)
+    logger.log('Loading appointments with params:', params)
     const response = await getAppointments(params)
-    console.log('API response:', response)
-    console.log('Response.data:', response.data)
-    console.log('Response.meta:', response.meta)
+    logger.log('API response:', response)
+    logger.log('Response.data:', response.data)
+    logger.log('Response.meta:', response.meta)
 
     // response 直接就是拦截器返回的 { success: true, data: [...], meta: {...} }
     // response.data 才是数据数组
     const items = response.data || []
-    console.log('Parsed items:', items)
+    logger.log('Parsed items:', items)
 
     if (currentPage.value === 1) {
       appointments.value = items
@@ -153,7 +154,7 @@ async function loadData() {
       currentPage.value++
     }
   } catch (error) {
-    console.error('加载预约单失败:', error)
+    logger.error('加载预约单失败:', error)
     finished.value = true
   } finally {
     loading.value = false

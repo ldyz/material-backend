@@ -51,6 +51,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { getPlanDetail, approvePlan, rejectPlan } from '@/api/material_plan'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const route = useRoute()

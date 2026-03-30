@@ -52,6 +52,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import { getRequisitionDetail, approveRequisition, rejectRequisition } from '@/api/requisition'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const route = useRoute()

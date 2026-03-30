@@ -41,6 +41,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useAppUpdate } from '@/composables/useAppUpdate'
+import { logger } from '@/utils/logger'
 
 const props = defineProps({
   show: {
@@ -104,7 +105,7 @@ async function handleConfirm() {
     // 对于 iOS，跳转到 App Store
     await downloadAndInstall()
   } catch (error) {
-    console.error('下载更新失败:', error)
+    logger.error('下载更新失败:', error)
   } finally {
     isDownloading.value = false
   }

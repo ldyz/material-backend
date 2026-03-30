@@ -14,14 +14,15 @@ import { initWebSocket } from '@/utils/websocket'
 import { setRouter } from '@/utils/request'
 import { Capacitor } from '@capacitor/core'
 import { useAuthStore } from '@/stores/auth'
+import { logger } from '@/utils/logger'
 
 // 全局错误处理
 window.addEventListener('error', (event) => {
-  console.error('Global error:', event.error)
+  logger.error('Global error:', event.error)
 })
 
 window.addEventListener('unhandledrejection', (event) => {
-  console.error('Unhandled promise rejection:', event.reason)
+  logger.error('Unhandled promise rejection:', event.reason)
 })
 
 const app = createApp(App)
@@ -35,7 +36,7 @@ setRouter(router)
 
 // 添加全局错误处理器
 app.config.errorHandler = (err, instance, info) => {
-  console.error('Vue error:', err, info)
+  logger.error('Vue error:', err, info)
 }
 
 app.mount('#app')
@@ -50,7 +51,7 @@ async function setupStatusBar() {
     try {
       // 获取状态栏信息
       const info = await StatusBar.getInfo()
-      console.log('Status bar height:', info.height)
+      logger.log('Status bar height:', info.height)
 
       // 设置 CSS 变量
       document.documentElement.style.setProperty('--capacitor-status-bar-height', `${info.height}px`)
@@ -61,7 +62,7 @@ async function setupStatusBar() {
       // 隐藏状态栏覆盖（可选）
       await StatusBar.setOverlaysWebView({ overlay: false })
     } catch (error) {
-      console.error('Failed to setup status bar:', error)
+      logger.error('Failed to setup status bar:', error)
     }
   }
 }

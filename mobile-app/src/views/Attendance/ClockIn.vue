@@ -187,6 +187,7 @@ import {
 } from '@/api/attendance'
 import { getAppointments } from '@/api/appointment'
 import { getAssetUrl } from '@/utils/request'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 
@@ -314,7 +315,7 @@ function getLocation() {
     (error) => {
       locationLoading.value = false
       locationError.value = '无法获取位置'
-      console.error('定位失败:', error)
+      logger.error('定位失败:', error)
     },
     {
       enableHighAccuracy: true,
@@ -371,7 +372,7 @@ async function loadData(targetDate = null) {
       selectedAppointment.value = null
     }
   } catch (error) {
-    console.error('加载数据失败:', error)
+    logger.error('加载数据失败:', error)
     showToast('加载数据失败')
   } finally {
     loading.value = false
@@ -462,7 +463,7 @@ async function loadBackfillStatistics() {
 
     backfillDateClockedTypes.value = Array.from(types)
   } catch (error) {
-    console.error('加载打卡记录失败:', error)
+    logger.error('加载打卡记录失败:', error)
     backfillDateClockedTypes.value = []
   }
 }
@@ -494,7 +495,7 @@ async function handlePhotoAfterRead(file) {
 
     try {
       const response = await uploadImage(uploadFile)
-      console.log('上传响应:', response)
+      logger.log('上传响应:', response)
 
       if (response.data && response.data.url) {
         photoUrls.value.push(response.data.url)
@@ -506,7 +507,7 @@ async function handlePhotoAfterRead(file) {
         throw new Error('上传返回数据格式错误')
       }
     } catch (error) {
-      console.error('上传照片失败:', error)
+      logger.error('上传照片失败:', error)
       showToast('上传照片失败: ' + (error.message || '未知错误'))
       f.status = 'failed'
       f.message = '上传失败'
@@ -556,7 +557,7 @@ async function handleClockIn() {
       data.clock_in_time = `${backfillDate.value} ${String(hour).padStart(2, '0')}:00:00`
     }
 
-    console.log('打卡数据:', data)
+    logger.log('打卡数据:', data)
 
     if (selectedAppointment.value) {
       data.appointment_id = selectedAppointment.value.id

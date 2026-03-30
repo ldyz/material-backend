@@ -297,7 +297,7 @@ const currentDateRange = computed(() => {
 
 // 日视图时间段数据
 const dayTimeSlots = computed(() => {
-  const dateStr = currentDate.value.toISOString().split('T')[0]
+  const dateStr = formatDateToLocal(new Date(currentDate.value))
   const timeSlots = [
     { time_slot: 'morning', label: '上午 (8:00-11:30)' },
     { time_slot: 'noon', label: '中午 (12:00-13:30)' },
@@ -330,7 +330,7 @@ function formatDayHeader(date) {
 
 // 获取某天的统计信息
 function getDayStats(date) {
-  const dateStr = new Date(date).toISOString().split('T')[0]
+  const dateStr = formatDateToLocal(new Date(date))
   const dayAppointments = appointments.value.filter(a => {
     const aptDate = a.work_date.split(' ')[0] || a.work_date.split('T')[0]
     return aptDate === dateStr
@@ -405,25 +405,37 @@ async function loadData() {
   }
 }
 
+// 格式化日期为 YYYY-MM-DD 格式（避免时区问题）
+function formatDateToLocal(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function getDateRange() {
   const date = currentDate.value
   let startDate, endDate
 
   if (viewMode.value === 'day') {
-    startDate = new Date(date).toISOString().split('T')[0]
+    startDate = formatDateToLocal(new Date(date))
     endDate = startDate
   } else if (viewMode.value === 'week') {
     const start = new Date(date)
     const day = start.getDay()
     start.setDate(start.getDate() - (day === 0 ? 6 : day - 1))
-    startDate = start.toISOString().split('T')[0]
+    startDate = formatDateToLocal(start)
 
     const end = new Date(start)
     end.setDate(end.getDate() + 6)
-    endDate = end.toISOString().split('T')[0]
+    endDate = formatDateToLocal(end)
   } else if (viewMode.value === 'month') {
-    startDate = new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0]
-    endDate = new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().split('T')[0]
+    // 当月第一天
+    const firstDay = new Date(date.getFullYear(), date.getMonth(), 1)
+    startDate = formatDateToLocal(firstDay)
+    // 当月最后一天（下个月的第0天）
+    const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0)
+    endDate = formatDateToLocal(lastDay)
   }
 
   return { startDate, endDate }
@@ -446,7 +458,7 @@ function buildWeekData() {
   for (let i = 0; i < 7; i++) {
     const d = new Date(start)
     d.setDate(d.getDate() + i)
-    const dateStr = d.toISOString().split('T')[0]
+    const dateStr = formatDateToLocal(d)
 
     const slots = timeSlots.map(slot => {
       const slotAppointments = appointments.value.filter(a => {

@@ -57,6 +57,11 @@ func (s *CalendarService) CheckAvailabilityWithExclude(workerID uint, workDate t
 
 // CheckMultipleAvailability 批量检查多个作业人员的可用性
 func (s *CalendarService) CheckMultipleAvailability(workerIDs []uint, workDate time.Time, timeSlot string) (map[uint]bool, error) {
+	return s.CheckMultipleAvailabilityWithExclude(workerIDs, workDate, timeSlot, nil)
+}
+
+// CheckMultipleAvailabilityWithExclude 批量检查多个作业人员的可用性（支持排除特定预约单）
+func (s *CalendarService) CheckMultipleAvailabilityWithExclude(workerIDs []uint, workDate time.Time, timeSlot string, excludeAppointmentID *uint) (map[uint]bool, error) {
 	result := make(map[uint]bool)
 
 	// 初始化所有人都为可用
@@ -78,6 +83,11 @@ func (s *CalendarService) CheckMultipleAvailability(workerIDs []uint, workDate t
 	}
 
 	for _, cal := range calendars {
+		// 如果是被排除的预约单锁定的，视为可用
+		if excludeAppointmentID != nil && cal.AppointmentID != nil && *cal.AppointmentID == *excludeAppointmentID {
+			result[cal.WorkerID] = true
+			continue
+		}
 		if !cal.IsAvailable || cal.Status != CalendarStatusAvailable {
 			result[cal.WorkerID] = false
 		}
@@ -295,6 +305,11 @@ type WorkerWithInfo struct {
 
 // GetAllWorkersWithAvailability 获取所有作业人员及其可用状态
 func (s *CalendarService) GetAllWorkersWithAvailability(workDate time.Time, timeSlot string) ([]WorkerWithInfo, error) {
+	return s.GetAllWorkersWithAvailabilityExclude(workDate, timeSlot, nil)
+}
+
+// GetAllWorkersWithAvailabilityExclude 获取所有作业人员及其可用状态（支持排除特定预约单）
+func (s *CalendarService) GetAllWorkersWithAvailabilityExclude(workDate time.Time, timeSlot string, excludeAppointmentID *uint) ([]WorkerWithInfo, error) {
 	// 获取作业人员和班组长角色的用户（支持中文名称）
 	type UserInfo struct {
 		ID     uint
@@ -328,8 +343,8 @@ func (s *CalendarService) GetAllWorkersWithAvailability(workDate time.Time, time
 		userIDs[i] = u.ID
 	}
 
-	// 检查可用性
-	availability, err := s.CheckMultipleAvailability(userIDs, workDate, timeSlot)
+	// 检查可用性（支持排除特定预约单）
+	availability, err := s.CheckMultipleAvailabilityWithExclude(userIDs, workDate, timeSlot, excludeAppointmentID)
 	if err != nil {
 		return nil, err
 	}

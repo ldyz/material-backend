@@ -4295,6 +4295,7 @@ export const appointmentApi = {
    * @param {Object} params - 查询参数
    * @param {string} params.work_date - 作业日期
    * @param {string} params.time_slot - 时间段
+   * @param {number} params.exclude_appointment_id - 排除的预约单ID（编辑时排除自己锁定的作业人员）
    * @returns {Promise} 返回可用作业人员列表
    */
   getAvailableWorkers(params) {

@@ -177,8 +177,11 @@
             <div
               v-for="worker in workerList"
               :key="worker.id"
-              :class="['worker-selector-card', { 'selected': isWorkerSelected(worker.id) }]"
-              @click="toggleWorkerSelection(worker.id)"
+              :class="[
+                'worker-selector-card',
+                { 'selected': isWorkerSelected(worker.id), 'unavailable': !worker.is_available }
+              ]"
+              @click="toggleWorkerSelection(worker)"
             >
               <div class="worker-card-avatar">
                 <el-avatar
@@ -186,15 +189,16 @@
                   :src="worker.avatar || undefined"
                   :style="!worker.avatar ? { backgroundColor: getAvatarColor(worker.id) } : {}"
                 >
-                  {{ (worker.full_name || worker.username || '?').charAt(0) }}
+                  {{ (worker.name || worker.full_name || worker.username || '?').charAt(0) }}
                 </el-avatar>
                 <div v-if="isWorkerSelected(worker.id)" class="selected-badge">
                   <el-icon><Check /></el-icon>
                 </div>
               </div>
               <div class="worker-card-info">
-                <div class="worker-card-name">{{ worker.full_name || worker.username }}</div>
-                <div v-if="worker.email" class="worker-card-email">{{ worker.email }}</div>
+                <div class="worker-card-name">{{ worker.name || worker.full_name || worker.username }}</div>
+                <div v-if="!worker.is_available" class="worker-card-unavailable">该时段已占用</div>
+                <div v-else-if="worker.email" class="worker-card-email">{{ worker.email }}</div>
               </div>
             </div>
             <div v-if="workerList.length === 0 && !loadingWorkers" class="empty-workers">
@@ -283,14 +287,39 @@ async function fetchProjects() {
   }
 }
 
-// 获取作业人员列表
+// 获取作业人员列表（带可用性状态）
 async function fetchWorkers() {
   loadingWorkers.value = true
   try {
-    const response = await appointmentApi.getWorkersList()
+    // 如果没有选择日期或时间段，使用基本列表
+    if (!workDate.value || !formData.value.time_slot) {
+      const response = await appointmentApi.getWorkersList()
+      workerList.value = (response.data || []).map(w => ({ ...w, is_available: true }))
+      return
+    }
+
+    // 使用带可用性状态的API
+    const params = {
+      work_date: workDate.value,
+      time_slot: formData.value.time_slot
+    }
+
+    // 编辑模式下，排除当前预约单自己锁定的作业人员
+    if (props.mode === 'edit' && props.appointment?.id) {
+      params.exclude_appointment_id = props.appointment.id
+    }
+
+    const response = await appointmentApi.getAvailableWorkers(params)
     workerList.value = response.data || []
   } catch (error) {
     console.error('获取作业人员列表失败:', error)
+    // 降级使用基本列表
+    try {
+      const response = await appointmentApi.getWorkersList()
+      workerList.value = (response.data || []).map(w => ({ ...w, is_available: true }))
+    } catch (e) {
+      console.error('降级获取作业人员列表也失败:', e)
+    }
   } finally {
     loadingWorkers.value = false
   }
@@ -647,7 +676,7 @@ const formRules = {
   ]
 }
 
-// TODO: 获取作业人员列表
+// 获取作业人员列表
 const workerList = ref([])
 const loadingWorkers = ref(false)
 const showWorkerSelector = ref(false)
@@ -655,9 +684,8 @@ const showWorkerSelector = ref(false)
 // 显示人员选择器
 async function handleShowWorkerSelector() {
   showWorkerSelector.value = true
-  if (workerList.value.length === 0) {
-    await fetchWorkers()
-  }
+  // 每次显示时都重新获取作业人员列表（因为日期和时间段可能已改变）
+  await fetchWorkers()
 }
 
 // 隐藏人员选择器
@@ -669,7 +697,7 @@ function handleHideWorkerSelector() {
 function getSelectedWorkerName() {
   if (selectedWorkerIds.value.length === 0) return ''
   const workers = workerList.value.filter(w => selectedWorkerIds.value.includes(w.id))
-  return workers.map(w => w.full_name || w.username).join('、')
+  return workers.map(w => w.name || w.full_name || w.username).join('、')
 }
 
 // 检查作业人员是否被选中
@@ -678,7 +706,14 @@ function isWorkerSelected(workerId) {
 }
 
 // 切换作业人员选择状态（支持多选）
-function toggleWorkerSelection(workerId) {
+function toggleWorkerSelection(worker) {
+  // 如果不可用且未选中，不允许选择
+  if (!worker.is_available && !isWorkerSelected(worker.id)) {
+    ElMessage.warning(`${worker.name || worker.full_name || worker.username} 在该时间段已被占用`)
+    return
+  }
+
+  const workerId = worker.id
   const index = selectedWorkerIds.value.indexOf(workerId)
   if (index > -1) {
     // 取消选中
@@ -980,6 +1015,33 @@ function handleClose() {
 .worker-card-email {
   font-size: 11px;
   color: #909399;
+}
+
+.worker-card-unavailable {
+  font-size: 11px;
+  color: #f56c6c;
+  background: #fef0f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* 不可用状态的作业人员卡片 */
+.worker-selector-card.unavailable {
+  opacity: 0.6;
+  background: #fafafa;
+  cursor: not-allowed;
+}
+
+.worker-selector-card.unavailable:hover {
+  border-color: #dcdfe6;
+  box-shadow: none;
+}
+
+/* 已选中的不可用卡片（编辑时可以取消选中） */
+.worker-selector-card.unavailable.selected {
+  opacity: 1;
+  border-color: #e6a23c;
+  background: #fdf6ec;
 }
 
 .empty-workers {

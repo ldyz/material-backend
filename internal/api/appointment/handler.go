@@ -64,8 +64,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	// 更新预约单
 	g.PUT("/:id", auth.PermissionMiddleware(db, "appointment_edit"), updateAppointment(service))
 
-	// 删除预约单
-	g.DELETE("/:id", auth.PermissionMiddleware(db, "appointment_delete"), deleteAppointment(service))
+	// 删除预约单（硬删除）
+	g.DELETE("/:id", auth.PermissionMiddleware(db, "appointment_delete"), hardDeleteAppointment(service))
 
 	// 提交审批
 	g.POST("/:id/submit", auth.PermissionMiddleware(db, "appointment_submit"), submitAppointment(service, workflowService))
@@ -554,35 +554,6 @@ func updateAppointment(service *AppointmentService) gin.HandlerFunc {
 	}
 }
 
-// deleteAppointment 删除预约单
-func deleteAppointment(service *AppointmentService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		idStr := c.Param("id")
-		id, err := strconv.ParseUint(idStr, 10, 32)
-		if err != nil {
-			response.BadRequest(c, "无效的预约单ID")
-			return
-		}
-
-		userID := c.GetInt64("current_user_id")
-		userName := c.GetString("current_username")
-
-		// 获取原始数据用于日志记录
-		before, _ := service.GetByID(uint(id))
-
-		if err := service.Delete(uint(id)); err != nil {
-			response.BadRequest(c, err.Error())
-			return
-		}
-
-		// 记录操作日志
-		uid := uint(userID)
-		audit.LogDelete(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, uint(id), before.AppointmentNo, before)
-
-		response.SuccessWithMessage(c, nil, "删除成功")
-	}
-}
-
 // submitAppointment 提交审批并自动启动工作流
 func submitAppointment(service *AppointmentService, workflowService *WorkflowService) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -822,7 +793,7 @@ func completeAppointment(service *AppointmentService) gin.HandlerFunc {
 	}
 }
 
-// cancelAppointment 取消预约
+// cancelAppointment 取消预约（修改状态为已取消）
 func cancelAppointment(service *AppointmentService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		idStr := c.Param("id")
@@ -833,17 +804,58 @@ func cancelAppointment(service *AppointmentService) gin.HandlerFunc {
 		}
 
 		userID := c.GetInt64("current_user_id")
+		userName := c.GetString("current_username")
 		if userID == 0 {
 			response.Unauthorized(c, "未授权")
 			return
 		}
 
-		if err := service.Cancel(uint(id), uint(userID)); err != nil {
+		appointment, err := service.Cancel(uint(id), uint(userID))
+		if err != nil {
 			response.BadRequest(c, err.Error())
 			return
 		}
 
-		response.SuccessWithMessage(c, nil, "预约已取消并删除")
+		// 记录操作日志
+		uid := uint(userID)
+		audit.LogCancel(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, appointment.ID, appointment.AppointmentNo, "取消预约")
+
+		response.SuccessWithMessage(c, appointment.ToDTO(), "预约已取消")
+	}
+}
+
+// hardDeleteAppointment 硬删除预约单
+func hardDeleteAppointment(service *AppointmentService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		idStr := c.Param("id")
+		id, err := strconv.ParseUint(idStr, 10, 32)
+		if err != nil {
+			response.BadRequest(c, "无效的预约单ID")
+			return
+		}
+
+		userID := c.GetInt64("current_user_id")
+		userName := c.GetString("current_username")
+		if userID == 0 {
+			response.Unauthorized(c, "未授权")
+			return
+		}
+
+		// 获取预约单信息用于日志
+		appointment, _ := service.GetByID(uint(id))
+
+		if err := service.HardDelete(uint(id), uint(userID)); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+
+		// 记录操作日志
+		if appointment != nil {
+			uid := uint(userID)
+			audit.LogDelete(&uid, userName, audit.ModuleAppointment, audit.ResourceAppointment, uint(id), appointment.AppointmentNo, appointment)
+		}
+
+		response.SuccessWithMessage(c, nil, "预约单已删除")
 	}
 }
 
@@ -1029,6 +1041,7 @@ func getAvailableWorkers(service *CalendarService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		workDateStr := c.Query("work_date")
 		timeSlot := c.Query("time_slot")
+		excludeAppointmentIDStr := c.Query("exclude_appointment_id")
 
 		if workDateStr == "" || timeSlot == "" {
 			response.BadRequest(c, "请提供作业日期和时间段")
@@ -1041,7 +1054,16 @@ func getAvailableWorkers(service *CalendarService) gin.HandlerFunc {
 			return
 		}
 
-		workers, err := service.GetAllWorkersWithAvailability(workDate, timeSlot)
+		// 解析排除的预约单ID（用于编辑时排除自己锁定的作业人员）
+		var excludeAppointmentID *uint
+		if excludeAppointmentIDStr != "" {
+			if id, err := strconv.ParseUint(excludeAppointmentIDStr, 10, 32); err == nil {
+				aid := uint(id)
+				excludeAppointmentID = &aid
+			}
+		}
+
+		workers, err := service.GetAllWorkersWithAvailabilityExclude(workDate, timeSlot, excludeAppointmentID)
 		if err != nil {
 			response.InternalError(c, "获取作业人员失败")
 			return

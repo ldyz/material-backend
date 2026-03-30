@@ -160,7 +160,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="created_at" label="创建时间" width="160" />
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="340" fixed="right">
           <template #default="scope">
             <el-button
               type="info"
@@ -196,6 +196,15 @@
               v-if="canAssign(scope.row)"
             >
               分配
+            </el-button>
+            <el-button
+              type="warning"
+              size="small"
+              :icon="Close"
+              @click="handleCancel(scope.row)"
+              v-if="canCancel(scope.row)"
+            >
+              取消
             </el-button>
             <el-button
               type="danger"
@@ -265,7 +274,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Refresh, Plus, Download, View, Edit, Delete, Check,
-  Calendar, User
+  Calendar, User, Close
 } from '@element-plus/icons-vue'
 import { defineAsyncComponent } from 'vue'
 import { useAuthStore } from '@/stores/auth'
@@ -512,11 +521,33 @@ function handleSizeChange(size) {
 }
 
 function canEdit(row) {
-  return row.status === 'draft' && authStore.hasPermission('appointment_edit')
+  // 草稿和待审批状态都可以编辑
+  return (row.status === 'draft' || row.status === 'pending') && authStore.hasPermission('appointment_edit')
 }
 
 function canDelete(row) {
-  return row.status === 'draft' && authStore.hasPermission('appointment_delete')
+  // 只有草稿和已取消状态的预约单可以删除
+  return (row.status === 'draft' || row.status === 'cancelled') && authStore.hasPermission('appointment_delete')
+}
+
+function canCancel(row) {
+  // 草稿、待审批、已排期状态可以取消
+  return ['draft', 'pending', 'scheduled'].includes(row.status) && authStore.hasPermission('appointment_cancel')
+}
+
+function handleCancel(row) {
+  ElMessageBox.confirm('确认取消此预约单？取消后状态将变为"已取消"。', '提示', {
+    type: 'warning'
+  }).then(async () => {
+    try {
+      await appointmentApi.cancel(row.id)
+      ElMessage.success('预约已取消')
+      loadData()
+      loadStats()
+    } catch (error) {
+      ElMessage.error(error.message || '取消失败')
+    }
+  })
 }
 
 function canApprove(row) {

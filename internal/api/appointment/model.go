@@ -148,19 +148,21 @@ type CreateAppointmentRequest struct {
 
 // UpdateAppointmentRequest 更新预约单请求
 type UpdateAppointmentRequest struct {
-	ProjectID         *uint   `json:"project_id"`
-	ContactPhone      string  `json:"contact_phone"`
-	ContactPerson     string  `json:"contact_person"`
-	WorkDate          string  `json:"work_date"`
-	TimeSlot          string  `json:"time_slot" binding:"omitempty,oneof=morning noon afternoon full_day"`
-	WorkLocation      string  `json:"work_location"`
-	WorkContent       string  `json:"work_content"`
-	WorkType          string  `json:"work_type"`
-	IsUrgent          bool    `json:"is_urgent"`
-	Priority          int     `json:"priority" binding:"omitempty,min=0,max=10"`
-	UrgentReason      string  `json:"urgent_reason"`
-	AssignedWorkerID  *uint   `json:"assigned_worker_id"`
-	Status            string  `json:"status" binding:"omitempty,oneof=draft pending scheduled in_progress completed cancelled rejected"`
+	ProjectID           *uint   `json:"project_id"`
+	ContactPhone        string  `json:"contact_phone"`
+	ContactPerson       string  `json:"contact_person"`
+	WorkDate            string  `json:"work_date"`
+	TimeSlot            string  `json:"time_slot" binding:"omitempty,oneof=morning noon afternoon full_day"`
+	WorkLocation        string  `json:"work_location"`
+	WorkContent         string  `json:"work_content"`
+	WorkType            string  `json:"work_type"`
+	IsUrgent            bool    `json:"is_urgent"`
+	Priority            int     `json:"priority" binding:"omitempty,min=0,max=10"`
+	UrgentReason        string  `json:"urgent_reason"`
+	AssignedWorkerID    *uint   `json:"assigned_worker_id"`     // 兼容单选
+	AssignedWorkerIDs   string  `json:"assigned_worker_ids"`    // JSON数组格式，支持多选
+	AssignedWorkerNames string  `json:"assigned_worker_names"`  // 逗号分隔
+	Status              string  `json:"status" binding:"omitempty,oneof=draft pending scheduled in_progress completed cancelled rejected"`
 }
 
 // AppointmentListRequest 预约单列表查询请求

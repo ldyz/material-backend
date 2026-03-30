@@ -133,7 +133,7 @@ async function handleReject() {
     }
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('拒绝失败:', error)
+      logger.error('拒绝失败:', error)
     }
   }
 }

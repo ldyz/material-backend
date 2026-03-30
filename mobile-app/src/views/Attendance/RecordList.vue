@@ -370,7 +370,7 @@ function getPhotoList(record) {
         })
       }
     } catch (e) {
-      console.error('解析 photo_urls 失败:', e)
+      logger.error('解析 photo_urls 失败:', e)
     }
   }
   // 兼容单张照片

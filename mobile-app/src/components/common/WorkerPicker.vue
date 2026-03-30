@@ -95,6 +95,7 @@
 import { ref, computed, watch } from 'vue'
 import { getWorkersList, getAvailableWorkers } from '@/api/appointment'
 import { getAssetUrl } from '@/utils/request'
+import { logger } from '@/utils/logger'
 
 const props = defineProps({
   // 是否显示
@@ -167,7 +168,7 @@ async function loadWorkers() {
     }
     workerList.value = response.data || []
   } catch (error) {
-    console.error('获取作业人员列表失败:', error)
+    logger.error('获取作业人员列表失败:', error)
     workerList.value = []
   }
 }

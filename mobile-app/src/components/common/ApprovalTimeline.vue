@@ -61,6 +61,7 @@
 import { computed } from 'vue'
 import { formatDateTime } from '@/composables/useDateTime'
 import { formatApprovalLog, getNodeName, getActionName, getActionStatus, getStatusText as getWorkflowStatusText, getStatusType as getWorkflowStatusType } from '@/composables/useApprovalWorkflow'
+import { logger } from '@/utils/logger'
 
 const props = defineProps({
   /**
@@ -103,9 +104,9 @@ const props = defineProps({
  * 合并审批流程配置和实际审批记录
  */
 const timelineNodes = computed(() => {
-  console.log('[ApprovalTimeline] approvalLogs:', props.approvalLogs)
-  console.log('[ApprovalTimeline] workflowConfig:', props.workflowConfig)
-  console.log('[ApprovalTimeline] showInactiveNodes:', props.showInactiveNodes)
+  logger.log('[ApprovalTimeline] approvalLogs:', props.approvalLogs)
+  logger.log('[ApprovalTimeline] workflowConfig:', props.workflowConfig)
+  logger.log('[ApprovalTimeline] showInactiveNodes:', props.showInactiveNodes)
 
   // 如果没有工作流配置，直接使用审批日志
   if (!props.workflowConfig || props.workflowConfig.length === 0) {
@@ -116,8 +117,8 @@ const timelineNodes = computed(() => {
       return nodeKey !== 'start' && nodeKey !== 'end'
     })
 
-    console.log('[ApprovalTimeline] 过滤前记录数:', props.approvalLogs.length)
-    console.log('[ApprovalTimeline] 过滤后记录数:', filteredLogs.length)
+    logger.log('[ApprovalTimeline] 过滤前记录数:', props.approvalLogs.length)
+    logger.log('[ApprovalTimeline] 过滤后记录数:', filteredLogs.length)
 
     const nodes = filteredLogs.map(log => {
       const formatted = formatApprovalLog(log)
@@ -130,7 +131,7 @@ const timelineNodes = computed(() => {
         remark: formatted.remark
       }
     })
-    console.log('[ApprovalTimeline] 无配置，节点数:', nodes.length)
+    logger.log('[ApprovalTimeline] 无配置，节点数:', nodes.length)
     return nodes
   }
 
@@ -170,7 +171,7 @@ const timelineNodes = computed(() => {
 
       const found = matchesKey || matchesName || matchesType
       if (found) {
-        console.log(`[ApprovalTimeline] 节点匹配: ${config.title} <- ${l.node_name} (key: ${l.node_key})`)
+        logger.log(`[ApprovalTimeline] 节点匹配: ${config.title} <- ${l.node_name} (key: ${l.node_key})`)
       }
       return found
     })
@@ -190,14 +191,14 @@ const timelineNodes = computed(() => {
       approver_role = formatted.approver_role || approver_role
       approved_at = formatted.approved_at
       remark = formatted.remark
-      console.log(`[ApprovalTimeline] 节点 ${config.title} 有记录，状态: ${status}`)
+      logger.log(`[ApprovalTimeline] 节点 ${config.title} 有记录，状态: ${status}`)
     } else {
       // 没有审批记录
-      console.log(`[ApprovalTimeline] 节点 ${config.title} 无记录`)
+      logger.log(`[ApprovalTimeline] 节点 ${config.title} 无记录`)
 
       // 如果 showInactiveNodes 为 false，则跳过这个节点
       if (!props.showInactiveNodes) {
-        console.log(`[ApprovalTimeline] 跳过未激活节点: ${config.title}`)
+        logger.log(`[ApprovalTimeline] 跳过未激活节点: ${config.title}`)
         return // 跳过未激活的节点
       }
 
@@ -221,7 +222,7 @@ const timelineNodes = computed(() => {
 
   // 按order排序
   const sorted = nodes.sort((a, b) => a.order - b.order)
-  console.log('[ApprovalTimeline] 最终节点数:', sorted.length)
+  logger.log('[ApprovalTimeline] 最终节点数:', sorted.length)
   return sorted
 })
 

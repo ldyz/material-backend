@@ -73,7 +73,6 @@
         </template>
       </van-cell>
       <van-cell title="刷新数据" icon="replay" is-link @click="handleRefresh" />
-      <van-cell title="调试日志" icon="notes-o" is-link @click="showDebugLogs" />
       <van-cell title="关于" icon="info-o" is-link @click="showAbout" />
     </van-cell-group>
 
@@ -95,39 +94,6 @@
         <div class="about-divider"></div>
         <p class="about-description">移动端应用</p>
         <p class="about-features">提供材料计划、入库、出库、预约管理等功能</p>
-      </div>
-    </van-dialog>
-
-    <!-- 调试日志弹窗 -->
-    <van-dialog
-      v-model:show="showDebugDialog"
-      title="调试日志"
-      :show-confirm-button="true"
-      :show-cancel-button="false"
-      confirm-button-text="关闭"
-      confirm-button-color="#1989fa"
-      :close-on-click-overlay="true"
-      teleport="body"
-      class="debug-dialog"
-    >
-      <div class="debug-content">
-        <div class="debug-actions">
-          <van-button size="small" type="primary" @click="refreshLogs">刷新</van-button>
-          <van-button size="small" type="warning" @click="clearLogs">清空</van-button>
-          <van-button size="small" type="success" @click="copyLogs">复制</van-button>
-        </div>
-        <div class="debug-logs" ref="logsContainer">
-          <div v-if="debugLogs.length === 0" class="debug-empty">暂无日志</div>
-          <div
-            v-for="(log, index) in debugLogs"
-            :key="index"
-            class="debug-log-entry"
-            :class="getLogClass(log)"
-          >
-            <span class="debug-time">{{ log.time }}</span>
-            <span class="debug-message" v-html="formatLogMessage(log.message)"></span>
-          </div>
-        </div>
       </div>
     </van-dialog>
 
@@ -181,61 +147,8 @@ const selectedAvatarFile = ref(null)
 const updateStatus = ref(null)
 const imageError = ref(false)
 
-// 调试日志
-const showDebugDialog = ref(false)
-const debugLogs = ref([])
-const logsContainer = ref(null)
-
 // 使用应用更新 composable
 const { isChecking, checkUpdate, downloadAndInstall, latestVersion, currentVersion } = useAppUpdate()
-
-// 拦截 console.log 来捕获日志
-const originalConsoleLog = console.log
-const originalConsoleError = console.error
-const originalConsoleWarn = console.warn
-
-// 捕获日志
-function captureLogs(type, args) {
-  const now = new Date()
-  const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
-
-  // 只捕获更新检测相关的日志
-  const message = args.map(arg => {
-    if (typeof arg === 'object') {
-      return JSON.stringify(arg, null, 2)
-    }
-    return String(arg)
-  }).join(' ')
-
-  if (message.includes('[更新检测]')) {
-    debugLogs.value.push({
-      time,
-      type,
-      message
-    })
-
-    // 限制日志数量，最多保留 100 条
-    if (debugLogs.value.length > 100) {
-      debugLogs.value.shift()
-    }
-  }
-}
-
-// 重写 console 方法
-console.log = function(...args) {
-  originalConsoleLog.apply(console, args)
-  captureLogs('log', args)
-}
-
-console.error = function(...args) {
-  originalConsoleError.apply(console, args)
-  captureLogs('error', args)
-}
-
-console.warn = function(...args) {
-  originalConsoleWarn.apply(console, args)
-  captureLogs('warn', args)
-}
 
 // 获取完整的头像URL
 const avatarUrl = computed(() => {
@@ -369,75 +282,6 @@ function showAbout() {
   showAboutDialog.value = true
 }
 
-// 调试日志函数
-function showDebugLogs() {
-  showDebugDialog.value = true
-  // 自动滚动到底部
-  setTimeout(() => {
-    if (logsContainer.value) {
-      logsContainer.value.scrollTop = logsContainer.value.scrollHeight
-    }
-  }, 100)
-}
-
-function refreshLogs() {
-  // 重新渲染日志
-  showDebugDialog.value = false
-  setTimeout(() => {
-    showDebugDialog.value = true
-  }, 100)
-}
-
-function clearLogs() {
-  debugLogs.value = []
-  showSuccessToast('日志已清空')
-}
-
-function copyLogs() {
-  const logText = debugLogs.value.map(log => {
-    return `[${log.time}] ${log.message}`
-  }).join('\n')
-
-  // 使用 Clipboard API
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(logText).then(() => {
-      showSuccessToast('日志已复制')
-    }).catch(() => {
-      showFailToast('复制失败')
-    })
-  } else {
-    // 降级方案
-    const textarea = document.createElement('textarea')
-    textarea.value = logText
-    document.body.appendChild(textarea)
-    textarea.select()
-    try {
-      document.execCommand('copy')
-      showSuccessToast('日志已复制')
-    } catch {
-      showFailToast('复制失败')
-    }
-    document.body.removeChild(textarea)
-  }
-}
-
-function formatLogMessage(message) {
-  // 高亮关键信息
-  return message
-    .replace(/\[更新检测\]/g, '<span class="debug-tag">[更新检测]</span>')
-    .replace(/✓/g, '<span class="debug-success">✓</span>')
-    .replace(/×/g, '<span class="debug-error">×</span>')
-    .replace(/(当前版本|最新版本|请求参数|API 响应)/g, '<span class="debug-highlight">$1</span>')
-}
-
-function getLogClass(log) {
-  if (log.type === 'error') return 'log-error'
-  if (log.type === 'warn') return 'log-warn'
-  if (log.message.includes('✓')) return 'log-success'
-  if (log.message.includes('×')) return 'log-error'
-  return ''
-}
-
 async function handleLogout() {
   try {
     await showConfirmDialog({
@@ -563,89 +407,5 @@ async function handleLogout() {
   font-size: 16px;
   line-height: 1.8;
   padding: 20px 0;
-}
-
-/* 调试日志样式 */
-:deep(.debug-dialog .van-dialog__content) {
-  max-height: none;
-}
-
-.debug-content {
-  padding: 0;
-}
-
-.debug-actions {
-  display: flex;
-  gap: 8px;
-  padding: 12px 16px;
-  border-bottom: 1px solid #ebedf0;
-  background-color: #f7f8fa;
-}
-
-.debug-logs {
-  max-height: 400px;
-  overflow-y: auto;
-  padding: 12px 16px;
-  background-color: #1a1a1a;
-  font-family: 'Courier New', monospace;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.debug-empty {
-  text-align: center;
-  color: #666;
-  padding: 40px 0;
-}
-
-.debug-log-entry {
-  display: flex;
-  margin-bottom: 8px;
-  padding: 4px 0;
-  border-bottom: 1px solid #333;
-}
-
-.debug-time {
-  color: #999;
-  margin-right: 8px;
-  flex-shrink: 0;
-  font-size: 11px;
-}
-
-.debug-message {
-  color: #ddd;
-  word-break: break-all;
-}
-
-.debug-tag {
-  color: #1989fa;
-  font-weight: bold;
-}
-
-.debug-success {
-  color: #07c160;
-  font-weight: bold;
-}
-
-.debug-error {
-  color: #ee0a24;
-  font-weight: bold;
-}
-
-.debug-highlight {
-  color: #ff976a;
-  font-weight: bold;
-}
-
-.log-error {
-  background-color: rgba(238, 10, 36, 0.1);
-}
-
-.log-warn {
-  background-color: rgba(255, 156, 0, 0.1);
-}
-
-.log-success {
-  background-color: rgba(7, 193, 96, 0.1);
 }
 </style>

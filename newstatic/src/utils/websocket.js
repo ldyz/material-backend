@@ -11,11 +11,14 @@
  * 默认配置
  */
 const DEFAULT_CONFIG = {
-  // 重连间隔（毫秒）
+  // 初始重连间隔（毫秒）
   reconnectInterval: 3000,
 
-  // 最大重连次数（0 表示无限重连）
-  maxReconnectAttempts: 0,
+  // 最大重连次数（0 表示无限重连，但会使用指数退避）
+  maxReconnectAttempts: 10,
+
+  // 最大重连间隔（毫秒）- 指数退避上限
+  maxReconnectInterval: 60000,
 
   // 心跳间隔（毫秒）
   heartbeatInterval: 30000,
@@ -24,7 +27,10 @@ const DEFAULT_CONFIG = {
   heartbeatTimeout: 35000,
 
   // 消息队列大小
-  messageQueueSize: 100
+  messageQueueSize: 100,
+
+  // 是否启用调试日志
+  debug: false
 }
 
 /**
@@ -47,6 +53,9 @@ class WebSocketManager {
     this.reconnectAttempts = 0
     this.reconnectTimer = null
 
+    // 连接失败计数（用于检测代理环境）
+    this.consecutiveFailures = 0
+
     // 心跳定时器
     this.heartbeatTimer = null
     this.heartbeatTimeoutTimer = null
@@ -64,11 +73,20 @@ class WebSocketManager {
   }
 
   /**
+   * 输出调试日志
+   */
+  log(...args) {
+    if (this.options.debug) {
+      console.log('[WebSocket]', ...args)
+    }
+  }
+
+  /**
    * 连接 WebSocket
    */
   connect() {
     if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
-      console.log('WebSocket 已连接或正在连接')
+      this.log('已连接或正在连接')
       return
     }
 
@@ -88,7 +106,7 @@ class WebSocketManager {
       this.ws.onerror = (error) => this.handleError(error)
       this.ws.onclose = (event) => this.handleClose(event)
 
-      console.log('WebSocket 正在连接...', this.url)
+      this.log('正在连接...', this.url)
     } catch (error) {
       console.error('WebSocket 连接失败:', error)
       this.scheduleReconnect()
@@ -108,7 +126,7 @@ class WebSocketManager {
     }
 
     this.connected = false
-    console.log('WebSocket 已手动断开')
+    this.log('已手动断开')
   }
 
   /**
@@ -166,10 +184,11 @@ class WebSocketManager {
    * 处理连接打开事件
    */
   handleOpen(event) {
-    console.log('WebSocket 连接成功')
+    this.log('连接成功')
     this.connected = true
     this.reconnecting = false
     this.reconnectAttempts = 0
+    this.consecutiveFailures = 0  // 重置连续失败计数
 
     // 发送队列中的消息
     this.flushMessageQueue()
@@ -201,7 +220,8 @@ class WebSocketManager {
    * 处理错误事件
    */
   handleError(error) {
-    console.error('WebSocket 错误:', error)
+    this.consecutiveFailures++
+    this.log('连接错误，连续失败次数:', this.consecutiveFailures)
     this.emit('error', error)
   }
 
@@ -209,7 +229,7 @@ class WebSocketManager {
    * 处理连接关闭事件
    */
   handleClose(event) {
-    console.log('WebSocket 连接关闭:', event.code, event.reason)
+    this.log('连接关闭:', event.code, event.reason)
     this.connected = false
     this.clearTimers()
 
@@ -223,6 +243,22 @@ class WebSocketManager {
   }
 
   /**
+   * 计算重连间隔（指数退避）
+   */
+  getReconnectInterval() {
+    // 基础间隔
+    const baseInterval = this.options.reconnectInterval
+    // 指数退避因子
+    const backoffFactor = Math.min(this.reconnectAttempts, 10)
+    // 计算间隔（每次增加1.5倍，最多60秒）
+    const interval = Math.min(
+      baseInterval * Math.pow(1.5, backoffFactor),
+      this.options.maxReconnectInterval
+    )
+    return Math.floor(interval)
+  }
+
+  /**
    * 安排重连
    */
   scheduleReconnect() {
@@ -233,7 +269,7 @@ class WebSocketManager {
     // 检查最大重连次数
     if (this.options.maxReconnectAttempts > 0 &&
         this.reconnectAttempts >= this.options.maxReconnectAttempts) {
-      console.error('WebSocket 重连次数已达上限')
+      console.warn('[WebSocket] 重连次数已达上限，停止重连')
       return
     }
 
@@ -244,12 +280,13 @@ class WebSocketManager {
     this.reconnecting = true
     this.reconnectAttempts++
 
-    console.log(`WebSocket 将在 ${this.options.reconnectInterval}ms 后尝试重连 (第 ${this.reconnectAttempts} 次)`)
+    const interval = this.getReconnectInterval()
+    this.log(`将在 ${interval}ms 后尝试重连 (第 ${this.reconnectAttempts} 次)`)
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnecting = false
       this.connect()
-    }, this.options.reconnectInterval)
+    }, interval)
   }
 
   /**
@@ -276,7 +313,7 @@ class WebSocketManager {
     this.clearHeartbeatTimeout()
 
     this.heartbeatTimeoutTimer = setTimeout(() => {
-      console.warn('WebSocket 心跳超时，关闭连接')
+      this.log('心跳超时，关闭连接')
       if (this.ws) {
         this.ws.close()
       }

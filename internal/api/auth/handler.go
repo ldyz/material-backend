@@ -503,6 +503,15 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 				{"progress_export", "导出进度"},
 				// 审计日志 (1)
 				{"audit_view", "查看审计日志"},
+				// 施工预约 (8)
+				{"appointment_view", "查看预约"},
+				{"appointment_create", "创建预约"},
+				{"appointment_edit", "编辑预约"},
+				{"appointment_delete", "删除预约"},
+				{"appointment_submit", "提交预约"},
+				{"appointment_approve", "审批预约"},
+				{"appointment_assign", "分配作业人员"},
+				{"appointment_cancel", "取消预约"},
 				// AI 智能体 (5)
 				{"ai_agent_view", "查看 AI"},
 				{"ai_agent_query", "AI 查询"},
@@ -570,6 +579,8 @@ func RegisterRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 					moduleName = "施工日志"
 				case "audit":
 					moduleName = "审计日志"
+				case "appointment":
+					moduleName = "施工预约"
 				case "ai_agent":
 					moduleName = "AI 智能体"
 				case "workflow":

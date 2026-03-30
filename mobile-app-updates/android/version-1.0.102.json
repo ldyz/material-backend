@@ -1,8 +1,0 @@
-{
-  "version": "1.0.102",
-  "versionCode": 102,
-  "url": "/mobile-updates/android/material-management-1.0.102.apk",
-  "releaseNotes": "修复取消预约和完成作业权限验证，修复TTS语音播报",
-  "forceUpdate": false,
-  "publishDate": "2026-03-27"
-}

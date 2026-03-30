@@ -21,6 +21,12 @@
               @click="showCancelDialog"
             />
             <van-cell
+              v-if="canDeleteAppointment"
+              title="删除预约"
+              is-link
+              @click="showDeleteDialog"
+            />
+            <van-cell
               v-if="canStart(appointment.status)"
               title="开始作业"
               is-link
@@ -296,6 +302,18 @@
       />
     </van-dialog>
 
+    <!-- 删除对话框 -->
+    <van-dialog
+      v-model:show="deleteDialogVisible"
+      title="删除预约"
+      show-cancel-button
+      @confirm="handleDelete"
+    >
+      <div style="padding: 16px; color: #666;">
+        确定要删除此预约单吗？删除后将无法恢复。
+      </div>
+    </van-dialog>
+
     <!-- 完成对话框 -->
     <van-dialog
       v-model:show="completeDialogVisible"
@@ -328,6 +346,7 @@ import {
   startWork,
   completeAppointment,
   cancelAppointment,
+  deleteAppointment,
   approveAppointment,
   getApprovalHistory,
   getTimeSlotLabel,
@@ -345,6 +364,7 @@ const appointment = ref(null)
 const approvalLogs = ref([])
 const loading = ref(true)
 const cancelDialogVisible = ref(false)
+const deleteDialogVisible = ref(false)
 const completeDialogVisible = ref(false)
 const showApproveDialog = ref(false)
 
@@ -465,6 +485,19 @@ const canEditAppointment = computed(() => {
   const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}')
   const currentUserId = userInfo.id || userInfo.user_id
   return isEditable(appointment.value.status, appointment.value.applicant_id, currentUserId)
+})
+
+// 是否可以删除（只有草稿和已取消状态可以删除）
+const canDeleteAppointment = computed(() => {
+  if (!appointment.value) return false
+  const status = appointment.value.status
+  // 只有草稿和已取消状态可以删除
+  if (status !== 'draft' && status !== 'cancelled') return false
+
+  // 只有申请人可以删除
+  const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}')
+  const currentUserId = userInfo.id || userInfo.user_id
+  return appointment.value.applicant_id === currentUserId
 })
 
 // 检查是否有审批权限（不能审批自己的预约单）
@@ -730,6 +763,22 @@ async function handleCancel() {
     await loadDetail()
   } catch (error) {
     showFailToast(error.message || '取消失败')
+  }
+}
+
+function showDeleteDialog() {
+  deleteDialogVisible.value = true
+}
+
+async function handleDelete() {
+  try {
+    await deleteAppointment(route.params.id)
+    showSuccessToast('删除成功')
+    deleteDialogVisible.value = false
+    // 返回上一页
+    router.back()
+  } catch (error) {
+    showFailToast(error.message || '删除失败')
   }
 }
 

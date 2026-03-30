@@ -1,8 +1,0 @@
-{
-  "version": "1.0.43",
-  "versionCode": 43,
-  "url": "/android/material-management-1.0.43.apk",
-  "releaseNotes": "版本 1.0.43 更新：\n- 修复入库单/出库单提交按钮被底部导航栏遮挡的问题\n- 适配刘海屏设备的安全区域",
-  "forceUpdate": false,
-  "publishDate": "2026-03-25"
-}

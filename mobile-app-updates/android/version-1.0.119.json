@@ -1,0 +1,8 @@
+{
+  "version": "1.0.119",
+  "versionCode": 119,
+  "url": "/mobile-updates/android/material-management-1.0.119.apk",
+  "releaseNotes": "修复移动端AI模型切换功能",
+  "forceUpdate": false,
+  "publishDate": "2026-03-30"
+}

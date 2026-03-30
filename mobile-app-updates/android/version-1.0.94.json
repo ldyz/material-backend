@@ -1,8 +1,0 @@
-{
-  "version": "1.0.94",
-  "versionCode": 94,
-  "url": "/mobile-updates/android/material-management-1.0.94.apk",
-  "releaseNotes": "修复语音消息占位符更新问题",
-  "forceUpdate": false,
-  "publishDate": "2026-03-27"
-}

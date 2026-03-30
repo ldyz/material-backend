@@ -1,0 +1,8 @@
+{
+  "version": "1.0.118",
+  "versionCode": 118,
+  "url": "/mobile-updates/android/material-management-1.0.118.apk",
+  "releaseNotes": "修复预约列表过滤功能; 修复AI模型切换问题",
+  "forceUpdate": false,
+  "publishDate": "2026-03-30"
+}

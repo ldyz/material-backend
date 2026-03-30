@@ -9,12 +9,15 @@
             :projects="projectList"
             placeholder="全部项目"
             width="200px"
+            @change="handleSearch"
           />
           <el-input
             v-model="searchForm.keyword"
             placeholder="搜索单号、地点、内容"
             clearable
             style="width: 250px"
+            @keyup.enter="handleSearch"
+            @clear="handleSearch"
           >
             <template #prefix>
               <el-icon><Search /></el-icon>
@@ -25,6 +28,7 @@
             placeholder="单据状态"
             clearable
             style="width: 150px"
+            @change="handleSearch"
           >
             <el-option label="全部" value="" />
             <el-option label="草稿" value="draft" />
@@ -40,6 +44,7 @@
             placeholder="优先级"
             clearable
             style="width: 120px"
+            @change="handleSearch"
           >
             <el-option label="全部" value="" />
             <el-option label="加急" value="true" />
@@ -53,7 +58,9 @@
             end-placeholder="结束日期"
             value-format="YYYY-MM-DD"
             style="width: 240px"
+            @change="handleSearch"
           />
+          <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
           <el-button :icon="Refresh" @click="handleReset">重置</el-button>
         </template>
         <template #right>
@@ -435,6 +442,11 @@ function handleReset() {
     is_urgent: '',
     dateRange: []
   })
+  pagination.page = 1
+  loadData()
+}
+
+function handleSearch() {
   pagination.page = 1
   loadData()
 }

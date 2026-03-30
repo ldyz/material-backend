@@ -13,19 +13,10 @@
         <span class="title">AI 助手</span>
         <div class="header-actions">
           <!-- 模型切换 -->
-          <van-popover
-            v-model:show="showModelPicker"
-            placement="bottom-end"
-            :actions="modelActions"
-            @select="onSelectModel"
-          >
-            <template #reference>
-              <div class="model-selector">
-                <span class="model-name">{{ currentModelName }}</span>
-                <van-icon name="arrow-down" size="12" />
-              </div>
-            </template>
-          </van-popover>
+          <div class="model-selector" @click="showModelPicker = true">
+            <span class="model-name">{{ currentModelName }}</span>
+            <van-icon name="arrow-down" size="12" />
+          </div>
           <!-- 语音对话模式切换 -->
           <van-icon
             :name="voiceChatMode ? 'phone-circle' : 'phone-circle-o'"
@@ -163,6 +154,15 @@
       </div>
     </van-overlay>
   </van-popup>
+
+  <!-- 模型选择面板 -->
+  <van-action-sheet
+    v-model:show="showModelPicker"
+    :actions="modelActions"
+    cancel-text="取消"
+    close-on-click-action
+    @select="onSelectModel"
+  />
 </template>
 
 <script setup>
@@ -172,6 +172,13 @@ import webSocketService from '@/utils/websocket'
 import { VoiceRecorder } from '@independo/capacitor-voice-recorder'
 import { Capacitor } from '@capacitor/core'
 import { TextToSpeech } from '@capacitor-community/text-to-speech'
+import { storage } from '@/utils/storage'
+
+// 获取 API 基础 URL
+const getApiBaseURL = () => {
+  const isCapacitorEnv = typeof window !== 'undefined' && window.Capacitor
+  return isCapacitorEnv ? 'https://home.mbed.org.cn:9090/api' : '/api'
+}
 
 const props = defineProps({
   show: Boolean,
@@ -238,22 +245,26 @@ const modelActions = computed(() => {
   return providers.value.map(p => ({
     name: p.name,
     value: p.id,
-    className: p.current ? 'active-model' : ''
+    className: p.id === currentProvider.value ? 'active-model' : ''
   }))
 })
 
 // 获取模型列表
 async function fetchProviders() {
   try {
-    const res = await fetch('/api/agent/providers', {
+    const baseURL = getApiBaseURL()
+    const token = storage.getToken()
+    const res = await fetch(`${baseURL}/agent/providers`, {
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        'Authorization': `Bearer ${token}`
       }
     })
     const data = await res.json()
+    console.log('[AiChatPopup] fetchProviders response:', data)
     if (data.data) {
       providers.value = data.data.providers || []
       currentProvider.value = data.data.current_provider || ''
+      console.log('[AiChatPopup] providers loaded:', providers.value.length, 'current:', currentProvider.value)
     }
   } catch (error) {
     console.error('获取模型列表失败:', error)
@@ -268,11 +279,13 @@ async function onSelectModel(action) {
   }
 
   try {
-    const res = await fetch('/api/agent/providers/switch', {
+    const baseURL = getApiBaseURL()
+    const token = storage.getToken()
+    const res = await fetch(`${baseURL}/agent/providers/switch`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({ provider: action.value })
     })
@@ -938,10 +951,12 @@ function clearHistory() {
   messages.value = []
   localStorage.removeItem(getHistoryStorageKey())
   // 同时调用后端清除API
-  fetch('/api/agent/conversation-history', {
+  const baseURL = getApiBaseURL()
+  const token = storage.getToken()
+  fetch(`${baseURL}/agent/conversation-history`, {
     method: 'DELETE',
     headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
+      'Authorization': `Bearer ${token}`
     }
   }).catch(e => console.error('清除服务器历史失败:', e))
   showToast('对话已清空')
@@ -1802,5 +1817,15 @@ watch(visible, (val) => {
 .recording-hint {
   color: rgba(255, 255, 255, 0.7);
   font-size: 14px;
+}
+
+/* 当前选中模型样式 */
+:deep(.active-model) {
+  color: #1989fa;
+  font-weight: 500;
+}
+
+:deep(.active-model .van-action-sheet__name) {
+  color: #1989fa;
 }
 </style>

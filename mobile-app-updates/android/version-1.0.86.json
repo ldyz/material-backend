@@ -1,8 +1,0 @@
-{
-  "version": "1.0.86",
-  "versionCode": 86,
-  "url": "/mobile-updates/android/material-management-1.0.86.apk",
-  "releaseNotes": "修复AI助手响应问题，优化WebSocket多终端支持",
-  "forceUpdate": false,
-  "publishDate": "2026-03-27"
-}

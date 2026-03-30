@@ -1,7 +1,0 @@
-{
-  "version": "1.0.81",
-  "buildTime": "2026-03-27T04:05:00.000Z",
-  "updateMessage": "AI智能能力增强：新增API工具执行器、完整工具定义、预设技能系统，支持更多语音交互功能",
-  "forceUpdate": false,
-  "apkUrl": "https://home.mbed.org.cn:9090/api/app/download-apk"
-}

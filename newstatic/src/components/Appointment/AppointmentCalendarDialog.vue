@@ -1005,6 +1005,11 @@ onMounted(() => {
   border: none;
 }
 
+/* 隐藏 el-calendar 自带的英文头部 */
+.month-view :deep(.el-calendar__header) {
+  display: none;
+}
+
 .month-view :deep(.el-calendar-table td.is-selected) {
   background: transparent;
 }

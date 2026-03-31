@@ -105,36 +105,33 @@ async function handleReject() {
       teleport: '#app',
       confirmButtonColor: '#ee0a24'
     })
+  } catch (cancel) {
+    return // 用户取消
+  }
 
-    if (!formData.value.remark.trim()) {
-      showToast({ type: 'fail', message: '请填写拒绝原因' })
-      return
-    }
+  if (!formData.value.remark?.trim()) {
+    showToast({ type: 'fail', message: '请填写拒绝原因' })
+    return
+  }
 
-    rejecting.value = true
-    try {
-      await rejectPlan(plan.value.id, { remark: formData.value.remark })
-      showToast({ type: 'success', message: '已拒绝' })
-      setTimeout(() => router.back(), 1500)
-    } catch (error) {
-      const errorMsg = error.error || error.message || '操作失败'
-      // 使用对话框显示权限错误
-      await showConfirmDialog({
-        title: '审批失败',
-        message: errorMsg,
-        showCancelButton: false,
-        confirmButtonText: '我知道了',
-        teleport: '#app',
-        confirmButtonColor: '#1989fa'
-      }).catch(() => {})
-      throw error
-    } finally {
-      rejecting.value = false
-    }
+  rejecting.value = true
+  try {
+    await rejectPlan(plan.value.id, { remark: formData.value.remark })
+    showToast({ type: 'success', message: '已拒绝' })
+    setTimeout(() => router.back(), 1500)
   } catch (error) {
-    if (error !== 'cancel') {
-      logger.error('拒绝失败:', error)
-    }
+    const errorMsg = error.error || error.message || '操作失败'
+    await showConfirmDialog({
+      title: '审批失败',
+      message: errorMsg,
+      showCancelButton: false,
+      confirmButtonText: '我知道了',
+      teleport: '#app',
+      confirmButtonColor: '#1989fa'
+    }).catch(() => {})
+    logger.error('拒绝失败:', error)
+  } finally {
+    rejecting.value = false
   }
 }
 

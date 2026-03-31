@@ -24,6 +24,7 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { showToast } from 'vant'
 import { getPlans } from '@/api/material_plan'
 import ListContainer from '@/components/common/ListContainer.vue'
 import ListItemCard from '@/components/common/ListItemCard.vue'
@@ -89,6 +90,7 @@ async function loadData() {
     currentPage.value++
   } catch (error) {
     logger.error('加载失败:', error)
+    showToast({ type: 'fail', message: '加载失败，请重试' })
   } finally {
     loading.value = false
     refreshing.value = false

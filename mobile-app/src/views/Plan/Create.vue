@@ -16,22 +16,17 @@
           :value="selectedProject ? selectedProject.name : '请选择项目'"
           is-link
           @click="showProjectPicker = true"
-          :rules="[{ required: true, message: '请选择项目' }]"
         />
-        <van-field
-          name="plan_type"
-          label="计划类型"
-          readonly
+        <van-cell
+          title="计划类型"
+          :value="planTypeText"
           is-link
-          :value="getPlanTypeLabel(formData.plan_type)"
           @click="showPlanTypePicker = true"
         />
-        <van-field
-          name="priority"
-          label="优先级"
-          readonly
+        <van-cell
+          title="优先级"
+          :value="priorityText"
           is-link
-          :value="getPriorityLabel(formData.priority)"
           @click="showPriorityPicker = true"
         />
         <van-field
@@ -112,6 +107,17 @@
         >
           <template #icon>
             <van-icon name="add-o" class="add-icon" />
+          </template>
+        </van-cell>
+
+        <van-cell
+          title="导入物资"
+          value="从Excel导入"
+          is-link
+          @click="showImportPopup = true"
+        >
+          <template #icon>
+            <van-icon name="description" class="import-icon" />
           </template>
         </van-cell>
       </van-cell-group>
@@ -202,36 +208,198 @@
         <van-checkbox-group v-else v-model="tempSelectedMaterialIds">
           <van-cell-group inset>
             <van-cell
-              v-for="material in filteredMaterials"
-              :key="material.id"
+              v-for="item in filteredMaterials"
+              :key="item.id"
               clickable
-              @click="toggleTempMaterial(material.id)"
             >
               <template #title>
-                <div class="material-info">
-                  <div class="material-name">{{ material.material }}</div>
+                <div class="material-info" @click="toggleTempMaterial(item.id)">
+                  <div class="material-name">{{ item.name }}</div>
                   <div class="material-desc">
-                    规格：{{ material.specification || '-' }} | 单位：{{ material.unit || '-' }}
+                    规格：{{ item.specification || '-' }} | 单位：{{ item.unit || '-' }}
                   </div>
                 </div>
               </template>
               <template #right-icon>
-                <van-checkbox :name="material.id" />
+                <van-checkbox :name="item.id" @click.stop />
               </template>
             </van-cell>
           </van-cell-group>
         </van-checkbox-group>
       </div>
     </van-popup>
+
+    <!-- Excel 导入弹窗 -->
+    <van-popup
+      v-model:show="showImportPopup"
+      position="bottom"
+      :style="{ height: '90%' }"
+      :close-on-click-overlay="false"
+    >
+      <div class="import-popup">
+        <van-nav-bar title="导入物资" left-text="取消" @click-left="closeImportPopup" />
+
+        <!-- 步骤指示器 -->
+        <van-steps :active="importStep" class="import-steps">
+          <van-step>上传文件</van-step>
+          <van-step>选择表头</van-step>
+          <van-step>字段映射</van-step>
+          <van-step>预览导入</van-step>
+        </van-steps>
+
+        <!-- 步骤1: 上传文件 -->
+        <div v-show="importStep === 0" class="import-step-content">
+          <van-uploader
+            v-model="importFileList"
+            :max-count="1"
+            accept=".xlsx,.xls"
+            :after-read="handleFileRead"
+          >
+            <template #default>
+              <div class="upload-area">
+                <van-icon name="description" size="40" color="#1989fa" />
+                <div class="upload-text">点击上传 Excel 文件</div>
+                <div class="upload-hint">支持 .xlsx / .xls 格式</div>
+              </div>
+            </template>
+          </van-uploader>
+          <div class="import-tips">
+            <div class="tips-title">支持的字段：</div>
+            <div class="tips-list">
+              <span class="required">*物资名称</span>、
+              <span class="required">*单位</span>、
+              <span class="required">*计划数量</span>、
+              物资编码、规格型号、材质、分类、单价、优先级、需求日期、备注
+            </div>
+          </div>
+        </div>
+
+        <!-- 步骤2: 选择标题行 -->
+        <div v-show="importStep === 1" class="import-step-content">
+          <div class="step-header">
+            <div class="step-title">选择标题行（当前：第 {{ headerRowIndex }} 行）</div>
+            <div class="step-desc">点击选择包含列标题的行</div>
+          </div>
+          <div class="header-preview">
+            <van-radio-group v-model="headerRowIndex">
+              <van-cell-group inset>
+                <van-cell
+                  v-for="(row, index) in headerPreviewRows"
+                  :key="index"
+                  clickable
+                  @click="headerRowIndex = index + 1"
+                >
+                  <template #title>
+                    <div class="header-row-content">
+                      <span class="row-label">{{ row.join(' | ') }}</span>
+                    </div>
+                  </template>
+                  <template #right-icon>
+                    <van-radio :name="index + 1" />
+                  </template>
+                </van-cell>
+              </van-cell-group>
+            </van-radio-group>
+          </div>
+        </div>
+
+        <!-- 步骤3: 字段映射 -->
+        <div v-show="importStep === 2" class="import-step-content">
+          <div class="step-header">
+            <div class="step-title">字段映射</div>
+            <div class="step-desc">将 Excel 列映射到对应字段</div>
+          </div>
+          <div class="mapping-list">
+            <van-cell-group inset>
+              <van-cell
+                v-for="field in importFields"
+                :key="field.field"
+                :title="field.label"
+                is-link
+                @click="openFieldMapping(field)"
+              >
+                <template #label>
+                  <span :class="{ 'required-hint': field.required }">
+                    {{ field.hint }}
+                  </span>
+                </template>
+                <template #value>
+                  <span :class="{ 'mapped': field.mappedColumn, 'unmapped': !field.mappedColumn && field.required }">
+                    {{ field.mappedColumn || '未映射' }}
+                  </span>
+                </template>
+              </van-cell>
+            </van-cell-group>
+          </div>
+        </div>
+
+        <!-- 步骤4: 预览导入 -->
+        <div v-show="importStep === 3" class="import-step-content">
+          <div class="step-header">
+            <div class="step-title">数据预览</div>
+            <div class="step-desc">共 {{ previewData.length }} 条数据待导入</div>
+          </div>
+          <div class="preview-list">
+            <van-cell-group inset>
+              <van-cell
+                v-for="(item, index) in previewData"
+                :key="index"
+                :title="item.material_name || '-'"
+                :label="`数量: ${item.planned_quantity || 0} ${item.unit || ''}`"
+              >
+                <template #value>
+                  <span class="preview-price">{{ item.unit_price ? '¥' + item.unit_price : '' }}</span>
+                </template>
+              </van-cell>
+            </van-cell-group>
+          </div>
+        </div>
+
+        <!-- 底部操作按钮 -->
+        <div class="import-actions">
+          <van-button v-if="importStep > 0" block @click="importStep--">上一步</van-button>
+          <van-button
+            v-if="importStep < 3"
+            block
+            type="primary"
+            :disabled="!canGoNext"
+            @click="goNextStep"
+          >
+            下一步
+          </van-button>
+          <van-button
+            v-if="importStep === 3"
+            block
+            type="primary"
+            :loading="importing"
+            @click="confirmImport"
+          >
+            确认导入 ({{ previewData.length }} 条)
+          </van-button>
+        </div>
+      </div>
+    </van-popup>
+
+    <!-- 字段映射选择器 -->
+    <van-popup v-model:show="showFieldMappingPicker" position="bottom">
+      <van-picker
+        :title="'映射 ' + currentMappingField?.label"
+        :columns="excelColumnOptions"
+        @confirm="onFieldMappingConfirm"
+        @cancel="showFieldMappingPicker = false"
+      />
+    </van-popup>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showLoadingToast, closeToast } from 'vant'
 import { getProjects, createPlan } from '@/api/material_plan'
 import { getMaterials } from '@/api/material'
+import * as XLSX from 'xlsx'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 
@@ -250,6 +418,10 @@ const formData = ref({
 const submitting = ref(false)
 const selectedProject = ref(null)
 
+// 选择器显示文本
+const planTypeText = ref('请选择')
+const priorityText = ref('请选择')
+
 // 选择器显示状态
 const showProjectPicker = ref(false)
 const showPlanTypePicker = ref(false)
@@ -260,8 +432,17 @@ const showMaterialPicker = ref(false)
 
 // 日期选择
 const minDate = new Date()
-const startDate = ref(['2026', '01', '01'])
-const endDate = ref(['2026', '12', '31'])
+const today = new Date()
+const startDate = ref([
+  today.getFullYear().toString(),
+  (today.getMonth() + 1).toString().padStart(2, '0'),
+  today.getDate().toString().padStart(2, '0')
+])
+const endDate = ref([
+  (today.getFullYear() + 1).toString(),
+  '12',
+  '31'
+])
 
 // 物资选择相关
 const materials = ref([])
@@ -287,6 +468,92 @@ const priorityColumns = [
   { text: '紧急', value: 'urgent' }
 ]
 
+// ========== 导入相关 ==========
+const showImportPopup = ref(false)
+const importStep = ref(0)
+const importFileList = ref([])
+const importing = ref(false)
+
+// Excel 数据
+const excelRawData = ref([])
+const excelColumns = ref([])
+const headerRowIndex = ref(1)
+
+// 字段定义（参考 web 端）
+const importFields = ref([
+  { field: 'material_name', label: '物资名称', required: true, hint: '必填', mappedColumn: null },
+  { field: 'material_code', label: '物资编码', required: false, hint: '物资编码', mappedColumn: null },
+  { field: 'specification', label: '规格型号', required: false, hint: '规格型号', mappedColumn: null },
+  { field: 'material', label: '材质', required: false, hint: '材质说明', mappedColumn: null },
+  { field: 'category', label: '分类', required: false, hint: '物资分类', mappedColumn: null },
+  { field: 'unit', label: '单位', required: true, hint: '必填', mappedColumn: null },
+  { field: 'planned_quantity', label: '计划数量', required: true, hint: '必填', mappedColumn: null },
+  { field: 'unit_price', label: '单价', required: false, hint: '单价（元）', mappedColumn: null },
+  { field: 'priority', label: '优先级', required: false, hint: '紧急/高/普通/低', mappedColumn: null },
+  { field: 'required_date', label: '需求日期', required: false, hint: 'YYYY-MM-DD', mappedColumn: null },
+  { field: 'remark', label: '备注', required: false, hint: '备注说明', mappedColumn: null }
+])
+
+// 字段映射选择器
+const showFieldMappingPicker = ref(false)
+const currentMappingField = ref(null)
+const excelColumnOptions = computed(() => {
+  const options = [{ text: '不映射', value: '' }]
+  excelColumns.value.forEach(col => {
+    if (col) {
+      options.push({ text: col, value: col })
+    }
+  })
+  return options
+})
+
+// 标题行预览（前10行）
+const headerPreviewRows = computed(() => {
+  return excelRawData.value.slice(0, 10).map(row => {
+    return row.map(cell => String(cell || '').trim()).slice(0, 5)
+  })
+})
+
+// 预览数据
+const previewData = computed(() => {
+  const dataRows = excelRawData.value.slice(headerRowIndex.value)
+  return dataRows.map(row => {
+    const item = {}
+    importFields.value.forEach(field => {
+      if (field.mappedColumn) {
+        const colIndex = excelColumns.value.indexOf(field.mappedColumn)
+        let value = row[colIndex]
+
+        // 数据类型转换
+        if (field.field === 'planned_quantity' || field.field === 'unit_price') {
+          value = parseFloat(value) || 0
+        } else if (value) {
+          value = String(value).trim()
+        }
+
+        item[field.field] = value
+      }
+    })
+    return item
+  }).filter(item => item.material_name) // 过滤掉没有物资名称的行
+})
+
+// 是否可以进入下一步
+const canGoNext = computed(() => {
+  if (importStep.value === 0) {
+    return excelRawData.value.length > 0
+  }
+  if (importStep.value === 1) {
+    return headerRowIndex.value > 0
+  }
+  if (importStep.value === 2) {
+    // 检查必填字段是否已映射
+    const requiredFields = importFields.value.filter(f => f.required)
+    return requiredFields.every(f => f.mappedColumn)
+  }
+  return true
+})
+
 // 过滤后的物资列表（排除已选）
 const filteredMaterials = computed(() => {
   const selectedIds = formData.value.items.map(item => item.material_id)
@@ -295,7 +562,7 @@ const filteredMaterials = computed(() => {
   if (materialSearch.value) {
     const keyword = materialSearch.value.toLowerCase()
     result = result.filter(m =>
-      (m.material && m.material.toLowerCase().includes(keyword)) ||
+      (m.name && m.name.toLowerCase().includes(keyword)) ||
       (m.specification && m.specification.toLowerCase().includes(keyword))
     )
   }
@@ -346,14 +613,42 @@ function onProjectConfirm({ selectedOptions }) {
 }
 
 // 计划类型选择确认
-function onPlanTypeConfirm({ selectedValue }) {
-  formData.value.plan_type = selectedValue[0]
+function onPlanTypeConfirm(event) {
+  logger.debug('onPlanTypeConfirm event:', event)
+  const { selectedOptions, selectedValues } = event
+  // 优先从 selectedOptions 获取 text
+  if (selectedOptions && selectedOptions.length > 0) {
+    formData.value.plan_type = selectedOptions[0].value
+    planTypeText.value = selectedOptions[0].text
+    logger.debug('set planTypeText:', planTypeText.value)
+  } else if (selectedValues && selectedValues.length > 0) {
+    // 备用方案：从 selectedValues 获取值，然后查找对应的 text
+    const value = selectedValues[0]
+    formData.value.plan_type = value
+    const column = planTypeColumns.find(c => c.value === value)
+    planTypeText.value = column ? column.text : value
+    logger.debug('set planTypeText from column:', planTypeText.value)
+  }
   showPlanTypePicker.value = false
 }
 
 // 优先级选择确认
-function onPriorityConfirm({ selectedValue }) {
-  formData.value.priority = selectedValue[0]
+function onPriorityConfirm(event) {
+  logger.debug('onPriorityConfirm event:', event)
+  const { selectedOptions, selectedValues } = event
+  // 优先从 selectedOptions 获取 text
+  if (selectedOptions && selectedOptions.length > 0) {
+    formData.value.priority = selectedOptions[0].value
+    priorityText.value = selectedOptions[0].text
+    logger.debug('set priorityText:', priorityText.value)
+  } else if (selectedValues && selectedValues.length > 0) {
+    // 备用方案：从 selectedValues 获取值，然后查找对应的 text
+    const value = selectedValues[0]
+    formData.value.priority = value
+    const column = priorityColumns.find(c => c.value === value)
+    priorityText.value = column ? column.text : value
+    logger.debug('set priorityText from column:', priorityText.value)
+  }
   showPriorityPicker.value = false
 }
 
@@ -386,9 +681,9 @@ function confirmMaterialSelection() {
     if (material && !formData.value.items.some(item => item.material_id === materialId)) {
       formData.value.items.push({
         material_id: material.id,
-        material: material.material,
-        material_name: material.material,
-        material_code: material.material_code,
+        material: material.name,
+        material_name: material.name,
+        material_code: material.code || '',
         specification: material.specification,
         unit: material.unit,
         planned_quantity: 1,
@@ -408,24 +703,196 @@ function removeItem(index) {
   formData.value.items.splice(index, 1)
 }
 
-// 工具函数
-function getPlanTypeLabel(type) {
-  const map = {
-    procurement: '采购计划',
-    usage: '使用计划',
-    mixed: '混合计划'
-  }
-  return map[type] || type
+// ========== 导入相关函数 ==========
+
+// 关闭导入弹窗并重置状态
+function closeImportPopup() {
+  showImportPopup.value = false
+  importStep.value = 0
+  importFileList.value = []
+  excelRawData.value = []
+  excelColumns.value = []
+  headerRowIndex.value = 1
+  // 重置字段映射
+  importFields.value.forEach(f => {
+    f.mappedColumn = null
+  })
 }
 
-function getPriorityLabel(priority) {
-  const map = {
-    low: '低',
-    normal: '普通',
-    high: '高',
-    urgent: '紧急'
+// 处理文件读取
+function handleFileRead(file) {
+  showLoadingToast({ message: '正在读取文件...', forbidClick: true })
+
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    try {
+      const data = new Uint8Array(e.target.result)
+      const workbook = XLSX.read(data, { type: 'array' })
+
+      // 读取第一个工作表
+      const firstSheetName = workbook.SheetNames[0]
+      const worksheet = workbook.Sheets[firstSheetName]
+
+      // 转换为数组格式（包含表头）
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+        header: 1,
+        defval: ''
+      })
+
+      if (jsonData.length < 2) {
+        closeToast()
+        showToast({ type: 'fail', message: 'Excel 文件没有数据行' })
+        return
+      }
+
+      // 保存原始数据
+      excelRawData.value = jsonData
+
+      // 默认第一行为标题行，初始化列名
+      updateExcelColumns()
+
+      // 自动匹配字段
+      autoMatchFields()
+
+      closeToast()
+      showToast({ type: 'success', message: `成功读取 ${jsonData.length - 1} 行数据` })
+    } catch (error) {
+      closeToast()
+      showToast({ type: 'fail', message: '读取文件失败：' + error.message })
+    }
   }
-  return map[priority] || priority
+
+  reader.readAsArrayBuffer(file.file)
+}
+
+// 根据标题行更新列名
+function updateExcelColumns() {
+  const rowIndex = headerRowIndex.value - 1
+  if (excelRawData.value[rowIndex]) {
+    excelColumns.value = excelRawData.value[rowIndex].map(col => String(col || '').trim())
+  }
+}
+
+// 自动匹配字段
+function autoMatchFields() {
+  importFields.value.forEach(field => {
+    let bestMatch = ''
+    let bestScore = 0
+
+    excelColumns.value.forEach(col => {
+      const score = calculateSimilarity(field.field, field.label, col)
+      if (score > bestScore && score >= 60) {
+        bestScore = score
+        bestMatch = col
+      }
+    })
+
+    field.mappedColumn = bestMatch || null
+  })
+}
+
+// 计算相似度
+function calculateSimilarity(fieldKey, fieldLabel, excelColumn) {
+  const key = fieldKey.toLowerCase()
+  const label = fieldLabel.toLowerCase()
+  const col = excelColumn.toLowerCase().trim()
+
+  // 完全匹配
+  if (col === key || col === label) {
+    return 100
+  }
+
+  // 包含匹配
+  if (col.includes(key) || key.includes(col) || col.includes(label) || label.includes(col)) {
+    return 90
+  }
+
+  // 别名匹配
+  const aliases = {
+    'material_name': ['物资名称', '名称', '品名', 'name', 'title'],
+    'material_code': ['物资编码', '编码', '编号', 'code', 'no'],
+    'specification': ['规格型号', '规格', '型号', 'specification', 'spec', 'model'],
+    'material': ['材质', '材料', 'material'],
+    'category': ['分类', '类别', 'category', 'type'],
+    'unit': ['单位', '计量单位', 'unit'],
+    'planned_quantity': ['计划数量', '数量', 'quantity', 'qty'],
+    'unit_price': ['单价', '价格', 'price'],
+    'priority': ['优先级', 'priority'],
+    'required_date': ['需求日期', '日期', 'date'],
+    'remark': ['备注', '说明', 'remark', 'note']
+  }
+
+  if (aliases[key]) {
+    for (const alias of aliases[key]) {
+      if (col.includes(alias.toLowerCase()) || alias.toLowerCase().includes(col)) {
+        return 80
+      }
+    }
+  }
+
+  return 0
+}
+
+// 下一步
+function goNextStep() {
+  if (importStep.value === 1) {
+    // 选择标题行后，更新列名并重新匹配
+    updateExcelColumns()
+    autoMatchFields()
+  }
+  importStep.value++
+}
+
+// 打开字段映射选择器
+function openFieldMapping(field) {
+  currentMappingField.value = field
+  showFieldMappingPicker.value = true
+}
+
+// 确认字段映射
+function onFieldMappingConfirm({ selectedOptions }) {
+  if (currentMappingField.value) {
+    currentMappingField.value.mappedColumn = selectedOptions[0].value
+  }
+  showFieldMappingPicker.value = false
+}
+
+// 确认导入
+function confirmImport() {
+  if (previewData.value.length === 0) {
+    showToast({ type: 'fail', message: '没有可导入的数据' })
+    return
+  }
+
+  importing.value = true
+
+  try {
+    // 将预览数据添加到表单
+    let imported = 0
+    previewData.value.forEach(item => {
+      formData.value.items.push({
+        material_name: item.material_name || '',
+        material_code: item.material_code || '',
+        specification: item.specification || '',
+        material: item.material || '',
+        category: item.category || '',
+        unit: item.unit || '',
+        planned_quantity: item.planned_quantity || 1,
+        unit_price: item.unit_price || 0,
+        priority: item.priority || 'normal',
+        required_date: item.required_date || '',
+        remark: item.remark || ''
+      })
+      imported++
+    })
+
+    showToast({ type: 'success', message: `成功导入 ${imported} 条物资` })
+    closeImportPopup()
+  } catch (error) {
+    showToast({ type: 'fail', message: '导入失败：' + error.message })
+  } finally {
+    importing.value = false
+  }
 }
 
 // 提交表单
@@ -474,6 +941,13 @@ async function handleSubmit() {
 onMounted(() => {
   loadProjects()
 })
+
+// 监听物资选择弹窗打开，自动加载物资列表
+watch(showMaterialPicker, (val) => {
+  if (val && materials.value.length === 0) {
+    loadMaterials()
+  }
+})
 </script>
 
 <style scoped>
@@ -500,6 +974,12 @@ onMounted(() => {
 
 .add-icon {
   color: #1989fa;
+  font-size: 18px;
+  margin-right: 8px;
+}
+
+.import-icon {
+  color: #07c160;
   font-size: 18px;
   margin-right: 8px;
 }
@@ -540,5 +1020,138 @@ onMounted(() => {
   background: #fff;
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
   z-index: 99;
+}
+
+/* 导入弹窗样式 */
+.import-popup {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.import-steps {
+  padding: 16px;
+  background: #fff;
+}
+
+.import-step-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.upload-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  background: #f7f8fa;
+  border-radius: 8px;
+  border: 1px dashed #dcdee0;
+}
+
+.upload-text {
+  margin-top: 12px;
+  font-size: 14px;
+  color: #323233;
+}
+
+.upload-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #969799;
+}
+
+.import-tips {
+  margin-top: 20px;
+  padding: 12px;
+  background: #fff;
+  border-radius: 8px;
+}
+
+.tips-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #323233;
+  margin-bottom: 8px;
+}
+
+.tips-list {
+  font-size: 12px;
+  color: #646566;
+  line-height: 1.6;
+}
+
+.required {
+  color: #ee0a24;
+}
+
+.step-header {
+  margin-bottom: 16px;
+}
+
+.step-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #323233;
+}
+
+.step-desc {
+  font-size: 12px;
+  color: #969799;
+  margin-top: 4px;
+}
+
+.header-preview {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.header-row-content {
+  font-size: 13px;
+}
+
+.row-label {
+  color: #646566;
+  word-break: break-all;
+}
+
+.mapping-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.required-hint {
+  color: #ee0a24;
+}
+
+.mapped {
+  color: #07c160;
+}
+
+.unmapped {
+  color: #ee0a24;
+}
+
+.preview-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.preview-price {
+  color: #ee0a24;
+  font-size: 13px;
+}
+
+.import-actions {
+  padding: 16px;
+  background: #fff;
+  display: flex;
+  gap: 12px;
+}
+
+.import-actions .van-button {
+  flex: 1;
 }
 </style>

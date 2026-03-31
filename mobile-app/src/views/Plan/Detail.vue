@@ -89,26 +89,21 @@ async function handleResubmit() {
       teleport: '#app',
       confirmButtonColor: '#1989fa'
     })
+  } catch (cancel) {
+    return // 用户取消
+  }
 
-    resubmitting.value = true
-    try {
-      await resubmitPlan(plan.value.id, {})
-      showToast({ type: 'success', message: '已重新提交' })
-      setTimeout(() => {
-        loadData()
-        router.back()
-      }, 1500)
-    } catch (error) {
-      const errorMsg = error.error || error.message || '操作失败'
-      showToast({ type: 'fail', message: errorMsg })
-      throw error
-    } finally {
-      resubmitting.value = false
-    }
+  resubmitting.value = true
+  try {
+    await resubmitPlan(plan.value.id, {})
+    showToast({ type: 'success', message: '已重新提交' })
+    setTimeout(() => router.back(), 1500)
   } catch (error) {
-    if (error !== 'cancel') {
-      logger.error('重新提交失败:', error)
-    }
+    const errorMsg = error.error || error.message || '操作失败'
+    showToast({ type: 'fail', message: errorMsg })
+    logger.error('重新提交失败:', error)
+  } finally {
+    resubmitting.value = false
   }
 }
 

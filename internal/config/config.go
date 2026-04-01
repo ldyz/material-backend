@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/yourorg/material-backend/backend/internal/pkg/logger"
 	"gopkg.in/yaml.v3"
 )
 
@@ -17,6 +18,14 @@ type Config struct {
 	Upload   UploadConfig   `yaml:"upload"`
 	Log      LogConfig      `yaml:"log"`
 	AI       AIConfig       `yaml:"ai"`
+	CORS     CORSConfig     `yaml:"cors"`
+	Wechat   WechatConfig   `yaml:"wechat"`
+}
+
+// WechatConfig 微信小程序配置
+type WechatConfig struct {
+	AppID     string `yaml:"app_id"`     // 小程序 AppID
+	AppSecret string `yaml:"app_secret"` // 小程序 AppSecret
 }
 
 // AIConfig AI 配置
@@ -41,6 +50,9 @@ type AIConfig struct {
 
 	// 默认使用的模型提供者: "baidu" 或 "deepseek"
 	DefaultProvider string `yaml:"default_provider"`
+
+	// Agent 安全配置
+	AgentSecret string `yaml:"agent_secret"` // AI Agent 请求签名密钥
 }
 
 // AIProviderConfig 单个 AI 提供者的配置
@@ -100,6 +112,13 @@ type LogConfig struct {
 	MaxBackups int    `yaml:"max_backups"`
 	MaxAge     int    `yaml:"max_age"`     // days
 	Compress   bool   `yaml:"compress"`
+}
+
+// CORSConfig CORS 配置
+type CORSConfig struct {
+	Enabled         bool     `yaml:"enabled"`           // 是否启用 CORS 白名单
+	AllowedOrigins  []string `yaml:"allowed_origins"`   // 允许的域名列表
+	AllowCredentials bool    `yaml:"allow_credentials"` // 是否允许携带凭证
 }
 
 var (
@@ -172,7 +191,7 @@ func Watch(onChange func(*Config)) error {
 				if !ok {
 					return
 				}
-				fmt.Printf("配置文件监听错误: %v\n", err)
+				logger.Warnf("配置文件监听错误: %v", err)
 			}
 		}
 	}()

@@ -18,18 +18,19 @@ type Role struct {
 
 // User is the auth user model
 type User struct {
-	ID        uint       `gorm:"primaryKey" json:"id"`
-	Username  string     `gorm:"size:80;uniqueIndex" json:"username"`
-	Password  string     `json:"-"`
-	Email     string     `json:"email"`
-	FullName  string     `json:"full_name"`
-	Avatar    string     `json:"avatar"`
-	Role      string     `json:"role"`
-	Group     string     `json:"group"`
-	IsActive  bool       `json:"is_active"`
-	LastLogin *time.Time `json:"last_login"`
-	CreatedAt time.Time  `json:"created_at"`
-	Roles     []Role     `gorm:"many2many:user_roles" json:"roles"`
+	ID           uint       `gorm:"primaryKey" json:"id"`
+	Username     string     `gorm:"size:80;uniqueIndex" json:"username"`
+	Password     string     `json:"-"`
+	Email        string     `json:"email"`
+	FullName     string     `json:"full_name"`
+	Avatar       string     `json:"avatar"`
+	Role         string     `json:"role"`
+	Group        string     `json:"group"`
+	IsActive     bool       `json:"is_active"`
+	WechatOpenID string     `gorm:"size:128;uniqueIndex" json:"-"` // 微信 OpenID
+	LastLogin    *time.Time `json:"last_login"`
+	CreatedAt    time.Time  `json:"created_at"`
+	Roles        []Role     `gorm:"many2many:user_roles" json:"roles"`
 }
 
 // SetPassword hashes and sets the user's password

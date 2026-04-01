@@ -43,3 +43,23 @@ log:
   max_backups: 3            # 保留的旧日志文件数量
   max_age: 7                # 保留旧日志文件的最大天数
   compress: true            # 是否压缩旧日志文件
+
+# CORS 配置
+cors:
+  enabled: true             # 是否启用 CORS 白名单
+  # 允许的域名列表，留空则允许所有域名
+  allowed_origins:
+    - "http://localhost:3000"
+    - "http://localhost:8080"
+    - "http://192.168.1.100:8088"
+  allow_credentials: true   # 是否允许携带凭证
+
+# AI 配置 (可选)
+ai:
+  # Agent 安全密钥，用于验证 AI Agent 请求签名
+  agent_secret: "change-this-agent-secret-in-production"
+
+# 微信小程序配置 (可选)
+wechat:
+  app_id: "your-wechat-appid"      # 微信小程序 AppID
+  app_secret: "your-wechat-secret"  # 微信小程序 AppSecret

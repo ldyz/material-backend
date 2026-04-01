@@ -1,0 +1,181 @@
+{
+  "easycom": {
+    "autoscan": true,
+    "custom": {
+      "^uni-(.*)": "@dcloudio/uni-ui/lib/uni-$1/uni-$1.vue"
+    }
+  },
+  "pages": [
+    {
+      "path": "pages/login/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "登录"
+      }
+    },
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "首页"
+      }
+    },
+    {
+      "path": "pages/plan/list",
+      "style": {
+        "navigationBarTitleText": "物资计划"
+      }
+    },
+    {
+      "path": "pages/plan/detail",
+      "style": {
+        "navigationBarTitleText": "计划详情"
+      }
+    },
+    {
+      "path": "pages/plan/create",
+      "style": {
+        "navigationBarTitleText": "创建计划"
+      }
+    },
+    {
+      "path": "pages/inbound/list",
+      "style": {
+        "navigationBarTitleText": "入库管理"
+      }
+    },
+    {
+      "path": "pages/inbound/detail",
+      "style": {
+        "navigationBarTitleText": "入库详情"
+      }
+    },
+    {
+      "path": "pages/inbound/create",
+      "style": {
+        "navigationBarTitleText": "创建入库"
+      }
+    },
+    {
+      "path": "pages/requisition/list",
+      "style": {
+        "navigationBarTitleText": "领料管理"
+      }
+    },
+    {
+      "path": "pages/requisition/detail",
+      "style": {
+        "navigationBarTitleText": "领料详情"
+      }
+    },
+    {
+      "path": "pages/requisition/create",
+      "style": {
+        "navigationBarTitleText": "创建领料"
+      }
+    },
+    {
+      "path": "pages/appointment/list",
+      "style": {
+        "navigationBarTitleText": "预约管理"
+      }
+    },
+    {
+      "path": "pages/appointment/detail",
+      "style": {
+        "navigationBarTitleText": "预约详情"
+      }
+    },
+    {
+      "path": "pages/appointment/create",
+      "style": {
+        "navigationBarTitleText": "创建预约"
+      }
+    },
+    {
+      "path": "pages/appointment/calendar",
+      "style": {
+        "navigationBarTitleText": "预约日历"
+      }
+    },
+    {
+      "path": "pages/attendance/clockIn",
+      "style": {
+        "navigationBarTitleText": "考勤打卡"
+      }
+    },
+    {
+      "path": "pages/attendance/recordList",
+      "style": {
+        "navigationBarTitleText": "打卡记录"
+      }
+    },
+    {
+      "path": "pages/stock/list",
+      "style": {
+        "navigationBarTitleText": "库存查询"
+      }
+    },
+    {
+      "path": "pages/stock/detail",
+      "style": {
+        "navigationBarTitleText": "库存详情"
+      }
+    },
+    {
+      "path": "pages/profile/index",
+      "style": {
+        "navigationBarTitleText": "我的"
+      }
+    },
+    {
+      "path": "pages/about/index",
+      "style": {
+        "navigationBarTitleText": "关于"
+      }
+    },
+    {
+      "path": "pages/notification/list",
+      "style": {
+        "navigationBarTitleText": "通知消息"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "项目管理系统",
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundColor": "#f7f8fa"
+  },
+  "tabBar": {
+    "color": "#999999",
+    "selectedColor": "#1989fa",
+    "borderStyle": "black",
+    "backgroundColor": "#ffffff",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "iconPath": "static/images/tab-home.png",
+        "selectedIconPath": "static/images/tab-home-active.png",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/plan/list",
+        "iconPath": "static/images/tab-plan.png",
+        "selectedIconPath": "static/images/tab-plan-active.png",
+        "text": "计划"
+      },
+      {
+        "pagePath": "pages/stock/list",
+        "iconPath": "static/images/tab-stock.png",
+        "selectedIconPath": "static/images/tab-stock-active.png",
+        "text": "库存"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "iconPath": "static/images/tab-profile.png",
+        "selectedIconPath": "static/images/tab-profile-active.png",
+        "text": "我的"
+      }
+    ]
+  }
+}

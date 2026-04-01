@@ -190,6 +190,7 @@
                   v-if="getFirstPhoto(scope.row)"
                   :src="getFirstPhoto(scope.row)"
                   :preview-src-list="getPhotoList(scope.row)"
+                  :z-index="9999"
                   fit="cover"
                   style="width: 50px; height: 50px; border-radius: 4px;"
                 />

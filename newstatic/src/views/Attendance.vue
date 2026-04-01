@@ -8,6 +8,21 @@
           <TableToolbar>
             <template #left>
               <el-select
+                v-model="searchForm.user_id"
+                placeholder="选择用户"
+                clearable
+                filterable
+                style="width: 140px"
+                @change="handleSearch"
+              >
+                <el-option
+                  v-for="user in userOptions"
+                  :key="user.id"
+                  :label="user.full_name"
+                  :value="user.id"
+                />
+              </el-select>
+              <el-select
                 v-model="searchForm.status"
                 placeholder="状态"
                 clearable
@@ -32,6 +47,36 @@
                 <el-option label="中午加班" value="noon_overtime" />
                 <el-option label="晚上加班" value="night_overtime" />
               </el-select>
+              <el-select
+                v-model="searchForm.project_id"
+                placeholder="选择项目"
+                clearable
+                filterable
+                style="width: 160px"
+                @change="handleProjectChange"
+              >
+                <el-option
+                  v-for="project in projectOptions"
+                  :key="project.id"
+                  :label="project.name"
+                  :value="project.id"
+                />
+              </el-select>
+              <el-select
+                v-model="searchForm.appointment_id"
+                placeholder="选择任务"
+                clearable
+                filterable
+                style="width: 160px"
+                @change="handleSearch"
+              >
+                <el-option
+                  v-for="apt in appointmentOptions"
+                  :key="apt.id"
+                  :label="apt.appointment_no"
+                  :value="apt.id"
+                />
+              </el-select>
               <el-date-picker
                 v-model="searchForm.dateRange"
                 type="daterange"
@@ -45,6 +90,22 @@
               <el-button :icon="Refresh" @click="handleReset">重置</el-button>
             </template>
             <template #right>
+              <el-button
+                type="success"
+                :icon="Download"
+                @click="handleExportExcel"
+                :loading="exportLoading"
+              >
+                导出Excel
+              </el-button>
+              <el-button
+                type="warning"
+                :icon="Picture"
+                @click="handleExportPhotos"
+                :loading="exportLoading"
+              >
+                导出照片
+              </el-button>
               <el-button
                 type="primary"
                 :icon="Check"
@@ -256,6 +317,87 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
+
+        <el-tab-pane label="统计报表" name="statistics">
+          <!-- 工具栏 -->
+          <TableToolbar>
+            <template #left>
+              <el-date-picker
+                v-model="statisticsDateRange"
+                type="daterange"
+                range-separator="至"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+                value-format="YYYY-MM-DD"
+                style="width: 240px"
+                @change="loadAllStatistics"
+              />
+            </template>
+            <template #right>
+              <el-button type="primary" :icon="Refresh" @click="loadAllStatistics">刷新</el-button>
+            </template>
+          </TableToolbar>
+
+          <!-- 统计子标签页 -->
+          <el-tabs v-model="statisticsTab" @tab-change="handleStatisticsTabChange">
+            <!-- 按日期统计 -->
+            <el-tab-pane label="按日期" name="daily">
+              <el-table v-loading="dailyLoading" :data="dailyStatistics" border stripe max-height="500">
+                <el-table-column prop="date" label="日期" width="120" />
+                <el-table-column prop="total_count" label="总打卡数" width="100" align="center" />
+                <el-table-column prop="user_count" label="打卡人数" width="100" align="center" />
+                <el-table-column prop="morning_count" label="上午打卡" width="100" align="center" />
+                <el-table-column prop="afternoon_count" label="下午打卡" width="100" align="center" />
+                <el-table-column prop="noon_overtime" label="中午加班" width="100" align="center" />
+                <el-table-column prop="night_overtime" label="晚上加班" width="100" align="center" />
+                <el-table-column prop="overtime_hours" label="加班小时" width="100" align="center" />
+              </el-table>
+            </el-tab-pane>
+
+            <!-- 按人员统计 -->
+            <el-tab-pane label="按人员" name="user">
+              <el-table v-loading="userLoading" :data="userStatistics" border stripe max-height="500">
+                <el-table-column prop="user_name" label="姓名" width="100" />
+                <el-table-column prop="total_count" label="总打卡数" width="100" align="center" />
+                <el-table-column prop="work_days" label="出勤天数" width="100" align="center" />
+                <el-table-column prop="morning_count" label="上午打卡" width="100" align="center" />
+                <el-table-column prop="afternoon_count" label="下午打卡" width="100" align="center" />
+                <el-table-column prop="noon_overtime_count" label="中午加班" width="100" align="center" />
+                <el-table-column prop="night_overtime_count" label="晚上加班" width="100" align="center" />
+                <el-table-column prop="total_overtime_hours" label="总加班(h)" width="100" align="center" />
+              </el-table>
+            </el-tab-pane>
+
+            <!-- 按任务统计 -->
+            <el-tab-pane label="按任务" name="task">
+              <el-table v-loading="taskLoading" :data="taskStatistics" border stripe max-height="500">
+                <el-table-column prop="appointment_no" label="任务编号" width="140" />
+                <el-table-column prop="work_date" label="工作日期" width="120" />
+                <el-table-column prop="work_content" label="工作内容" min-width="200" show-overflow-tooltip />
+                <el-table-column prop="total_clock_ins" label="打卡次数" width="100" align="center" />
+                <el-table-column prop="unique_users" label="打卡人数" width="100" align="center" />
+                <el-table-column prop="photo_count" label="照片数" width="80" align="center" />
+                <el-table-column prop="morning_count" label="上午" width="80" align="center" />
+                <el-table-column prop="afternoon_count" label="下午" width="80" align="center" />
+                <el-table-column prop="overtime_count" label="加班" width="80" align="center" />
+                <el-table-column prop="overtime_hours" label="加班(h)" width="80" align="center" />
+              </el-table>
+            </el-tab-pane>
+
+            <!-- 按项目统计 -->
+            <el-tab-pane label="按项目" name="project">
+              <el-table v-loading="projectLoading" :data="projectStatistics" border stripe max-height="500">
+                <el-table-column prop="project_name" label="项目名称" min-width="200" />
+                <el-table-column prop="total_clock_ins" label="打卡次数" width="100" align="center" />
+                <el-table-column prop="unique_users" label="打卡人数" width="100" align="center" />
+                <el-table-column prop="work_days" label="工作天数" width="100" align="center" />
+                <el-table-column prop="morning_count" label="上午打卡" width="100" align="center" />
+                <el-table-column prop="afternoon_count" label="下午打卡" width="100" align="center" />
+                <el-table-column prop="total_overtime_hours" label="总加班(h)" width="100" align="center" />
+              </el-table>
+            </el-tab-pane>
+          </el-tabs>
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -278,8 +420,8 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Check } from '@element-plus/icons-vue'
-import { attendanceApi } from '@/api'
+import { Refresh, Check, Download, Picture } from '@element-plus/icons-vue'
+import { attendanceApi, userApi, projectApi, appointmentApi } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { getAssetUrl } from '@/utils/index'
 import TableToolbar from '@/components/common/TableToolbar.vue'
@@ -289,6 +431,7 @@ const authStore = useAuthStore()
 const activeTab = ref('records')
 const loading = ref(false)
 const summaryLoading = ref(false)
+const exportLoading = ref(false)
 const tableData = ref([])
 const summaryData = ref([])
 const selectedRows = ref([])
@@ -297,9 +440,29 @@ const rejectDialogVisible = ref(false)
 const rejectReason = ref('')
 const currentRecord = ref(null)
 
+// 选项数据
+const userOptions = ref([])
+const projectOptions = ref([])
+const appointmentOptions = ref([])
+
+// 统计相关
+const statisticsTab = ref('daily')
+const statisticsDateRange = ref([])
+const dailyLoading = ref(false)
+const userLoading = ref(false)
+const taskLoading = ref(false)
+const projectLoading = ref(false)
+const dailyStatistics = ref([])
+const userStatistics = ref([])
+const taskStatistics = ref([])
+const projectStatistics = ref([])
+
 const searchForm = reactive({
+  user_id: null,
   status: '',
   attendance_type: '',
+  project_id: null,
+  appointment_id: null,
   dateRange: []
 })
 
@@ -343,7 +506,6 @@ function getFirstPhoto(row) {
   if (row.photo_urls) {
     try {
       const urls = typeof row.photo_urls === 'string' ? JSON.parse(row.photo_urls) : row.photo_urls
-      // 找到第一个有效的照片 URL
       for (const url of urls) {
         if (url && url !== 'null' && url !== '') {
           return getAssetUrl(url)
@@ -351,7 +513,6 @@ function getFirstPhoto(row) {
       }
     } catch (e) {}
   }
-  // 兼容单张照片
   if (row.photo_url && row.photo_url !== 'null' && row.photo_url !== '') {
     return getAssetUrl(row.photo_url)
   }
@@ -372,7 +533,6 @@ function getPhotoList(row) {
       })
     } catch (e) {}
   }
-  // 兼容单张照片
   if (photos.length === 0 && row.photo_url && row.photo_url !== 'null' && row.photo_url !== '') {
     const fullUrl = getAssetUrl(row.photo_url)
     if (fullUrl) photos.push(fullUrl)
@@ -390,6 +550,47 @@ function getStatusTagType(status) {
   return types[status] || ''
 }
 
+// 加载用户选项
+async function loadUserOptions() {
+  try {
+    const response = await userApi.getList({ page_size: 1000 })
+    userOptions.value = response.data || []
+  } catch (error) {
+    console.error('加载用户列表失败:', error)
+  }
+}
+
+// 加载项目选项
+async function loadProjectOptions() {
+  try {
+    const response = await projectApi.getList({ page_size: 1000 })
+    projectOptions.value = response.data || []
+  } catch (error) {
+    console.error('加载项目列表失败:', error)
+  }
+}
+
+// 加载任务选项
+async function loadAppointmentOptions(projectId) {
+  try {
+    const params = { page_size: 1000 }
+    if (projectId) {
+      params.project_id = projectId
+    }
+    const response = await appointmentApi.getList(params)
+    appointmentOptions.value = response.data || []
+  } catch (error) {
+    console.error('加载任务列表失败:', error)
+  }
+}
+
+// 项目变更时加载任务
+function handleProjectChange(projectId) {
+  searchForm.appointment_id = null
+  loadAppointmentOptions(projectId)
+  handleSearch()
+}
+
 // 加载打卡记录
 async function loadRecords() {
   loading.value = true
@@ -397,8 +598,11 @@ async function loadRecords() {
     const params = {
       page: pagination.page,
       page_size: pagination.pageSize,
+      user_id: searchForm.user_id || undefined,
       status: searchForm.status || undefined,
       attendance_type: searchForm.attendance_type || undefined,
+      project_id: searchForm.project_id || undefined,
+      appointment_id: searchForm.appointment_id || undefined,
       start_date: searchForm.dateRange?.[0] || undefined,
       end_date: searchForm.dateRange?.[1] || undefined
     }
@@ -444,11 +648,81 @@ async function loadSummary() {
   }
 }
 
+// 加载所有统计数据
+async function loadAllStatistics() {
+  const params = {}
+  if (statisticsDateRange.value?.length === 2) {
+    params.start_date = statisticsDateRange.value[0]
+    params.end_date = statisticsDateRange.value[1]
+  }
+
+  loadDailyStatistics(params)
+  loadUserStatistics(params)
+  loadTaskStatistics(params)
+  loadProjectStatistics(params)
+}
+
+// 加载按日期统计
+async function loadDailyStatistics(params) {
+  dailyLoading.value = true
+  try {
+    const response = await attendanceApi.getDailyStatistics(params)
+    dailyStatistics.value = response.data || []
+  } catch (error) {
+    console.error('加载日期统计失败:', error)
+  } finally {
+    dailyLoading.value = false
+  }
+}
+
+// 加载按人员统计
+async function loadUserStatistics(params) {
+  userLoading.value = true
+  try {
+    const response = await attendanceApi.getUserStatistics(params)
+    userStatistics.value = response.data || []
+  } catch (error) {
+    console.error('加载人员统计失败:', error)
+  } finally {
+    userLoading.value = false
+  }
+}
+
+// 加载按任务统计
+async function loadTaskStatistics(params) {
+  taskLoading.value = true
+  try {
+    const response = await attendanceApi.getTaskStatistics(params)
+    taskStatistics.value = response.data || []
+  } catch (error) {
+    console.error('加载任务统计失败:', error)
+  } finally {
+    taskLoading.value = false
+  }
+}
+
+// 加载按项目统计
+async function loadProjectStatistics(params) {
+  projectLoading.value = true
+  try {
+    const response = await attendanceApi.getProjectStatistics(params)
+    projectStatistics.value = response.data || []
+  } catch (error) {
+    console.error('加载项目统计失败:', error)
+  } finally {
+    projectLoading.value = false
+  }
+}
+
 // 重置搜索
 function handleReset() {
+  searchForm.user_id = null
   searchForm.status = ''
   searchForm.attendance_type = ''
+  searchForm.project_id = null
+  searchForm.appointment_id = null
   searchForm.dateRange = []
+  appointmentOptions.value = []
   pagination.page = 1
   loadRecords()
 }
@@ -475,7 +749,23 @@ function handleTabChange(tab) {
     loadStats()
   } else if (tab === 'summary') {
     loadSummary()
+  } else if (tab === 'statistics') {
+    // 初始化日期范围
+    if (!statisticsDateRange.value?.length) {
+      const now = new Date()
+      const startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+      statisticsDateRange.value = [
+        startDate.toISOString().split('T')[0],
+        now.toISOString().split('T')[0]
+      ]
+    }
+    loadAllStatistics()
   }
+}
+
+// 统计子标签页切换
+function handleStatisticsTabChange(tab) {
+  // 数据已在 loadAllStatistics 中加载
 }
 
 // 确认打卡记录
@@ -605,7 +895,70 @@ async function handleBatchConfirmSummary() {
   }
 }
 
+// 导出 Excel
+async function handleExportExcel() {
+  exportLoading.value = true
+  try {
+    const params = {
+      user_id: searchForm.user_id || undefined,
+      project_id: searchForm.project_id || undefined,
+      appointment_id: searchForm.appointment_id || undefined,
+      status: searchForm.status || undefined,
+      start_date: searchForm.dateRange?.[0] || undefined,
+      end_date: searchForm.dateRange?.[1] || undefined
+    }
+
+    const response = await attendanceApi.exportRecords(params)
+    downloadFile(response, `打卡记录_${new Date().toISOString().split('T')[0]}.xlsx`)
+    ElMessage.success('导出成功')
+  } catch (error) {
+    console.error('导出失败:', error)
+    ElMessage.error('导出失败')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+// 导出照片
+async function handleExportPhotos() {
+  exportLoading.value = true
+  try {
+    const params = {
+      user_id: searchForm.user_id || undefined,
+      project_id: searchForm.project_id || undefined,
+      appointment_id: searchForm.appointment_id || undefined,
+      status: searchForm.status || undefined,
+      start_date: searchForm.dateRange?.[0] || undefined,
+      end_date: searchForm.dateRange?.[1] || undefined
+    }
+
+    const response = await attendanceApi.exportPhotos(params)
+    downloadFile(response, `打卡照片_${new Date().toISOString().split('T')[0]}.zip`)
+    ElMessage.success('导出成功')
+  } catch (error) {
+    console.error('导出失败:', error)
+    ElMessage.error('导出失败')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+// 下载文件
+function downloadFile(blob, filename) {
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
 onMounted(() => {
+  loadUserOptions()
+  loadProjectOptions()
+  loadAppointmentOptions()
   loadRecords()
   loadStats()
 })

@@ -3,6 +3,7 @@ package attendance
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -330,6 +331,13 @@ func (s *Service) GetRecords(req RecordListRequest) ([]AttendanceRecord, int64, 
 
 	if req.UserID != nil {
 		query = query.Where("user_id = ?", *req.UserID)
+	}
+	if req.AppointmentID != nil {
+		query = query.Where("appointment_id = ?", *req.AppointmentID)
+	}
+	if req.ProjectID != nil {
+		// 通过预约任务关联项目
+		query = query.Where("appointment_id IN (SELECT id FROM construction_appointments WHERE project_id = ?)", *req.ProjectID)
 	}
 	if req.AttendanceType != "" {
 		query = query.Where("attendance_type = ?", req.AttendanceType)
@@ -685,4 +693,193 @@ func (s *Service) GetCalendarStatistics(userID uint, startDate, endDate string) 
 	}
 
 	return result, nil
+}
+
+// GetDailyStatistics 按日期统计
+func (s *Service) GetDailyStatistics(startDate, endDate string) ([]DailyStatisticsResponse, error) {
+	query := `
+		SELECT
+			DATE(clock_in_time) as date,
+			COUNT(*) as total_count,
+			COUNT(*) FILTER (WHERE attendance_type = 'morning') as morning_count,
+			COUNT(*) FILTER (WHERE attendance_type = 'afternoon') as afternoon_count,
+			COUNT(*) FILTER (WHERE attendance_type = 'noon_overtime') as noon_overtime,
+			COUNT(*) FILTER (WHERE attendance_type = 'night_overtime') as night_overtime,
+			COALESCE(SUM(overtime_hours), 0) as overtime_hours,
+			COUNT(DISTINCT user_id) as user_count
+		FROM attendance_records
+		WHERE DATE(clock_in_time) >= ? AND DATE(clock_in_time) <= ?
+		GROUP BY DATE(clock_in_time)
+		ORDER BY date DESC
+	`
+
+	var results []DailyStatisticsResponse
+	err := s.db.Raw(query, startDate, endDate).Scan(&results).Error
+	return results, err
+}
+
+// GetUserStatistics 按人员统计
+func (s *Service) GetUserStatistics(startDate, endDate string) ([]UserStatisticsResponse, error) {
+	query := `
+		SELECT
+			ar.user_id,
+			u.full_name as user_name,
+			COUNT(*) as total_count,
+			COUNT(*) FILTER (WHERE ar.attendance_type = 'morning') as morning_count,
+			COUNT(*) FILTER (WHERE ar.attendance_type = 'afternoon') as afternoon_count,
+			COUNT(*) FILTER (WHERE ar.attendance_type = 'noon_overtime') as noon_overtime_count,
+			COUNT(*) FILTER (WHERE ar.attendance_type = 'night_overtime') as night_overtime_count,
+			COALESCE(SUM(ar.overtime_hours), 0) as total_overtime_hours,
+			COUNT(DISTINCT DATE(ar.clock_in_time)) as work_days
+		FROM attendance_records ar
+		LEFT JOIN users u ON ar.user_id = u.id
+		WHERE DATE(ar.clock_in_time) >= ? AND DATE(ar.clock_in_time) <= ?
+		GROUP BY ar.user_id, u.full_name
+		ORDER BY total_count DESC
+	`
+
+	var results []UserStatisticsResponse
+	err := s.db.Raw(query, startDate, endDate).Scan(&results).Error
+	return results, err
+}
+
+// GetTaskStatistics 按任务统计
+func (s *Service) GetTaskStatistics(startDate, endDate string) ([]TaskStatisticsResponse, error) {
+	query := `
+		SELECT
+			ca.id as appointment_id,
+			ca.appointment_no,
+			COALESCE(ca.work_content, '') as work_content,
+			TO_CHAR(ca.work_date, 'YYYY-MM-DD') as work_date,
+			COUNT(ar.id) as total_clock_ins,
+			COUNT(DISTINCT ar.user_id) as unique_users,
+			SUM(CASE
+				WHEN ar.photo_urls IS NOT NULL AND ar.photo_urls != '' THEN
+					jsonb_array_length(CASE WHEN ar.photo_urls::jsonb IS NOT NULL THEN ar.photo_urls::jsonb ELSE '[]'::jsonb END)
+				WHEN ar.photo_url IS NOT NULL AND ar.photo_url != '' THEN 1
+				ELSE 0
+			END) as photo_count,
+			COUNT(*) FILTER (WHERE ar.attendance_type = 'morning') as morning_count,
+			COUNT(*) FILTER (WHERE ar.attendance_type = 'afternoon') as afternoon_count,
+			COUNT(*) FILTER (WHERE ar.attendance_type IN ('noon_overtime', 'night_overtime')) as overtime_count,
+			COALESCE(SUM(ar.overtime_hours), 0) as overtime_hours
+		FROM construction_appointments ca
+		LEFT JOIN attendance_records ar ON ca.id = ar.appointment_id
+			AND DATE(ar.clock_in_time) >= ? AND DATE(ar.clock_in_time) <= ?
+		GROUP BY ca.id, ca.appointment_no, ca.work_content, ca.work_date
+		HAVING COUNT(ar.id) > 0
+		ORDER BY ca.work_date DESC
+	`
+
+	var results []TaskStatisticsResponse
+	err := s.db.Raw(query, startDate, endDate).Scan(&results).Error
+	return results, err
+}
+
+// GetProjectStatistics 按项目统计
+func (s *Service) GetProjectStatistics(startDate, endDate string) ([]ProjectStatisticsResponse, error) {
+	query := `
+		SELECT
+			p.id as project_id,
+			p.name as project_name,
+			COUNT(ar.id) as total_clock_ins,
+			COUNT(DISTINCT ar.user_id) as unique_users,
+			COUNT(*) FILTER (WHERE ar.attendance_type = 'morning') as morning_count,
+			COUNT(*) FILTER (WHERE ar.attendance_type = 'afternoon') as afternoon_count,
+			COALESCE(SUM(ar.overtime_hours), 0) as total_overtime_hours,
+			COUNT(DISTINCT DATE(ar.clock_in_time)) as work_days
+		FROM projects p
+		LEFT JOIN construction_appointments ca ON p.id = ca.project_id
+		LEFT JOIN attendance_records ar ON ca.id = ar.appointment_id
+			AND DATE(ar.clock_in_time) >= ? AND DATE(ar.clock_in_time) <= ?
+		GROUP BY p.id, p.name
+		HAVING COUNT(ar.id) > 0
+		ORDER BY total_clock_ins DESC
+	`
+
+	var results []ProjectStatisticsResponse
+	err := s.db.Raw(query, startDate, endDate).Scan(&results).Error
+	return results, err
+}
+
+// GetRecordsForExport 获取用于导出的打卡记录
+func (s *Service) GetRecordsForExport(req ExportRequest) ([]AttendanceRecord, error) {
+	query := s.db.Model(&AttendanceRecord{})
+
+	if req.UserID != nil {
+		query = query.Where("user_id = ?", *req.UserID)
+	}
+	if req.AppointmentID != nil {
+		query = query.Where("appointment_id = ?", *req.AppointmentID)
+	}
+	if req.ProjectID != nil {
+		query = query.Where("appointment_id IN (SELECT id FROM construction_appointments WHERE project_id = ?)", *req.ProjectID)
+	}
+	if req.StartDate != "" {
+		query = query.Where("DATE(clock_in_time) >= ?", req.StartDate)
+	}
+	if req.EndDate != "" {
+		query = query.Where("DATE(clock_in_time) <= ?", req.EndDate)
+	}
+	if req.Status != "" {
+		query = query.Where("status = ?", req.Status)
+	}
+
+	var records []AttendanceRecord
+	err := query.Order("clock_in_time DESC").Find(&records).Error
+	if err != nil {
+		return nil, err
+	}
+
+	// 填充关联数据
+	s.fillRecordDetails(records)
+
+	return records, nil
+}
+
+// GetPhotosForExport 获取用于导出的照片URL列表
+func (s *Service) GetPhotosForExport(req ExportRequest) ([]map[string]string, []AttendanceRecord, error) {
+	records, err := s.GetRecordsForExport(req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var photos []map[string]string
+	for _, record := range records {
+		// 解析照片URLs
+		var urls []string
+		if record.PhotoURLs != "" {
+			json.Unmarshal([]byte(record.PhotoURLs), &urls)
+		}
+		if record.PhotoURL != "" && !contains(urls, record.PhotoURL) {
+			urls = append(urls, record.PhotoURL)
+		}
+
+		for i, url := range urls {
+			if url == "" || url == "null" {
+				continue
+			}
+			photos = append(photos, map[string]string{
+				"url":       url,
+				"filename":  fmt.Sprintf("%s_%s_%s_%d.jpg",
+					record.ClockInTime.Format("2006-01-02"),
+					record.UserName,
+					record.AttendanceType,
+					i+1),
+				"record_id": fmt.Sprintf("%d", record.ID),
+			})
+		}
+	}
+
+	return photos, records, nil
+}
+
+// contains 检查字符串是否在切片中
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }

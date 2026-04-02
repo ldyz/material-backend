@@ -45,20 +45,27 @@ func (s *Service) ClockIn(userID uint, req ClockInRequest) (*AttendanceRecord, e
 			return nil, errors.New("预约任务不存在或状态不允许打卡")
 		}
 
-		// 检查用户是否被分配到该任务
+		// 检查用户是否被分配到该任务或是任务创建者
 		var isAssigned int64
 		s.db.Table("construction_appointments").
-			Where("id = ? AND (assigned_worker_id = ? OR assigned_worker_ids::jsonb @> ?::jsonb)",
-				*req.AppointmentID, userID, "["+string(rune('0'+userID))+"]").
+			Where("id = ? AND (assigned_worker_id = ? OR assigned_worker_ids::jsonb @> ?::jsonb OR applicant_id = ?)",
+				*req.AppointmentID, userID, "["+string(rune('0'+userID))+"]", userID).
 			Count(&isAssigned)
 		if isAssigned == 0 {
-			// 尝试另一种方式检查 JSON 数组
+			// 尝试另一种方式检查 JSON 数组或申请者ID
 			var assignedWorkerIDs string
+			var applicantID uint
 			s.db.Table("construction_appointments").
 				Where("id = ?", *req.AppointmentID).
 				Pluck("assigned_worker_ids", &assignedWorkerIDs)
-			// 如果用户未被分配，返回错误
-			if assignedWorkerIDs == "" {
+
+			// 检查是否是任务创建者
+			s.db.Table("construction_appointments").
+				Where("id = ?", *req.AppointmentID).
+				Pluck("applicant_id", &applicantID)
+
+			// 如果用户未被分配且不是创建者，返回错误
+			if assignedWorkerIDs == "" && applicantID != userID {
 				return nil, errors.New("您未被分配到此任务")
 			}
 		}
@@ -105,6 +112,8 @@ func (s *Service) ClockIn(userID uint, req ClockInRequest) (*AttendanceRecord, e
 		OvertimeHours:    req.OvertimeHours,
 		Remark:           req.Remark,
 		PhotoURL:         req.PhotoURL,
+		AudioURL:         req.AudioURL,
+		AudioDuration:    req.AudioDuration,
 		Status:           RecordStatusPending,
 	}
 
@@ -150,7 +159,7 @@ func (s *Service) hasNormalClockInOnDate(userID uint, date string) (bool, error)
 func (s *Service) GetTodayAppointments(userID uint) ([]TodayAppointment, error) {
 	today := time.Now().Format("2006-01-02")
 
-	// 查询今天分配给该用户的预约任务
+	// 查询今天分配给该用户或由该用户创建的预约任务
 	query := `
 		SELECT
 			ca.id, ca.appointment_no, ca.work_date, ca.time_slot,
@@ -162,11 +171,12 @@ func (s *Service) GetTodayAppointments(userID uint) ([]TodayAppointment, error) 
 		AND (
 			ca.assigned_worker_id = ?
 			OR ca.assigned_worker_ids::jsonb @> ?::jsonb
+			OR ca.applicant_id = ?
 		)
 	`
 
 	var appointments []TodayAppointment
-	rows, err := s.db.Raw(query, today, userID, "["+string(rune('0'+userID))+"]").Rows()
+	rows, err := s.db.Raw(query, today, userID, "["+string(rune('0'+userID))+"]", userID).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +222,7 @@ func (s *Service) getTodayAppointmentsAlternative(userID uint, today string) []T
 
 	// 查询所有今天的预约任务
 	rows, err := s.db.Table("construction_appointments").
-		Select("id, appointment_no, work_date, time_slot, work_location, work_content, work_type, is_urgent, status, assigned_worker_ids, assigned_worker_id").
+		Select("id, appointment_no, work_date, time_slot, work_location, work_content, work_type, is_urgent, status, assigned_worker_ids, assigned_worker_id, applicant_id").
 		Where("work_date = ? AND status IN ?", today, []string{"scheduled", "in_progress"}).
 		Rows()
 	if err != nil {
@@ -221,18 +231,18 @@ func (s *Service) getTodayAppointmentsAlternative(userID uint, today string) []T
 	defer rows.Close()
 
 	for rows.Next() {
-		var id, assignedWorkerID uint
+		var id, assignedWorkerID, applicantID uint
 		var appointmentNo, timeSlot, workLocation, workContent, workType, status string
 		var workDate time.Time
 		var isUrgent bool
 		var assignedWorkerIDsStr string
 
-		err := rows.Scan(&id, &appointmentNo, &workDate, &timeSlot, &workLocation, &workContent, &workType, &isUrgent, &status, &assignedWorkerIDsStr, &assignedWorkerID)
+		err := rows.Scan(&id, &appointmentNo, &workDate, &timeSlot, &workLocation, &workContent, &workType, &isUrgent, &status, &assignedWorkerIDsStr, &assignedWorkerID, &applicantID)
 		if err != nil {
 			continue
 		}
 
-		// 检查用户是否被分配到该任务
+		// 检查用户是否被分配到该任务或是任务创建者
 		isAssigned := false
 		if assignedWorkerID == userID {
 			isAssigned = true
@@ -247,6 +257,10 @@ func (s *Service) getTodayAppointmentsAlternative(userID uint, today string) []T
 					}
 				}
 			}
+		}
+		// 检查是否是任务创建者
+		if !isAssigned && applicantID == userID {
+			isAssigned = true
 		}
 
 		if !isAssigned {
@@ -882,4 +896,77 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+// GetRecordsForExportAll 获取用于整合导出的打卡记录（包含项目名称）
+func (s *Service) GetRecordsForExportAll(req ExportAllRequest) ([]ExportRecordInfo, error) {
+	query := `
+		SELECT
+			ar.*,
+			COALESCE(p.name, '') as project_name
+		FROM attendance_records ar
+		LEFT JOIN construction_appointments ca ON ar.appointment_id = ca.id
+		LEFT JOIN projects p ON ca.project_id = p.id
+		WHERE 1=1
+	`
+
+	args := []interface{}{}
+
+	if req.UserID != nil {
+		query += " AND ar.user_id = ?"
+		args = append(args, *req.UserID)
+	}
+	if req.AppointmentID != nil {
+		query += " AND ar.appointment_id = ?"
+		args = append(args, *req.AppointmentID)
+	}
+	if req.ProjectID != nil {
+		query += " AND ar.appointment_id IN (SELECT id FROM construction_appointments WHERE project_id = ?)"
+		args = append(args, *req.ProjectID)
+	}
+	if req.StartDate != "" {
+		query += " AND DATE(ar.clock_in_time) >= ?"
+		args = append(args, req.StartDate)
+	}
+	if req.EndDate != "" {
+		query += " AND DATE(ar.clock_in_time) <= ?"
+		args = append(args, req.EndDate)
+	}
+	if req.Status != "" {
+		query += " AND ar.status = ?"
+		args = append(args, req.Status)
+	}
+
+	query += " ORDER BY ar.clock_in_time DESC"
+
+	var results []ExportRecordInfo
+	err := s.db.Raw(query, args...).Scan(&results).Error
+	if err != nil {
+		return nil, err
+	}
+
+	// 填充关联数据
+	for i := range results {
+		// 获取用户名
+		s.db.Table("users").Where("id = ?", results[i].UserID).
+			Pluck("full_name", &results[i].UserName)
+
+		// 获取预约任务信息
+		if results[i].AppointmentID != nil {
+			s.db.Table("construction_appointments").Where("id = ?", *results[i].AppointmentID).
+				Pluck("appointment_no", &results[i].AppointmentNo)
+			if results[i].WorkContent == "" {
+				s.db.Table("construction_appointments").Where("id = ?", *results[i].AppointmentID).
+					Pluck("work_content", &results[i].WorkContent)
+			}
+		}
+
+		// 获取确认人姓名
+		if results[i].ConfirmedBy != nil {
+			s.db.Table("users").Where("id = ?", *results[i].ConfirmedBy).
+				Pluck("full_name", &results[i].ConfirmedByName)
+		}
+	}
+
+	return results, nil
 }
